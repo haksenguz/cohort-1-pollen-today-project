@@ -1,0 +1,17 @@
+# Local development only. Deployment is the mentor's (devops) call — this file
+# exists so all three of us get an identical database with one command.
+services:
+  mongo:
+    image: mongo:7
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodata:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  mongodata:

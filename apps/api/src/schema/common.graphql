@@ -1,0 +1,52 @@
+# Shared scalars and enums.
+#
+# This directory is the contract. The SDL is written by hand and is the single
+# source of truth — TypeScript types are generated from it, never the reverse.
+# A change here is a contract change: all three owners sign off, and an ADR goes
+# in docs/adr/.
+
+scalar DateTime
+
+"Mongo ObjectId, serialised as a 24-character hex string"
+scalar ObjectId
+
+"The four risk levels published daily by KMA. Ordered low to very high."
+enum RiskLevel {
+  LOW
+  MODERATE
+  HIGH
+  VERY_HIGH
+}
+
+"Oak and pine run Apr–Jun; weeds and ragweed run Aug–Oct."
+enum PollenType {
+  OAK
+  PINE
+  WEEDS
+}
+
+"""
+KMA region granularity.
+PLACEHOLDER — blocked on the canonical region list, see OPEN_QUESTIONS.md §2.4.
+Every slice keys off this: forecasts, charts, and Telegram channels.
+"""
+enum Region {
+  SEOUL
+  BUSAN
+  DAEGU
+  INCHEON
+  GWANGJU
+  DAEJEON
+  ULSAN
+  JEJU
+}
+
+"Outcome of a scheduled job run."
+enum JobStatus {
+  SUCCESS
+  FAILED
+  RUNNING
+}
+
+"Root query type. Each component extends it in its own .graphql file."
+type Query

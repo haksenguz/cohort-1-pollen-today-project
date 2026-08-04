@@ -1,0 +1,28 @@
+node_modules/
+dist/
+build/
+.turbo/
+*.tsbuildinfo
+
+# Env
+.env
+.env.local
+.env.*.local
+
+# Data — never commit KMA dumps
+data/raw/
+*.csv
+*.parquet
+
+# Python (ml/ training only, never deployed)
+__pycache__/
+*.py[cod]
+.venv/
+.ipynb_checkpoints/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.log

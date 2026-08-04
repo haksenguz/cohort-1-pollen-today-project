@@ -1,0 +1,45 @@
+# Slice C — Alerts & Delivery. Owner: Ismoiljon.
+
+"One alert that was delivered to a public Telegram channel."
+type Alert {
+  id: ObjectId!
+  region: Region!
+  pollenType: PollenType!
+  "The day the alert is about, not the day it was sent."
+  targetDate: String!
+  riskLevel: RiskLevel!
+  channel: String!
+  sentAt: DateTime!
+  messageText: String!
+}
+
+type PaginatedAlert {
+  items: [Alert!]!
+  total: Int!
+  hasMore: Boolean!
+}
+
+"Last run of a scheduled job."
+type JobRun {
+  jobName: String!
+  startedAt: DateTime!
+  finishedAt: DateTime
+  status: JobStatus!
+  rowsAffected: Int
+  error: String
+}
+
+"Ops status page. Stale when any job has not succeeded in over 26 hours."
+type SystemStatus {
+  jobs: [JobRun!]!
+  stale: Boolean!
+}
+
+extend type Query {
+  alertHistory(
+    region: Region
+    limit: Int! = 50
+    offset: Int! = 0
+  ): PaginatedAlert!
+  systemStatus: SystemStatus!
+}

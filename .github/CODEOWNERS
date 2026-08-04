@@ -1,0 +1,29 @@
+# Every PR requires a review. Slice owners own their own directories;
+# the tech lead reviews everything, and the shared contract always requires
+# the tech lead.
+#
+# TODO(week0): replace the placeholder handles once Jamshid and Giyos confirm
+# their GitHub usernames. Until then they are @Ismoiljon1101 so that CODEOWNERS
+# is valid and branch protection can be switched on today.
+
+*                                   @Ismoiljon1101
+
+# Slice A — Forecast Engine (Jamshid, Contract Owner)
+/apps/api/src/slices/forecast/      @Ismoiljon1101
+/ml/                                @Ismoiljon1101
+
+# Slice B — Season Analytics (Giyos, Release Owner)
+/apps/api/src/slices/analytics/     @Ismoiljon1101
+
+# Slice C — Alerts & Delivery (Ismoiljon)
+/apps/api/src/slices/alerts/        @Ismoiljon1101
+
+# Frozen shared contract — tech lead review required, always
+/packages/contracts/                @Ismoiljon1101
+
+# Repo infrastructure — tech lead only
+/.github/                           @Ismoiljon1101
+/docker-compose.yml                 @Ismoiljon1101
+/package.json                       @Ismoiljon1101
+/pnpm-workspace.yaml                @Ismoiljon1101
+/tsconfig.base.json                 @Ismoiljon1101
