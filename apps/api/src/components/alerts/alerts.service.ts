@@ -1,7 +1,7 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { InjectModel } from "@nestjs/mongoose";
 import { Model } from "mongoose";
-import { JobStatus } from "../../graphql.generated";
+import { JobStatus } from "@pollen/contracts";
 import type { NewAlert, PaginatedAlert, SystemStatus } from "./dto/alert.dto";
 import type { AlertHistoryInput } from "./dto/alert-input.dto";
 import { Alert, AlertDocument } from "./schemas/alert.schema";

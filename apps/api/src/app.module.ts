@@ -22,7 +22,7 @@ import { ObjectIdScalar } from "./libs/scalars/object-id.scalar";
       driver: ApolloDriver,
       // Schema-first: the SDL in src/schema is hand-written and is the
       // contract. TypeScript types are generated from it into
-      // src/graphql.generated.ts — never the other way round.
+      // @pollen/contracts — never the other way round.
       typePaths: [join(__dirname, "schema", "**", "*.graphql")],
       playground: false,
       introspection: true,

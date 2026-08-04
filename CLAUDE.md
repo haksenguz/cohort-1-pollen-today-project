@@ -41,7 +41,7 @@ reviewable.
 ## The contract
 
 `apps/api/src/schema/*.graphql` is hand-written and is the frozen contract.
-`apps/api/src/graphql.generated.ts` is derived from it and committed; CI fails
+`packages/contracts/src/graphql.ts` is generated from it and committed; CI fails
 if the two disagree.
 
 Never edit the generated file. After changing SDL:
@@ -51,6 +51,45 @@ pnpm --filter @pollen/api schema:generate
 ```
 
 A `.graphql` diff needs all three slice owners' sign-off plus an ADR.
+
+## Where enums and types come from — READ THIS BEFORE WRITING FRONTEND CODE
+
+**One import path for both apps: `@pollen/contracts`.**
+
+```ts
+import {
+  Region, PollenType, RiskLevel, JobStatus,   // enums — real TS enums
+  Forecast, Alert, PaginatedAlert, JobRun,    // response types
+  ALL_REGIONS, riskAtLeast,                   // helpers
+} from "@pollen/contracts";
+```
+
+All of it is generated from the SDL, so the API and the web app cannot disagree
+about a field name, a type, or what counts as a valid region.
+
+**Never do these:**
+
+| Don't | Do |
+| --- | --- |
+| Write `interface Forecast { … }` in `apps/web` | Import `Forecast` from `@pollen/contracts` |
+| Write `type Region = "SEOUL" \| "BUSAN"` | Import the `Region` enum |
+| Write `const REGIONS = ["SEOUL", …]` | Use `ALL_REGIONS` |
+| Pass `"WEEDS"` as a string literal | Pass `PollenType.WEEDS` |
+| Import from `apps/api/**` | Import from `@pollen/contracts` |
+| Edit `packages/contracts/src/graphql.ts` | Edit the `.graphql` file, regenerate |
+
+These are **enums, not string unions** — `RiskLevel.HIGH`, not `"HIGH"`. A bare
+string will not typecheck, and that is deliberate: it is what stops a typo in a
+region name reaching a real Telegram channel.
+
+Zod lives in `packages/contracts/src/external.ts` and is for **untrusted input
+only** — KMA responses, the ML artifact, env config. Do not add Zod schemas for
+payloads the API already defines; the SDL defines those, and a second definition
+drifts (ADR 0004).
+
+Frontend query documents go in `apps/web/src/lib/queries.ts`. Write the query
+string and its `Vars` interface there; take the result type from
+`@pollen/contracts`.
 
 ## Do not
 

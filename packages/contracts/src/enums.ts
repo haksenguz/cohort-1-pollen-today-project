@@ -1,43 +1,32 @@
 import { z } from "zod";
+import { RiskLevel } from "./graphql.js";
 
 /**
- * The four risk levels published daily by the Korea Meteorological Administration.
- * Ordered — comparisons rely on the index, so do not reorder.
+ * Enums are DECLARED in apps/api/src/schema/common.graphql and generated into
+ * ./graphql.ts. Import `Region`, `PollenType`, `RiskLevel` and `JobStatus` from
+ * this package — never redeclare them.
+ *
+ * What lives here is what the SDL cannot express: ordering, and the Zod schemas
+ * for data arriving from outside the system.
  */
-export const RISK_LEVELS = ["LOW", "MODERATE", "HIGH", "VERY_HIGH"] as const;
-export const RiskLevel = z.enum(RISK_LEVELS);
-export type RiskLevel = z.infer<typeof RiskLevel>;
-
-export function riskAtLeast(level: RiskLevel, threshold: RiskLevel): boolean {
-  return RISK_LEVELS.indexOf(level) >= RISK_LEVELS.indexOf(threshold);
-}
 
 /**
- * Pollen types KMA publishes. Oak and pine run April–June and are off-season
- * during this build; weeds/ragweed run August–October and are live.
+ * Risk levels in published order, low to very high.
+ * Ordering is semantic — `riskAtLeast` depends on it, so do not sort this.
  */
-export const POLLEN_TYPES = ["OAK", "PINE", "WEEDS"] as const;
-export const PollenType = z.enum(POLLEN_TYPES);
-export type PollenType = z.infer<typeof PollenType>;
-
-/**
- * PLACEHOLDER — blocked on the canonical KMA region list.
- * See docs/OPEN_QUESTIONS.md §2.4. Every slice keys off this enum: forecasts,
- * charts, and Telegram channels. Replacing it is a contract change and needs
- * all three owners to agree in writing.
- */
-export const REGIONS = [
-  "SEOUL",
-  "BUSAN",
-  "DAEGU",
-  "INCHEON",
-  "GWANGJU",
-  "DAEJEON",
-  "ULSAN",
-  "JEJU",
+export const RISK_LEVELS_ORDERED = [
+  RiskLevel.LOW,
+  RiskLevel.MODERATE,
+  RiskLevel.HIGH,
+  RiskLevel.VERY_HIGH,
 ] as const;
-export const Region = z.enum(REGIONS);
-export type Region = z.infer<typeof Region>;
+
+/** True when `level` is at or above `threshold`. Drives the alert cutoff. */
+export function riskAtLeast(level: RiskLevel, threshold: RiskLevel): boolean {
+  return (
+    RISK_LEVELS_ORDERED.indexOf(level) >= RISK_LEVELS_ORDERED.indexOf(threshold)
+  );
+}
 
 /** ISO date, `YYYY-MM-DD`. All dates in this system are KST calendar dates. */
 export const IsoDate = z

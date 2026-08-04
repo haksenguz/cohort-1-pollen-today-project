@@ -6,7 +6,7 @@
     "build": "nest build",
     "dev": "nest start --watch",
     "start": "node dist/main.js",
-    "schema:generate": "tsc -p tsconfig.json --outDir dist && node dist/scripts/generate-typings.js",
+    "schema:generate": "tsc src/scripts/generate-typings.ts --outDir dist-tools --module commonjs --moduleResolution node --target ES2022 --esModuleInterop --skipLibCheck && node dist-tools/generate-typings.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run"
   },

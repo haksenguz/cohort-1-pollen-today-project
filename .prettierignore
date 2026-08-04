@@ -4,4 +4,5 @@ pnpm-lock.yaml
 *.md
 
 # Generated from src/schema/*.graphql — formatting it would fight the generator
-apps/api/src/graphql.generated.ts
+packages/contracts/src/graphql.ts
+dist-tools

@@ -5,10 +5,11 @@ export default tseslint.config(
   {
     ignores: [
       "**/dist/**",
+      "**/dist-tools/**",
       "**/node_modules/**",
       "**/*.config.js",
       // Derived from src/schema/*.graphql — lint the SDL, not its output.
-      "apps/api/src/graphql.generated.ts",
+      "packages/contracts/src/graphql.ts",
     ],
   },
   js.configs.recommended,

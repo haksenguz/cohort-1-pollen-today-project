@@ -48,4 +48,4 @@ jobs:
       - name: Generated GraphQL types are up to date
         run: |
           pnpm --filter @pollen/api schema:generate
-          git diff --exit-code apps/api/src/graphql.generated.ts
+          git diff --exit-code packages/contracts/src/graphql.ts

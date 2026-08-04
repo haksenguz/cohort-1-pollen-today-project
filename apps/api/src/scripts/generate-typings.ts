@@ -10,7 +10,10 @@ import { join } from "node:path";
  */
 void new GraphQLDefinitionsFactory().generate({
   typePaths: [join(process.cwd(), "src/schema/**/*.graphql")],
-  path: join(process.cwd(), "src/graphql.generated.ts"),
+  // Emitted into the shared package, not into apps/api — the web app needs the
+  // same enums and types, and a second hand-written copy on the frontend is
+  // exactly the drift schema-first exists to prevent.
+  path: join(process.cwd(), "../../packages/contracts/src/graphql.ts"),
   outputAs: "interface",
   watch: false,
   emitTypenameField: false,

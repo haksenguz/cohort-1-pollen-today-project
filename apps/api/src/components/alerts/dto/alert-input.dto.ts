@@ -1,4 +1,4 @@
-import type { Region } from "../../../graphql.generated";
+import type { Region } from "@pollen/contracts";
 
 /** Arguments of `Query.alertHistory`, mirroring src/schema/alerts.graphql. */
 export interface AlertHistoryInput {

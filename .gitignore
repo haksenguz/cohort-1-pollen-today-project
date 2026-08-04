@@ -26,3 +26,6 @@ Thumbs.db
 .idea/
 .vscode/
 *.log
+
+# standalone build of the schema generator
+dist-tools/

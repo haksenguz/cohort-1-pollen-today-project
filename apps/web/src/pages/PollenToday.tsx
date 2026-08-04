@@ -1,4 +1,9 @@
-import { REGIONS, type Region, type RiskLevel } from "@pollen/contracts";
+import {
+  ALL_REGIONS,
+  PollenType,
+  RiskLevel,
+  type Region,
+} from "@pollen/contracts";
 import { useEffect, useState } from "react";
 import { gql } from "../lib/graphql";
 import {
@@ -16,24 +21,24 @@ import {
  */
 
 const RISK_COLOR: Record<RiskLevel, string> = {
-  LOW: "var(--risk-low)",
-  MODERATE: "var(--risk-moderate)",
-  HIGH: "var(--risk-high)",
-  VERY_HIGH: "var(--risk-very-high)",
+  [RiskLevel.LOW]: "var(--risk-low)",
+  [RiskLevel.MODERATE]: "var(--risk-moderate)",
+  [RiskLevel.HIGH]: "var(--risk-high)",
+  [RiskLevel.VERY_HIGH]: "var(--risk-very-high)",
 };
 
 const RISK_LABEL: Record<RiskLevel, string> = {
-  LOW: "Low",
-  MODERATE: "Moderate",
-  HIGH: "High",
-  VERY_HIGH: "Very high",
+  [RiskLevel.LOW]: "Low",
+  [RiskLevel.MODERATE]: "Moderate",
+  [RiskLevel.HIGH]: "High",
+  [RiskLevel.VERY_HIGH]: "Very high",
 };
 
 const ADVICE: Record<RiskLevel, string> = {
-  LOW: "A good day to be outside.",
-  MODERATE: "Most people are fine. Sensitive people, take care.",
-  HIGH: "Take your medication before you go out, not after.",
-  VERY_HIGH: "Stay indoors where you can. Windows closed.",
+  [RiskLevel.LOW]: "A good day to be outside.",
+  [RiskLevel.MODERATE]: "Most people are fine. Sensitive people, take care.",
+  [RiskLevel.HIGH]: "Take your medication before you go out, not after.",
+  [RiskLevel.VERY_HIGH]: "Stay indoors where you can. Windows closed.",
 };
 
 function dayOfWeek(iso: string): string {
@@ -44,7 +49,7 @@ function dayOfWeek(iso: string): string {
 }
 
 export function PollenToday() {
-  const [region, setRegion] = useState<Region>("SEOUL");
+  const [region, setRegion] = useState<Region>(ALL_REGIONS[0]!);
   const [data, setData] = useState<ForecastData["forecast"] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -55,7 +60,7 @@ export function PollenToday() {
 
     gql<ForecastData, ForecastVars>(FORECAST_QUERY, {
       region,
-      pollenType: "WEEDS",
+      pollenType: PollenType.WEEDS,
     })
       .then(({ forecast }) => {
         if (!cancelled) setData(forecast);
@@ -81,7 +86,7 @@ export function PollenToday() {
           onChange={(e) => setRegion(e.target.value as Region)}
           aria-label="Region"
         >
-          {REGIONS.map((r) => (
+          {ALL_REGIONS.map((r) => (
             <option key={r} value={r}>
               {r.charAt(0) + r.slice(1).toLowerCase()}
             </option>
@@ -132,7 +137,7 @@ export function PollenToday() {
           </div>
 
           <div className="legend">
-            {(Object.keys(RISK_LABEL) as RiskLevel[]).map((lvl) => (
+            {(Object.values(RiskLevel) as RiskLevel[]).map((lvl) => (
               <span key={lvl}>
                 <i style={{ background: RISK_COLOR[lvl] }} />
                 {RISK_LABEL[lvl]}

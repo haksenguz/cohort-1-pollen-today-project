@@ -1,6 +1,6 @@
 import { Prop, Schema, SchemaFactory } from "@nestjs/mongoose";
 import { HydratedDocument } from "mongoose";
-import { JobStatus } from "../../../graphql.generated";
+import { JobStatus } from "@pollen/contracts";
 
 export type JobRunDocument = HydratedDocument<JobRun>;
 

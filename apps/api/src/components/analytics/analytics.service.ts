@@ -1,5 +1,5 @@
 import { Injectable } from "@nestjs/common";
-import type { PollenType, Region } from "../../graphql.generated";
+import type { PollenType, Region } from "@pollen/contracts";
 import type { SeasonTiming } from "./dto/season.dto";
 
 @Injectable()

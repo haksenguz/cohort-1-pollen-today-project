@@ -1,6 +1,6 @@
 import { Prop, Schema, SchemaFactory } from "@nestjs/mongoose";
 import { HydratedDocument } from "mongoose";
-import { PollenType, Region, RiskLevel } from "../../../graphql.generated";
+import { PollenType, Region, RiskLevel } from "@pollen/contracts";
 
 export type AlertDocument = HydratedDocument<Alert>;
 

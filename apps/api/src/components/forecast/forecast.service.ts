@@ -1,5 +1,5 @@
 import { Injectable } from "@nestjs/common";
-import { PollenType, Region, RiskLevel } from "../../graphql.generated";
+import { PollenType, Region, RiskLevel } from "@pollen/contracts";
 import { kstDatePlus } from "../../libs/kst";
 import type { Forecast } from "./dto/forecast.dto";
 
