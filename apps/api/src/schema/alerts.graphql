@@ -19,27 +19,10 @@ type PaginatedAlert {
   hasMore: Boolean!
 }
 
-"Last run of a scheduled job."
-type JobRun {
-  jobName: String!
-  startedAt: DateTime!
-  finishedAt: DateTime
-  status: JobStatus!
-  rowsAffected: Int
-  error: String
-}
-
-"Ops status page. Stale when any job has not succeeded in over 26 hours."
-type SystemStatus {
-  jobs: [JobRun!]!
-  stale: Boolean!
-}
-
 extend type Query {
   alertHistory(
     region: Region
     limit: Int! = 50
     offset: Int! = 0
   ): PaginatedAlert!
-  systemStatus: SystemStatus!
 }

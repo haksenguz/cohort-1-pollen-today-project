@@ -14,17 +14,21 @@ export type AlertDocument = HydratedDocument<Alert>;
  */
 @Schema({ collection: "alerts", timestamps: true })
 export class Alert {
-  @Prop({ required: true, enum: Object.values(Region) })
+  // `type: String` is required, not decorative. A TypeScript enum is both a
+  // type and a value, so the emitted `design:type` is the enum OBJECT — and
+  // Mongoose reads that as a nested schema definition and throws
+  // "SEOUL is not a valid type at path SEOUL". Spell the storage type out.
+  @Prop({ type: String, required: true, enum: Object.values(Region) })
   region: Region;
 
-  @Prop({ required: true, enum: Object.values(PollenType) })
+  @Prop({ type: String, required: true, enum: Object.values(PollenType) })
   pollenType: PollenType;
 
   /** The day the alert is *about*, not the day it was sent. `YYYY-MM-DD` KST. */
-  @Prop({ required: true, match: /^\d{4}-\d{2}-\d{2}$/ })
+  @Prop({ type: String, required: true, match: /^\d{4}-\d{2}-\d{2}$/ })
   targetDate: string;
 
-  @Prop({ required: true, enum: Object.values(RiskLevel) })
+  @Prop({ type: String, required: true, enum: Object.values(RiskLevel) })
   riskLevel: RiskLevel;
 
   @Prop({ required: true })

@@ -26,18 +26,30 @@ enum PollenType {
 }
 
 """
-KMA region granularity.
-PLACEHOLDER — blocked on the canonical region list, see OPEN_QUESTIONS.md §2.4.
+The 16 top-level Korean administrative regions (시/도), taken from the KMA DFS
+zone tree. Each maps to an `areaNo` the KMA API accepts — see REGION_AREA_NO in
+@pollen/contracts.
+
 Every slice keys off this: forecasts, charts, and Telegram channels.
+GWANGJU_JEONNAM is the merged 전남광주통합특별시 (1200000000); there is no
+separate 전라남도 entry in the current zone tree.
 """
 enum Region {
   SEOUL
   BUSAN
   DAEGU
   INCHEON
-  GWANGJU
   DAEJEON
   ULSAN
+  SEJONG
+  GWANGJU_JEONNAM
+  GYEONGGI
+  GANGWON
+  CHUNGBUK
+  CHUNGNAM
+  JEONBUK
+  GYEONGBUK
+  GYEONGNAM
   JEJU
 }
 

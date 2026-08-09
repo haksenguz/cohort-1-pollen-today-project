@@ -29,9 +29,17 @@ export enum Region {
     BUSAN = "BUSAN",
     DAEGU = "DAEGU",
     INCHEON = "INCHEON",
-    GWANGJU = "GWANGJU",
     DAEJEON = "DAEJEON",
     ULSAN = "ULSAN",
+    SEJONG = "SEJONG",
+    GWANGJU_JEONNAM = "GWANGJU_JEONNAM",
+    GYEONGGI = "GYEONGGI",
+    GANGWON = "GANGWON",
+    CHUNGBUK = "CHUNGBUK",
+    CHUNGNAM = "CHUNGNAM",
+    JEONBUK = "JEONBUK",
+    GYEONGBUK = "GYEONGBUK",
+    GYEONGNAM = "GYEONGNAM",
     JEJU = "JEJU"
 }
 
@@ -58,25 +66,11 @@ export interface PaginatedAlert {
     hasMore: boolean;
 }
 
-export interface JobRun {
-    jobName: string;
-    startedAt: DateTime;
-    finishedAt?: Nullable<DateTime>;
-    status: JobStatus;
-    rowsAffected?: Nullable<number>;
-    error?: Nullable<string>;
-}
-
-export interface SystemStatus {
-    jobs: JobRun[];
-    stale: boolean;
-}
-
 export interface IQuery {
     alertHistory?: PaginatedAlert;
-    systemStatus: SystemStatus;
     seasonTiming?: SeasonTiming;
     forecast?: Forecast;
+    systemStatus: SystemStatus;
 }
 
 export interface SeasonWindow {
@@ -107,6 +101,20 @@ export interface Forecast {
     days: ForecastDay[];
     modelVersion: string;
     generatedAt: DateTime;
+}
+
+export interface JobRun {
+    jobName: string;
+    startedAt: DateTime;
+    finishedAt?: Nullable<DateTime>;
+    status: JobStatus;
+    rowsAffected?: Nullable<number>;
+    error?: Nullable<string>;
+}
+
+export interface SystemStatus {
+    jobs: JobRun[];
+    stale: boolean;
 }
 
 export type DateTime = Date;

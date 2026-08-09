@@ -1,13 +1,13 @@
 import { Args, Query, Resolver } from "@nestjs/graphql";
 import { AlertsService } from "./alerts.service";
-import type { PaginatedAlert, SystemStatus } from "./dto/alert.dto";
+import type { PaginatedAlert } from "./dto/alert.dto";
 import type { AlertHistoryInput } from "./dto/alert-input.dto";
 
 /**
  * Slice C — Alerts & Delivery. Owner: Ismoiljon.
- * Backs the public alert-history page and the ops status page.
+ * Backs the public alert-history page.
  */
-@Resolver()
+@Resolver("Alert")
 export class AlertsResolver {
   constructor(private readonly alerts: AlertsService) {}
 
@@ -18,10 +18,5 @@ export class AlertsResolver {
     @Args("offset") offset: number,
   ): Promise<PaginatedAlert> {
     return this.alerts.history({ region, limit, offset });
-  }
-
-  @Query("systemStatus")
-  status(): Promise<SystemStatus> {
-    return this.alerts.status();
   }
 }

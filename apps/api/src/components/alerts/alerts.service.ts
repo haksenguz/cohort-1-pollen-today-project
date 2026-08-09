@@ -1,15 +1,12 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { InjectModel } from "@nestjs/mongoose";
 import { Model } from "mongoose";
-import { JobStatus } from "@pollen/contracts";
-import type { NewAlert, PaginatedAlert, SystemStatus } from "./dto/alert.dto";
+import type { NewAlert, PaginatedAlert } from "./dto/alert.dto";
 import type { AlertHistoryInput } from "./dto/alert-input.dto";
 import { Alert, AlertDocument } from "./schemas/alert.schema";
-import { JobRun, JobRunDocument } from "./schemas/job-run.schema";
 
 /** Mongo's duplicate-key error code. */
 const DUPLICATE_KEY = 11000;
-const STALE_AFTER_MS = 26 * 60 * 60 * 1000;
 
 @Injectable()
 export class AlertsService {
@@ -17,12 +14,13 @@ export class AlertsService {
 
   constructor(
     @InjectModel(Alert.name) private readonly alerts: Model<AlertDocument>,
-    @InjectModel(JobRun.name) private readonly jobRuns: Model<JobRunDocument>,
   ) {}
 
   /**
-   * Records a delivery. Returns false when this exact alert was already sent —
-   * the normal outcome of a re-run, not an error. See ADR 0003.
+   * Claims the right to send one alert, and records it.
+   *
+   * Returns false when this exact alert was already claimed — the normal
+   * outcome of a re-run, not an error. See ADR 0003.
    *
    * Insert first, never check first: a read-then-write has a race window
    * between the two statements, and the unique index does not.
@@ -82,22 +80,5 @@ export class AlertsService {
       total,
       hasMore: offset + docs.length < total,
     };
-  }
-
-  async status(): Promise<SystemStatus> {
-    const latest = await this.jobRuns.aggregate<JobRun>([
-      { $sort: { startedAt: -1 } },
-      { $group: { _id: "$jobName", doc: { $first: "$$ROOT" } } },
-      { $replaceRoot: { newRoot: "$doc" } },
-    ]);
-
-    const now = Date.now();
-    const stale = latest.some(
-      (j) =>
-        j.status !== JobStatus.SUCCESS ||
-        now - j.startedAt.getTime() > STALE_AFTER_MS,
-    );
-
-    return { jobs: latest, stale };
   }
 }

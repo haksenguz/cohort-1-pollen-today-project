@@ -2,8 +2,9 @@ import { Module } from "@nestjs/common";
 import { AlertsModule } from "./alerts/alerts.module";
 import { AnalyticsModule } from "./analytics/analytics.module";
 import { ForecastModule } from "./forecast/forecast.module";
+import { JobsModule } from "./jobs/jobs.module";
 
-const COMPONENTS = [ForecastModule, AnalyticsModule, AlertsModule];
+const COMPONENTS = [ForecastModule, AnalyticsModule, AlertsModule, JobsModule];
 
 /**
  * The single aggregate of every feature module.

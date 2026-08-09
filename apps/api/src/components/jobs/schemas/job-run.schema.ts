@@ -18,7 +18,10 @@ export class JobRun {
   @Prop({ type: Date, default: null })
   finishedAt: Date | null;
 
-  @Prop({ required: true, enum: Object.values(JobStatus) })
+  // Also needs `type: String` — a TypeScript enum is a value as well as a type,
+  // so the emitted `design:type` is the enum object, which Mongoose reads as a
+  // nested schema definition. See alert.schema.ts.
+  @Prop({ type: String, required: true, enum: Object.values(JobStatus) })
   status: JobStatus;
 
   @Prop({ type: Number, default: null })
