@@ -4,6 +4,26 @@ Project rules live in [docs/CONVENTIONS.md](docs/CONVENTIONS.md) and
 [docs/DEFINITION_OF_DONE.md](docs/DEFINITION_OF_DONE.md). Read those before
 writing code. What follows is about *how to work*, not what to build.
 
+## Where things live
+
+Four places, no overlap. Putting a thing in the wrong one is how documentation
+rots.
+
+| Folder | Answers | Changes when |
+| --- | --- | --- |
+| `research/` | What is true about the world? | reality changes, or we measure again |
+| `headache/` | What hurt us, and did we fix it? | we hit or resolve a problem |
+| `docs/adr/` | What did we decide, and what lost? | an architectural choice is made |
+| `TASKS.md` | What are we doing right now? | daily |
+
+Every file in `research/` and `headache/` carries frontmatter with `status`,
+`owner` and `review-by`. That is the staleness mechanism — "is this still true?"
+becomes a date comparison rather than a judgement call.
+
+Before starting non-trivial work: read `TASKS.md` for the task's `Touches`
+boundary, and check `headache/` for whether the problem is already known. Two
+tasks whose `Touches` overlap must not run in parallel.
+
 ## Delegate the manual work
 
 When a task is mechanical, well-specified, and splits into independent pieces,
@@ -25,8 +45,15 @@ Do NOT delegate when:
 - The task needs a judgement call that has not been made yet.
 - It is fewer than about three files. Spawn overhead exceeds the saving.
 
-Verification after delegating is always the main agent's job: `pnpm build`,
-`pnpm typecheck`, `pnpm lint`, `pnpm test`, and read the diff.
+Verification after delegating is always the main agent's job. For the API:
+`uv run ruff check . && uv run ruff format --check . && uv run pytest`. For the
+web: `pnpm build && pnpm typecheck && pnpm lint`. Then read the diff.
+
+**An agent's report is a hypothesis until the running system agrees with it.**
+This has already cost us twice, once concealing a crash that would have hit
+production — see [headache/0003](headache/0003-agent-diagnoses-are-confidently-wrong.md).
+Reproduce the failure yourself before accepting a diagnosis, and check the
+reasoning, not just whether the tests went green.
 
 ## Decisions
 
