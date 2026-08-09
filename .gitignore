@@ -29,3 +29,9 @@ Thumbs.db
 
 # standalone build of the schema generator
 dist-tools/
+
+# Python virtualenv and caches
+.venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/

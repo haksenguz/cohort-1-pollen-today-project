@@ -1,7 +1,9 @@
 # ADR 0004 — Schema-first GraphQL, and what is left for Zod
 
 Date: 2026-08-04
-Status: Accepted
+Status: Accepted. Amended by ADR 0006 — schema-first still stands, but the SDL
+now lives at `apps/api/schema/*.graphql` and Zod's role is filled by Pydantic
+on the Python side.
 Decider: Ismoiljon (Tech Lead)
 Supersedes part of ADR 0001
 

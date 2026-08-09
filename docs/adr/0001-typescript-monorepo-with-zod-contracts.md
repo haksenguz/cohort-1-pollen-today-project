@@ -1,7 +1,8 @@
 # ADR 0001 — TypeScript monorepo with Zod as the shared contract
 
 Date: 2026-08-04
-Status: Accepted
+Status: Superseded by ADR 0006 (language) — the monorepo and one-shared-contract
+principle still hold; the language does not.
 Decider: Ismoiljon (Tech Lead)
 
 ## Context

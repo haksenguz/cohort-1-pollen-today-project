@@ -40,21 +40,32 @@ reviewable.
 
 ## The contract
 
-`apps/api/src/schema/*.graphql` is hand-written and is the frozen contract.
-`packages/contracts/src/graphql.ts` is generated from it and committed; CI fails
-if the two disagree.
+`apps/api/schema/*.graphql` is hand-written and is the frozen contract. It has
+two consumers:
+
+- the Python API loads it directly at runtime (Ariadne, schema-first)
+- `packages/contracts/src/graphql.ts` is generated from it for the web app and
+  committed; CI fails if the two disagree
 
 Never edit the generated file. After changing SDL:
 
 ```bash
-pnpm --filter @pollen/api schema:generate
+pnpm --filter @pollen/contracts generate
 ```
+
+Python enums in `apps/api/src/pollen/libs/enums.py` are hand-written because
+Python cannot generate them from SDL. `tests/test_enums_match_sdl.py` fails on
+drift — that test is what makes hand-writing acceptable. Never delete it.
 
 A `.graphql` diff needs all three slice owners' sign-off plus an ADR.
 
 ## Where enums and types come from — READ THIS BEFORE WRITING FRONTEND CODE
 
-**One import path for both apps: `@pollen/contracts`.**
+Applies to `apps/web` only. The Python API imports from
+`pollen.libs.enums` instead — same values, different language, kept in step by
+`tests/test_enums_match_sdl.py`.
+
+**One import path for the web app: `@pollen/contracts`.**
 
 ```ts
 import {
@@ -82,10 +93,9 @@ These are **enums, not string unions** — `RiskLevel.HIGH`, not `"HIGH"`. A bar
 string will not typecheck, and that is deliberate: it is what stops a typo in a
 region name reaching a real Telegram channel.
 
-Zod lives in `packages/contracts/src/external.ts` and is for **untrusted input
-only** — KMA responses, the ML artifact, env config. Do not add Zod schemas for
-payloads the API already defines; the SDL defines those, and a second definition
-drifts (ADR 0004).
+On the Python side the same rule holds with Pydantic: parse **untrusted input
+only** — KMA responses, the ML artifact, env config. Do not write a second
+definition of a payload the SDL already defines; it drifts (ADR 0004).
 
 Frontend query documents go in `apps/web/src/lib/queries.ts`. Write the query
 string and its `Vars` interface there; take the result type from
