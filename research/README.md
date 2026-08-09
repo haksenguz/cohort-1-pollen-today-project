@@ -64,3 +64,4 @@ important or a task nobody has filed yet.
 | --- | --- | --- | --- |
 | [0001](0001-kma-api-capabilities.md) | KMA HealthWthrIdxServiceV3 — what it actually serves | active | 2026-09-01 |
 | [0002](0002-user-need-and-market.md) | Who this is for, and the size of the gap | active | 2026-09-20 |
+| [0003](0003-korea-historical-pollen-data.md) | Historical pollen data exists — 8 stations, 2007+ — just not on our API | active | 2026-08-23 |

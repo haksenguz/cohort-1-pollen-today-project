@@ -25,6 +25,10 @@ dev = [
 [project.scripts]
 pollen-job = "pollen.scripts.run_job:main"
 
+# Lets `fastapi dev` / `fastapi run` find the app without a file path argument.
+[tool.fastapi]
+entrypoint = "pollen.main:app"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

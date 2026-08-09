@@ -86,7 +86,7 @@ recorded" is.
 | --- | --- | --- | --- | --- |
 | A1 | **Start daily KMA ingest** | `components/forecast/` | two bulletins a day stored for 16 regions | todo · **urgent** |
 | A2 | Persistence baseline | `components/forecast/service.py` | `/forecast` serves 3 days from "tomorrow equals today" | todo · W2 |
-| A3 | Find or rule out a historical source | — | answered in [headache/0001](headache/0001-kma-serves-one-day-of-history.md) | todo · **urgent** |
+| A3 | Reach the historical pollen data — leads in [research/0003](research/0003-korea-historical-pollen-data.md) | — | dataset located, format + range + access recorded | todo · **urgent** |
 | A4 | Train a model that beats the baseline | `ml/` | per-class recall for HIGH and VERY_HIGH in the README | todo · W4 |
 | A5 | `MODEL_CARD.md` | `ml/` | what it does, how well, where it is weak | todo · W4 |
 
@@ -109,6 +109,41 @@ recorded" is.
 > belongs to the mentor — not to us, and not silently.
 
 ---
+
+## How we run the week
+
+Adapted from how AI-native teams actually operate, not from generic Scrum. The
+distinction that matters: a team that *uses* AI keeps its old process and banks
+the gains individually; an AI-native team changes the process, and the gains
+survive at the team boundary.
+
+**Monday — tasks out (30 min).** Agents do the mechanical part: break the
+milestone into tasks, propose `Touches` boundaries, flag scope. People spend the
+meeting on the judgement calls agents cannot make — what to cut, what is risky,
+what we are wrong about.
+
+**Ownership is verbal and explicit.** Each person says out loud which tasks they
+are taking. A task with no name attached does not exist. This is the single
+cheapest anti-chaos mechanism available, and it is why the tables above have an
+Owner column and no "team" entries.
+
+**Wednesday — blocker check (15 min, async, in Telegram).** Not a status update.
+One question: what is stopping you? A blocker raised on Monday costs an hour;
+the same blocker raised Friday costs a week.
+
+**Estimation.** We do not use story points. Each task's `Done when` is a
+condition, and a task that cannot be finished in about a day is too big and gets
+split. Splitting is the estimate.
+
+**PRs carry two reviewers.** An agent reviews first — mechanical checks, style,
+obvious defects — and a human reviews the judgement. The human signs off; the
+agent never merges. Both reviews happen within 24 hours.
+
+**The verification rule.** An agent's report is a hypothesis until the running
+system agrees. Two bugs today were found only because someone re-ran the thing
+rather than reading the summary — one of them a scheduled job that would have
+fired and silently done nothing
+([headache/0004](headache/0004-scheduled-job-never-fires.md)).
 
 ## Weekly measures
 

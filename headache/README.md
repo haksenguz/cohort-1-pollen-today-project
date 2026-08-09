@@ -73,6 +73,7 @@ Anything unresolved.
 
 | # | Headache | Status | Severity |
 | --- | --- | --- | --- |
-| [0001](0001-kma-serves-one-day-of-history.md) | KMA serves one day of history, and no observations | researching | blocker |
+| [0001](0001-kma-serves-one-day-of-history.md) | KMA serves one day of history — historical source now identified, access unconfirmed | researching | blocker |
 | [0002](0002-cannot-test-the-high-risk-path.md) | The whole alert path is untestable while the index is LOW | implementing | high |
 | [0003](0003-agent-diagnoses-are-confidently-wrong.md) | Agent diagnoses were wrong twice; both cost real time | applied | medium |
+| [0004](0004-scheduled-job-never-fires.md) | The 07:00 job would have fired and silently done nothing | applied | blocker |

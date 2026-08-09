@@ -16,6 +16,7 @@ from ariadne.asgi import GraphQL
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
+from pydantic import BaseModel
 
 from pollen.components.alerts.jobs.daily_alert import DAILY_ALERT_JOB
 from pollen.container import build_container
@@ -28,14 +29,29 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(messag
 log = logging.getLogger(__name__)
 
 
+class Health(BaseModel):
+    """Declared as a return type so FastAPI validates and documents it."""
+
+    ok: bool
+    service: str
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     container = build_container()
     client = await connect(container.settings.mongodb_uri)
 
+    # MUST be a coroutine FUNCTION, not a lambda that returns a coroutine.
+    # APScheduler inspects the callable: a lambda is not a coroutine function,
+    # so it gets called, returns an un-awaited coroutine, and the job silently
+    # does nothing — no error, no failed JobRun, just a scheduler that appears
+    # to work. Verified: see tests/test_scheduler_wiring.py.
+    async def run_daily_alert() -> None:
+        await container.runner.run(DAILY_ALERT_JOB, container.daily_alert.execute)
+
     scheduler = AsyncIOScheduler(timezone=KST)
     scheduler.add_job(
-        lambda: container.runner.run(DAILY_ALERT_JOB, container.daily_alert.execute),
+        run_daily_alert,
         CronTrigger(hour=7, minute=0, timezone=KST),
         id=DAILY_ALERT_JOB,
         replace_existing=True,
@@ -71,14 +87,14 @@ def create_app() -> FastAPI:
     app.mount("/graphql", graphql_app)
 
     @app.get("/api/health")
-    async def health() -> dict[str, object]:
+    async def health() -> Health:
         """Machine-readable. This is what the probe hits.
 
         Stays REST on purpose: uptime monitors and container probes speak HTTP
         status codes. A GraphQL health query returns 200 even when the resolver
         raises, which makes it useless as a liveness probe.
         """
-        return {"ok": True, "service": "pollen-today-api"}
+        return Health(ok=True, service="pollen-today-api")
 
     @app.get("/", response_class=HTMLResponse)
     async def sign() -> str:

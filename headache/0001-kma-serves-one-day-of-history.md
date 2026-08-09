@@ -46,10 +46,15 @@ arrives pre-predicted.
 
 Two options, not mutually exclusive.
 
-**A. Find the real historical source.** This API is the *index* service. KMA's
-기상자료개방포털 and 국립기상과학원 publish bulk observation datasets on
-different services. Unverified — nobody has looked yet, and it is the single
-highest-value hour available on this project.
+**A. Find the real historical source. It exists.** Researched on 2026-08-09:
+Korea runs a national pollen observation network — 8 stations, 13 taxa,
+observations published from 2007, and the current 꽃가루 달력 is built from
+2014–2024 data. Details, the station/region mismatch, and what is still
+unverified are in [research/0003](../research/0003-korea-historical-pollen-data.md).
+
+This changes the ask to the mentor from *rescope the project* to *help us reach
+this portal*. Access method is still unconfirmed — the obvious KMA URL returns
+"content not prepared".
 
 **B. Accumulate our own ground truth, starting immediately.** `today` is KMA's
 nowcast — the closest thing to an observation the API has. Storing every
