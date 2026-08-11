@@ -111,6 +111,9 @@ stable.
 
 ## Working agreement
 
+- **Using an AI agent? Point it at [AGENTS.md](AGENTS.md) first.** It is the
+  contribution protocol: task boundaries, the verification commands, what to
+  report, and the traps this codebase has already hit.
 - Branch per person: `feat/ismoiljon`, `feat/jamshid`, `feat/giyos`
 - Nothing merges to `main` without a review and green CI
 - Every PR reviewed within 24 hours

@@ -1,5 +1,9 @@
 # Pollen Today — working rules for Claude
 
+> **[AGENTS.md](AGENTS.md) is the contribution protocol for every agent**, in
+> any tool. Read it first. This file adds Claude-Code-specific detail; where the
+> two disagree, AGENTS.md wins and this file needs updating.
+
 Project rules live in [docs/CONVENTIONS.md](docs/CONVENTIONS.md) and
 [docs/DEFINITION_OF_DONE.md](docs/DEFINITION_OF_DONE.md). Read those before
 writing code. What follows is about *how to work*, not what to build.
