@@ -1,37 +1,27 @@
-node_modules/
-dist/
-build/
-.turbo/
-*.tsbuildinfo
-
-# Env
+# env / secrets
 .env
 .env.local
-.env.*.local
+*.env
 
-# Data — never commit KMA dumps
-data/raw/
-*.csv
-*.parquet
-
-# Python (ml/ training only, never deployed)
+# python
 __pycache__/
-*.py[cod]
-.venv/
-.ipynb_checkpoints/
-
-# OS / editor
-.DS_Store
-Thumbs.db
-.idea/
-.vscode/
-*.log
-
-# standalone build of the schema generator
-dist-tools/
-
-# Python virtualenv and caches
+*.pyc
 .venv/
 .pytest_cache/
 .ruff_cache/
-*.egg-info/
+
+# node / next
+node_modules/
+.next/
+out/
+dist/
+*.tsbuildinfo
+
+# db / data
+data/raw/
+pgdata/
+
+# os / editor
+.DS_Store
+.idea/
+.vscode/

@@ -1,17 +1,36 @@
-# Local development only. Deployment is the mentor's (devops) call — this file
-# exists so all three of us get an identical database with one command.
 services:
-  mongo:
-    image: mongo:7
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: allergy
+      POSTGRES_PASSWORD: allergy
+      POSTGRES_DB: allergy_ai
     ports:
-      - "27017:27017"
+      - "5432:5432"
     volumes:
-      - mongodata:/data/db
+      - pgdata:/var/lib/postgresql/data
+      - ./backend/db/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      test: ["CMD-SHELL", "pg_isready -U allergy -d allergy_ai"]
       interval: 5s
       timeout: 3s
       retries: 10
 
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
+
+  api:
+    build: ./backend
+    environment:
+      DATABASE_URL: postgresql+asyncpg://allergy:allergy@db:5432/allergy_ai
+      REDIS_URL: redis://redis:6379
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+
 volumes:
-  mongodata:
+  pgdata:

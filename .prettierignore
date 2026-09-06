@@ -1,8 +1,0 @@
-node_modules
-dist
-pnpm-lock.yaml
-*.md
-
-# Generated from src/schema/*.graphql — formatting it would fight the generator
-packages/contracts/src/graphql.ts
-dist-tools
