@@ -8,7 +8,7 @@ in parallel. Phases map to the roadmap in `docs/pollen_documentation.md` §21.
 ## Done
 
 - [x] Reset repo to Allergy AI Companion, archive spec → `docs/pollen_documentation.md`
-- [x] ERD in Luna Modeler (`docs/erd/allergy_ai.dmm`) + `schema.sql` + generator
+- [x] ERD in Luna Modeler (`docs/erd/allergy_ai.dmm`) + `backend/db/init/01_schema.sql` + generator
 - [x] Backend scaffold: FastAPI + SQLModel, config, db, models (10 tables)
 - [x] Deterministic risk scoring (§14) + rule-based triage (§4), 10 tests green
 - [x] `/health`, `/api/environment/current`, `/api/triage` endpoints
@@ -18,14 +18,15 @@ in parallel. Phases map to the roadmap in `docs/pollen_documentation.md` §21.
 
 ## In progress
 
-- [ ] Nothing claimed. Pick from Next.
+- [~] **Phase 1 — real environmental providers** (`feat/env-providers-v2`, PR
+      open). Weather + air quality live via Open-Meteo (keyless), each degrades
+      to an empty block (never a 500) on timeout/HTTP-error/network failure.
+      Pollen returns a marked sample until a Korea provider is chosen.
+      `Touches`: `backend/app/services/{pollen,air_quality,weather}_service.py`,
+      `api/environment.py`. Remaining: pick + wire a Korea pollen provider,
+      research real threshold bands.
 
 ## Next — backend, follows the spec (no FE, that's a separate track)
-
-- [ ] **Phase 1 — real environmental providers.** Replace the stub in
-      `api/environment.py` with pollen + AQI + weather clients.
-      `Touches`: `backend/app/services/{pollen,air_quality,weather}_service.py`,
-      `api/environment.py`. Depends on: API keys in `.env`.
 - [ ] **Phase 2 — auth + allergy profile.** Register/login (JWT), user CRUD,
       allergy CRUD, personalize risk with `user_allergies`.
       `Touches`: `backend/app/api/{auth,users,allergies}.py`, `core/security.py`.

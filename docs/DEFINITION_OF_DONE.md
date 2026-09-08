@@ -39,7 +39,7 @@ human and a model read them the same way.
 ## Data model change
 
 - [ ] Edited `docs/erd/gen_dmm.py`, regenerated `allergy_ai.dmm` and
-      `schema.sql`. Generated files were not hand-edited.
+      `backend/db/init/01_schema.sql`. Generated files were not hand-edited.
 - [ ] The SQLModel tables in `backend/app/models` still match the ERD.
 
 ## Before you call it done
