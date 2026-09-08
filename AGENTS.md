@@ -60,12 +60,12 @@ other way round.
 | Folder | Answers | Changes when |
 | --- | --- | --- |
 | `docs/pollen_documentation.md` | What are we building? | the approved spec changes |
-| `research/` | What is true about the world? | reality changes, or we re-measure |
-| `headache/` | What hurt us, did we fix it? | we hit or resolve a problem |
+| `docs/research/` | What is true about the world? | reality changes, or we re-measure |
+| `docs/headache/` | What hurt us, did we fix it? | we hit or resolve a problem |
 | `docs/adr/` | What did we decide, what lost? | an architectural choice is made |
 | `TASKS.md` | What are we doing right now? | daily |
 
-Files in `research/` and `headache/` carry `status`, `owner`, `review-by`
+Files in `docs/research/` and `docs/headache/` carry `status`, `owner`, `review-by`
 frontmatter so "is this still true?" is a date check, not a guess.
 
 ## The gate

@@ -3,14 +3,12 @@ from app.services import risk
 
 
 def test_clean_air_is_low():
-    pts, level = risk.score(risk.EnvInput(tree_pollen=PollenLevel.LOW, pm25=5))
+    _pts, level = risk.score(risk.EnvInput(tree_pollen=PollenLevel.LOW, pm25=5))
     assert level is RiskLevel.LOW
 
 
 def test_high_pollen_and_pm25_is_moderate_or_high():
-    pts, level = risk.score(
-        risk.EnvInput(tree_pollen=PollenLevel.HIGH, pm25=42, wind_speed=4.2)
-    )
+    pts, level = risk.score(risk.EnvInput(tree_pollen=PollenLevel.HIGH, pm25=42, wind_speed=4.2))
     assert level in (RiskLevel.MODERATE, RiskLevel.HIGH)
     assert pts >= 3
 

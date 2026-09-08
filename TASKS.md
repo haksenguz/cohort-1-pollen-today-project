@@ -13,7 +13,7 @@ in parallel. Phases map to the roadmap in `docs/pollen_documentation.md` §21.
 - [x] Deterministic risk scoring (§14) + rule-based triage (§4), 10 tests green
 - [x] `/health`, `/api/environment/current`, `/api/triage` endpoints
 - [x] docker-compose (postgres auto-loads schema, redis, api)
-- [x] Phone-first chat prototype (`docs/design/prototype.html`)
+- [x] Phone-first chat prototype (`frontend/prototype.html`)
 - [x] Governance: AGENTS.md, GOVERNANCE, DEFINITION_OF_DONE, ADR 0001/0002, CI
 
 ## In progress
