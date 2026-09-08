@@ -1,38 +1,55 @@
-"""Offline tests for the Places client + ranking logic. No network calls:
-every httpx.AsyncClient is built with httpx.MockTransport.
+"""Offline tests for the Naver Local Search client + ranking logic. No
+network calls: every httpx.AsyncClient is built with httpx.MockTransport.
 """
 
 import httpx
 import pytest
 
 from app.services.hospital_service import (
-    PlacesClient,
-    PlacesClientError,
+    NaverLocalClient,
+    NaverLocalClientError,
     find_nearby_hospitals,
 )
 
 DAEGU_LAT, DAEGU_LON = 35.856, 129.224
 
 
-def _places_payload(*results: dict) -> dict:
-    return {"status": "OK", "results": list(results)}
+def _naver_payload(*items: dict) -> dict:
+    return {
+        "lastBuildDate": "Tue, 08 Sep 2026 00:00:00 +0900",
+        "total": len(items),
+        "start": 1,
+        "display": len(items),
+        "items": list(items),
+    }
 
 
-def _result(
+def _mapxy(lat: float, lon: float) -> tuple[str, str]:
+    """Naver's real response shape: WGS84 lon/lat * 1e7, as strings."""
+    return str(round(lon * 1e7)), str(round(lat * 1e7))
+
+
+def _item(
     name: str,
     lat: float,
     lon: float,
     *,
-    place_id: str = "place-1",
-    open_now: bool | None = True,
-    vicinity: str = "123 Main St",
+    telephone: str = "02-1234-5678",
+    address: str = "대구 동구 신천동 123",
+    road_address: str = "대구 동구 동대구로 456",
+    category: str = "병원>이비인후과",
 ) -> dict:
+    mapx, mapy = _mapxy(lat, lon)
     return {
-        "place_id": place_id,
-        "name": name,
-        "vicinity": vicinity,
-        "geometry": {"location": {"lat": lat, "lng": lon}},
-        "opening_hours": {"open_now": open_now},
+        "title": f"<b>{name}</b> 이비인후과의원",
+        "link": "https://example.com",
+        "category": category,
+        "description": "",
+        "telephone": telephone,
+        "address": address,
+        "roadAddress": road_address,
+        "mapx": mapx,
+        "mapy": mapy,
     }
 
 
@@ -41,55 +58,158 @@ def _client(handler) -> httpx.AsyncClient:
 
 
 async def test_finds_and_ranks_by_distance():
-    near = _result("Near ENT Clinic", DAEGU_LAT + 0.001, DAEGU_LON, place_id="near")
-    far = _result("Far ENT Clinic", DAEGU_LAT + 0.05, DAEGU_LON, place_id="far")
+    near = _item("Near ENT Clinic", DAEGU_LAT + 0.001, DAEGU_LON)
+    far = _item("Far ENT Clinic", DAEGU_LAT + 0.05, DAEGU_LON)
 
     def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json=_places_payload(far, near))
+        return httpx.Response(200, json=_naver_payload(far, near))
 
     async with _client(handler) as http:
-        places = PlacesClient(http, api_key="test-key")
-        outcome = await find_nearby_hospitals(places, latitude=DAEGU_LAT, longitude=DAEGU_LON)
+        naver = NaverLocalClient(http, client_id="id", client_secret="secret")
+        outcome = await find_nearby_hospitals(
+            naver, latitude=DAEGU_LAT, longitude=DAEGU_LON, radius_m=10000
+        )
 
     assert outcome.provider_available is True
-    assert [r.place_id for r in outcome.results] == ["near", "far"]
+    assert [r.name for r in outcome.results] == [
+        "Near ENT Clinic 이비인후과의원",
+        "Far ENT Clinic 이비인후과의원",
+    ]
     assert [r.rank for r in outcome.results] == [1, 2]
     assert outcome.results[0].distance_m < outcome.results[1].distance_m
 
 
-async def test_specialty_filter_sends_keyword_and_tags_results():
+async def test_html_tags_are_stripped_from_title():
+    item = _item("Central", DAEGU_LAT, DAEGU_LON)
+    item["title"] = "<b>Central</b> ENT <b>Clinic</b>"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=_naver_payload(item))
+
+    async with _client(handler) as http:
+        naver = NaverLocalClient(http, client_id="id", client_secret="secret")
+        outcome = await find_nearby_hospitals(naver, latitude=DAEGU_LAT, longitude=DAEGU_LON)
+
+    assert outcome.results[0].name == "Central ENT Clinic"
+
+
+async def test_coordinate_conversion_from_wgs84_mapx_mapy():
+    # 대구 시청 근방: lat 35.8714, lon 128.6014 roughly — use a small, known
+    # offset from the origin and check the converted point lands close by.
+    lat, lon = DAEGU_LAT + 0.01, DAEGU_LON + 0.01
+    item = _item("Coord Check", lat, lon)
+    assert item["mapx"] == str(round(lon * 1e7))
+    assert item["mapy"] == str(round(lat * 1e7))
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=_naver_payload(item))
+
+    async with _client(handler) as http:
+        naver = NaverLocalClient(http, client_id="id", client_secret="secret")
+        outcome = await find_nearby_hospitals(naver, latitude=DAEGU_LAT, longitude=DAEGU_LON)
+
+    assert outcome.results[0].distance_m is not None
+    assert outcome.results[0].distance_m > 0
+
+
+async def test_legacy_katech_coordinates_are_dropped_defensively():
+    # Old-format Naver responses used KATECH/TM128 map units, which do not
+    # divide down into valid WGS84 ranges. We should not plot a bogus point.
+    item = _item("Legacy Coords", DAEGU_LAT, DAEGU_LON)
+    item["mapx"] = "1280000000"  # /1e7 = 128.0 -> valid longitude
+    item["mapy"] = "4500000000"  # /1e7 = 450.0 -> out of WGS84 latitude range
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=_naver_payload(item))
+
+    async with _client(handler) as http:
+        naver = NaverLocalClient(http, client_id="id", client_secret="secret")
+        outcome = await find_nearby_hospitals(naver, latitude=DAEGU_LAT, longitude=DAEGU_LON)
+
+    assert outcome.results[0].distance_m is None
+
+
+async def test_specialty_filter_sends_korean_keyword_and_tags_results():
     seen_params: dict = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
         seen_params.update(dict(request.url.params))
-        return httpx.Response(
-            200, json=_places_payload(_result("ENT Center", DAEGU_LAT, DAEGU_LON))
-        )
+        return httpx.Response(200, json=_naver_payload(_item("ENT Center", DAEGU_LAT, DAEGU_LON)))
 
     async with _client(handler) as http:
-        places = PlacesClient(http, api_key="test-key")
+        naver = NaverLocalClient(http, client_id="id", client_secret="secret")
         outcome = await find_nearby_hospitals(
-            places, latitude=DAEGU_LAT, longitude=DAEGU_LON, specialty="ent"
+            naver, latitude=DAEGU_LAT, longitude=DAEGU_LON, specialty="ent"
         )
 
-    assert seen_params["keyword"] == "ENT clinic"
+    assert seen_params["query"] == "이비인후과"
     assert outcome.results[0].specialty == "ENT"
 
 
-async def test_open_now_filter_excludes_closed_facilities():
-    open_place = _result("Open Clinic", DAEGU_LAT, DAEGU_LON, place_id="open", open_now=True)
-    closed_place = _result("Closed Clinic", DAEGU_LAT, DAEGU_LON, place_id="closed", open_now=False)
+async def test_location_query_is_mixed_into_keyword():
+    seen_params: dict = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json=_places_payload(open_place, closed_place))
+        seen_params.update(dict(request.url.params))
+        return httpx.Response(200, json=_naver_payload(_item("ENT Center", DAEGU_LAT, DAEGU_LON)))
 
     async with _client(handler) as http:
-        places = PlacesClient(http, api_key="test-key")
-        outcome = await find_nearby_hospitals(
-            places, latitude=DAEGU_LAT, longitude=DAEGU_LON, open_now=True
+        naver = NaverLocalClient(http, client_id="id", client_secret="secret")
+        await find_nearby_hospitals(
+            naver,
+            latitude=DAEGU_LAT,
+            longitude=DAEGU_LON,
+            specialty="ent",
+            location_query="대구 동구",
         )
 
-    assert [r.place_id for r in outcome.results] == ["open"]
+    assert seen_params["query"] == "대구 동구 이비인후과"
+
+
+async def test_display_is_capped_at_five_and_start_is_always_one():
+    seen_params: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen_params.update(dict(request.url.params))
+        return httpx.Response(200, json=_naver_payload())
+
+    async with _client(handler) as http:
+        naver = NaverLocalClient(http, client_id="id", client_secret="secret")
+        await naver.search(query="병원", display=50)
+
+    assert seen_params["display"] == "5"
+    assert seen_params["start"] == "1"
+
+
+async def test_client_sends_naver_auth_headers():
+    seen_headers: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen_headers.update(dict(request.headers))
+        return httpx.Response(200, json=_naver_payload())
+
+    async with _client(handler) as http:
+        naver = NaverLocalClient(http, client_id="my-id", client_secret="my-secret")
+        await naver.search(query="병원")
+
+    assert seen_headers["x-naver-client-id"] == "my-id"
+    assert seen_headers["x-naver-client-secret"] == "my-secret"
+
+
+async def test_radius_m_filters_client_side_after_ranking():
+    near = _item("Near Clinic", DAEGU_LAT + 0.001, DAEGU_LON)
+    far = _item("Far Clinic", DAEGU_LAT + 0.5, DAEGU_LON)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=_naver_payload(near, far))
+
+    async with _client(handler) as http:
+        naver = NaverLocalClient(http, client_id="id", client_secret="secret")
+        outcome = await find_nearby_hospitals(
+            naver, latitude=DAEGU_LAT, longitude=DAEGU_LON, radius_m=2000
+        )
+
+    assert [r.name for r in outcome.results] == ["Near Clinic 이비인후과의원"]
 
 
 async def test_provider_http_failure_is_handled_gracefully():
@@ -97,8 +217,8 @@ async def test_provider_http_failure_is_handled_gracefully():
         return httpx.Response(500, text="upstream on fire")
 
     async with _client(handler) as http:
-        places = PlacesClient(http, api_key="test-key")
-        outcome = await find_nearby_hospitals(places, latitude=DAEGU_LAT, longitude=DAEGU_LON)
+        naver = NaverLocalClient(http, client_id="id", client_secret="secret")
+        outcome = await find_nearby_hospitals(naver, latitude=DAEGU_LAT, longitude=DAEGU_LON)
 
     assert outcome.provider_available is False
     assert outcome.results == []
@@ -110,72 +230,64 @@ async def test_provider_timeout_is_handled_gracefully():
         raise httpx.ConnectTimeout("connect timed out", request=request)
 
     async with _client(handler) as http:
-        places = PlacesClient(http, api_key="test-key")
-        outcome = await find_nearby_hospitals(places, latitude=DAEGU_LAT, longitude=DAEGU_LON)
+        naver = NaverLocalClient(http, client_id="id", client_secret="secret")
+        outcome = await find_nearby_hospitals(naver, latitude=DAEGU_LAT, longitude=DAEGU_LON)
 
     assert outcome.provider_available is False
     assert outcome.results == []
 
 
-async def test_provider_api_error_status_is_handled_gracefully():
+async def test_provider_api_error_body_is_handled_gracefully():
     def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json={"status": "REQUEST_DENIED", "error_message": "bad key"})
-
-    async with _client(handler) as http:
-        places = PlacesClient(http, api_key="test-key")
-        outcome = await find_nearby_hospitals(places, latitude=DAEGU_LAT, longitude=DAEGU_LON)
-
-    assert outcome.provider_available is False
-    assert outcome.results == []
-
-
-async def test_missing_api_key_is_handled_gracefully():
-    def handler(request: httpx.Request) -> httpx.Response:
-        raise AssertionError("must not call the network without an api key")
-
-    async with _client(handler) as http:
-        places = PlacesClient(http, api_key="")
-        outcome = await find_nearby_hospitals(places, latitude=DAEGU_LAT, longitude=DAEGU_LON)
-
-    assert outcome.provider_available is False
-
-
-async def test_results_missing_a_name_are_skipped():
-    bad = {"place_id": "no-name", "geometry": {"location": {"lat": DAEGU_LAT, "lng": DAEGU_LON}}}
-    good = _result("Real Clinic", DAEGU_LAT, DAEGU_LON, place_id="real")
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json=_places_payload(bad, good))
-
-    async with _client(handler) as http:
-        places = PlacesClient(http, api_key="test-key")
-        outcome = await find_nearby_hospitals(places, latitude=DAEGU_LAT, longitude=DAEGU_LON)
-
-    assert [r.place_id for r in outcome.results] == ["real"]
-
-
-async def test_limit_caps_result_count():
-    results = [_result(f"Clinic {i}", DAEGU_LAT, DAEGU_LON, place_id=str(i)) for i in range(5)]
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json=_places_payload(*results))
-
-    async with _client(handler) as http:
-        places = PlacesClient(http, api_key="test-key")
-        outcome = await find_nearby_hospitals(
-            places, latitude=DAEGU_LAT, longitude=DAEGU_LON, limit=2
+        return httpx.Response(
+            200, json={"errorMessage": "Invalid display value", "errorCode": "SE02"}
         )
 
-    assert len(outcome.results) == 2
+    async with _client(handler) as http:
+        naver = NaverLocalClient(http, client_id="id", client_secret="secret")
+        outcome = await find_nearby_hospitals(naver, latitude=DAEGU_LAT, longitude=DAEGU_LON)
+
+    assert outcome.provider_available is False
+    assert outcome.results == []
 
 
-async def test_places_client_raises_on_bad_json():
+async def test_missing_credentials_is_handled_gracefully():
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise AssertionError("must not call the network without credentials")
+
+    async with _client(handler) as http:
+        naver = NaverLocalClient(http, client_id="", client_secret="")
+        outcome = await find_nearby_hospitals(naver, latitude=DAEGU_LAT, longitude=DAEGU_LON)
+
+    assert outcome.provider_available is False
+
+
+async def test_results_missing_a_title_are_skipped():
+    bad = {
+        "category": "병원",
+        "telephone": "",
+        "address": "",
+        "roadAddress": "",
+        "mapx": str(round(DAEGU_LON * 1e7)),
+        "mapy": str(round(DAEGU_LAT * 1e7)),
+    }
+    good = _item("Real Clinic", DAEGU_LAT, DAEGU_LON)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=_naver_payload(bad, good))
+
+    async with _client(handler) as http:
+        naver = NaverLocalClient(http, client_id="id", client_secret="secret")
+        outcome = await find_nearby_hospitals(naver, latitude=DAEGU_LAT, longitude=DAEGU_LON)
+
+    assert [r.name for r in outcome.results] == ["Real Clinic 이비인후과의원"]
+
+
+async def test_naver_client_raises_on_bad_json():
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, text="not json")
 
     async with _client(handler) as http:
-        places = PlacesClient(http, api_key="test-key")
-        with pytest.raises(PlacesClientError):
-            await places.nearby_search(
-                latitude=DAEGU_LAT, longitude=DAEGU_LON, radius_m=5000, keyword=None
-            )
+        naver = NaverLocalClient(http, client_id="id", client_secret="secret")
+        with pytest.raises(NaverLocalClientError):
+            await naver.search(query="병원")

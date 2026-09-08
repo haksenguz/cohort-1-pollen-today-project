@@ -13,17 +13,20 @@ from app.main import app
 DAEGU_LAT, DAEGU_LON = 35.856, 129.224
 
 
-def _places_payload(*results: dict) -> dict:
-    return {"status": "OK", "results": list(results)}
+def _naver_payload(*items: dict) -> dict:
+    return {"total": len(items), "start": 1, "display": len(items), "items": list(items)}
 
 
-def _result(name: str, lat: float, lon: float, place_id: str = "place-1") -> dict:
+def _item(name: str, lat: float, lon: float) -> dict:
     return {
-        "place_id": place_id,
-        "name": name,
-        "vicinity": "123 Main St",
-        "geometry": {"location": {"lat": lat, "lng": lon}},
-        "opening_hours": {"open_now": True},
+        "title": f"<b>{name}</b>",
+        "category": "병원>이비인후과",
+        "description": "",
+        "telephone": "02-1234-5678",
+        "address": "대구 동구 신천동 123",
+        "roadAddress": "대구 동구 동대구로 456",
+        "mapx": str(round(lon * 1e7)),
+        "mapy": str(round(lat * 1e7)),
     }
 
 
@@ -37,7 +40,9 @@ def _override_http_client(handler):
 
 @pytest.fixture(autouse=True)
 def _clear_overrides():
-    app.dependency_overrides[get_settings] = lambda: Settings(google_maps_api_key="test-key")
+    app.dependency_overrides[get_settings] = lambda: Settings(
+        naver_client_id="test-id", naver_client_secret="test-secret"
+    )
     yield
     app.dependency_overrides.pop(hospitals.get_http_client, None)
     app.dependency_overrides.pop(get_settings, None)
@@ -45,9 +50,7 @@ def _clear_overrides():
 
 def test_nearby_returns_ranked_results():
     def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(
-            200, json=_places_payload(_result("ENT Clinic", DAEGU_LAT, DAEGU_LON))
-        )
+        return httpx.Response(200, json=_naver_payload(_item("ENT Clinic", DAEGU_LAT, DAEGU_LON)))
 
     app.dependency_overrides[hospitals.get_http_client] = _override_http_client(handler)
 
@@ -62,6 +65,8 @@ def test_nearby_returns_ranked_results():
     assert body["count"] == 1
     assert body["results"][0]["name"] == "ENT Clinic"
     assert body["results"][0]["rank"] == 1
+    assert "place_id" not in body["results"][0]
+    assert "is_open" not in body["results"][0]
 
 
 def test_nearby_survives_dead_upstream():
@@ -87,22 +92,59 @@ def test_nearby_rejects_out_of_range_latitude():
     assert resp.status_code == 422
 
 
-def test_nearby_open_now_filter_round_trip():
-    open_place = _result("Open Clinic", DAEGU_LAT, DAEGU_LON, place_id="open")
-    closed_place = {**_result("Closed Clinic", DAEGU_LAT, DAEGU_LON, place_id="closed")}
-    closed_place["opening_hours"] = {"open_now": False}
+def test_nearby_has_no_open_now_param():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=_naver_payload(_item("Clinic", DAEGU_LAT, DAEGU_LON)))
+
+    app.dependency_overrides[hospitals.get_http_client] = _override_http_client(handler)
+
+    with TestClient(app) as client:
+        # open_now is silently ignored (not a declared query param) rather
+        # than accepted and lied about.
+        resp = client.get(
+            "/api/hospitals/nearby",
+            params={"lat": DAEGU_LAT, "lon": DAEGU_LON, "open_now": True},
+        )
+
+    assert resp.status_code == 200
+    assert "open_now" not in resp.json()
+    assert "is_open" not in resp.json()["results"][0]
+
+
+def test_nearby_location_query_round_trip():
+    seen_params: dict = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json=_places_payload(open_place, closed_place))
+        seen_params.update(dict(request.url.params))
+        return httpx.Response(200, json=_naver_payload(_item("Clinic", DAEGU_LAT, DAEGU_LON)))
 
     app.dependency_overrides[hospitals.get_http_client] = _override_http_client(handler)
 
     with TestClient(app) as client:
         resp = client.get(
             "/api/hospitals/nearby",
-            params={"lat": DAEGU_LAT, "lon": DAEGU_LON, "open_now": True},
+            params={
+                "lat": DAEGU_LAT,
+                "lon": DAEGU_LON,
+                "specialty": "ENT",
+                "location_query": "대구 동구",
+            },
         )
 
-    body = resp.json()
-    assert body["count"] == 1
-    assert body["results"][0]["place_id"] == "open"
+    assert resp.status_code == 200
+    assert seen_params["query"] == "대구 동구 이비인후과"
+
+
+def test_nearby_caps_at_five_results():
+    items = [_item(f"Clinic {i}", DAEGU_LAT, DAEGU_LON) for i in range(5)]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.params["display"] == "5"
+        return httpx.Response(200, json=_naver_payload(*items))
+
+    app.dependency_overrides[hospitals.get_http_client] = _override_http_client(handler)
+
+    with TestClient(app) as client:
+        resp = client.get("/api/hospitals/nearby", params={"lat": DAEGU_LAT, "lon": DAEGU_LON})
+
+    assert resp.json()["count"] == 5

@@ -12,7 +12,8 @@ class Settings(BaseSettings):
 
     # external services — keys stay server-side, never shipped to the frontend
     openai_api_key: str = ""
-    google_maps_api_key: str = ""
+    naver_client_id: str = ""
+    naver_client_secret: str = ""
     pollen_api_key: str = ""
     weather_api_key: str = ""
     jwt_secret: str = "change-me"
