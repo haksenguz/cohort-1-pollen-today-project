@@ -17,10 +17,12 @@ other way round.
    [ADR 0001](docs/adr/0001-llm-does-not-decide-safety.md).
 2. **Never invent Ismoiljon's facts or a patient's.** No fabricated numbers,
    symptoms, or clinical claims. Sample data is labelled as sample.
-3. **Push identity is fixed.** Commit and push as **ismoiljon1101**
-   (`ismoiljonedu@gmail.com`), only to remotes under
-   `github.com/Ismoiljon1101/`. Never as Claude, never a `Co-Authored-By`
-   trailer, never to `origin` (haksenguz) or `main`.
+3. **Push identity and the repo flow are fixed.** Commit and push as
+   **ismoiljon1101** (`ismoiljonedu@gmail.com`). The team repo is `origin` =
+   `github.com/haksenguz/cohort-1-pollen-today-project`. Work on a feature
+   branch, open a PR into `develop`; `main` is stable and deploy-only. Keep the
+   `Ismoiljon1101` fork (`mine`) in sync. Never commit or push as Claude, never
+   a `Co-Authored-By` trailer, never force-push `main`.
 4. **A change is not done until it builds and its tests pass** on your machine.
    An agent's report is a claim; the running system is the proof. See
    [DEFINITION_OF_DONE](docs/DEFINITION_OF_DONE.md).
