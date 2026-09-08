@@ -13,9 +13,7 @@ def test_airway_swelling_is_emergency():
 
 
 def test_red_flag_symptom_is_emergency_even_with_low_severity():
-    out = triage.assess(
-        triage.SymptomInput(symptoms=["sneezing", "throat_swelling"], severity=1)
-    )
+    out = triage.assess(triage.SymptomInput(symptoms=["sneezing", "throat_swelling"], severity=1))
     assert out.level is TriageLevel.EMERGENCY
 
 
