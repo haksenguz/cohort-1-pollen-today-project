@@ -7,33 +7,34 @@
 
 ## Git push identity — MANDATORY LAW
 
-Every commit and push in this repo goes out as **ismoiljon1101**. No exceptions.
+Every commit and push goes out as **ismoiljon1101**. No exceptions.
 
 - Author name: **Ismoiljon**
 - Author email: **ismoiljonedu@gmail.com**
-- Push target: only remotes under **github.com/Ismoiljon1101/**. In this repo
-  that is the `mine` remote. **Never** push to `origin` (haksenguz upstream) or
-  any other account.
+- **Team repo** is `origin` = **github.com/haksenguz/cohort-1-pollen-today-project**.
+  We work here now: feature branch, PR into `develop`. `main` is stable and
+  deploy-only. Also keep the `Ismoiljon1101` fork (`mine`) in sync.
 - **Never** commit or push as Claude. **Never** add a `Co-Authored-By` trailer
-  or any Claude/AI attribution to commits or PRs here.
+  or any Claude/AI attribution to commits or PRs.
+- **Never** force-push `main` on either remote.
 
 Before any `git push`, verify:
 
 ```bash
 git config user.name    # -> Ismoiljon
 git config user.email   # -> ismoiljonedu@gmail.com
-git remote get-url mine # -> https://github.com/Ismoiljon1101/...
+git remote -v           # origin -> haksenguz (team), mine -> Ismoiljon1101 (fork)
 ```
 
-If identity or remote is wrong, fix it before pushing.
+If identity is wrong, fix it before pushing.
 
 ## Project
 
 - Backend: FastAPI + SQLModel (`backend/`). Package manager for Python: `uv`.
 - Data model: `docs/erd/allergy_ai.dmm` (Luna Modeler) is the ERD. Regenerate it
   and `schema.sql` from `docs/erd/gen_dmm.py`.
-- Frontend is a phone-first **PWA**, designed and built separately. Do not
-  scaffold or build frontend UI here unless asked.
+- Frontend is a phone-first **PWA** in `frontend/` (prototype only for now).
+  Do not scaffold or build frontend UI there unless asked.
 - Safety-critical rule: the LLM only does conversation + extraction; the
   deterministic engine in `backend/app/services/triage.py` owns every safety
   decision. Keep its tests green.

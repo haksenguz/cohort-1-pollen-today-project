@@ -1,4 +1,4 @@
-# research/
+# docs/research/
 
 What is true about the world, and how we know. One claim per file. Changes when
 reality changes or we measure again.

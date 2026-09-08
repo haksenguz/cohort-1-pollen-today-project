@@ -17,10 +17,12 @@ other way round.
    [ADR 0001](docs/adr/0001-llm-does-not-decide-safety.md).
 2. **Never invent Ismoiljon's facts or a patient's.** No fabricated numbers,
    symptoms, or clinical claims. Sample data is labelled as sample.
-3. **Push identity is fixed.** Commit and push as **ismoiljon1101**
-   (`ismoiljonedu@gmail.com`), only to remotes under
-   `github.com/Ismoiljon1101/`. Never as Claude, never a `Co-Authored-By`
-   trailer, never to `origin` (haksenguz) or `main`.
+3. **Push identity and the repo flow are fixed.** Commit and push as
+   **ismoiljon1101** (`ismoiljonedu@gmail.com`). The team repo is `origin` =
+   `github.com/haksenguz/cohort-1-pollen-today-project`. Work on a feature
+   branch, open a PR into `develop`; `main` is stable and deploy-only. Keep the
+   `Ismoiljon1101` fork (`mine`) in sync. Never commit or push as Claude, never
+   a `Co-Authored-By` trailer, never force-push `main`.
 4. **A change is not done until it builds and its tests pass** on your machine.
    An agent's report is a claim; the running system is the proof. See
    [DEFINITION_OF_DONE](docs/DEFINITION_OF_DONE.md).
@@ -58,12 +60,12 @@ other way round.
 | Folder | Answers | Changes when |
 | --- | --- | --- |
 | `docs/pollen_documentation.md` | What are we building? | the approved spec changes |
-| `research/` | What is true about the world? | reality changes, or we re-measure |
-| `headache/` | What hurt us, did we fix it? | we hit or resolve a problem |
+| `docs/research/` | What is true about the world? | reality changes, or we re-measure |
+| `docs/headache/` | What hurt us, did we fix it? | we hit or resolve a problem |
 | `docs/adr/` | What did we decide, what lost? | an architectural choice is made |
 | `TASKS.md` | What are we doing right now? | daily |
 
-Files in `research/` and `headache/` carry `status`, `owner`, `review-by`
+Files in `docs/research/` and `docs/headache/` carry `status`, `owner`, `review-by`
 frontmatter so "is this still true?" is a date check, not a guess.
 
 ## The gate

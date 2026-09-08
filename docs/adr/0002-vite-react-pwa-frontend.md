@@ -17,7 +17,7 @@ Vite + React + `vite-plugin-pwa`. The frontend is a client SPA that talks to the
 FastAPI backend over HTTPS and streams chat over SSE. Chat UI is lifted from
 existing kits (shadcn/ui chat components, assistant-ui with its LangGraph
 adapter), not hand-built. The polished visual design is done by a designer; the
-committed HTML prototype in `docs/design/prototype.html` is the reference.
+committed HTML prototype in `frontend/prototype.html` is the reference.
 
 ## Alternatives rejected
 
@@ -32,5 +32,5 @@ committed HTML prototype in `docs/design/prototype.html` is the reference.
 
 One mental model (everything is client), browser-only debugging, first-class
 PWA. The backend contract (its REST + SSE API) is the boundary the PWA consumes,
-which keeps the two tracks independent. Frontend lives on its own and is not
-scaffolded in this repo until the design is settled.
+which keeps the two tracks independent. Frontend lives in `frontend/` and is not
+scaffolded (Vite) until the design is settled; only the prototype sits there now.
