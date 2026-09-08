@@ -3,15 +3,15 @@
 Source of truth: [`allergy_ai.dmm`](allergy_ai.dmm) — open in **Luna Modeler**
 (Datensen). `File → Open` and pick the `.dmm`. Regenerate with
 [`gen_dmm.py`](gen_dmm.py); the same script also emits
-[`schema.sql`](schema.sql).
+[`01_schema.sql`](../../backend/db/init/01_schema.sql).
 
 Two ways to view it in Luna Modeler:
 
 1. **Open the `.dmm` directly** — no database needed.
-2. **Reverse-engineer** — run `schema.sql` into Postgres (docker-compose does
-   this automatically via `backend/db/init/`), then in Luna: new PostgreSQL
-   connection → reverse engineer. Use this if you prefer Luna to draw the model
-   from a live DB.
+2. **Reverse-engineer** — run `01_schema.sql` into Postgres (docker-compose
+   does this automatically via `backend/db/init/`), then in Luna: new
+   PostgreSQL connection → reverse engineer. Use this if you prefer Luna to
+   draw the model from a live DB.
 
 ## Diagram
 

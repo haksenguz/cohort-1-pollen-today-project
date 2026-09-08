@@ -30,8 +30,8 @@ The core design rule: the **LLM does conversation + extraction only**; a
 
 - ERD (open in **Luna Modeler**): [`docs/erd/allergy_ai.dmm`](docs/erd/allergy_ai.dmm)
 - Viewable diagram + notes: [`docs/erd/ERD.md`](docs/erd/ERD.md)
-- DDL: [`docs/erd/schema.sql`](docs/erd/schema.sql) (also runs on first
-  `docker compose up` via `backend/db/init/`)
+- DDL: [`backend/db/init/01_schema.sql`](backend/db/init/01_schema.sql) (also
+  runs on first `docker compose up` via `backend/db/init/`)
 - Regenerate both from one spec: `python docs/erd/gen_dmm.py`
 
 ## Run
@@ -56,9 +56,9 @@ uv run pytest                 # safety-critical: triage + risk
 ## Layout
 
 ```
-backend/    FastAPI + SQLModel + rule engines + agents (uv, pytest)
+backend/    FastAPI + SQLModel + rule engines + agents, plus db/init DDL
 frontend/   phone-first PWA — HTML prototype now, Vite + React later (ADR 0002)
-docs/       spec, ERD (.dmm, schema.sql), ADRs, research/, headache/, governance
+docs/       spec, ERD (.dmm, generator), ADRs, research/, headache/, governance
 ```
 
 ## Roadmap
