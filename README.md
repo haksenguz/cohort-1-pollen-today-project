@@ -56,12 +56,10 @@ uv run pytest                 # safety-critical: triage + risk
 ## Layout
 
 ```
-backend/      FastAPI + SQLModel + rule engines + agents
-docs/erd/     Luna Modeler .dmm, schema.sql, ERD.md, generator
-docs/         product documentation
+backend/    FastAPI + SQLModel + rule engines + agents (uv, pytest)
+frontend/   phone-first PWA — HTML prototype now, Vite + React later (ADR 0002)
+docs/       spec, ERD (.dmm, schema.sql), ADRs, research/, headache/, governance
 ```
-
-Frontend (mobile PWA) lives in its own design/build track.
 
 ## Roadmap
 

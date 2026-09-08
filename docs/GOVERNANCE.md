@@ -56,7 +56,7 @@ is unambiguous to a human and a model. Use it for done-conditions. ([DEV][dev])
 | Definition of done + EARS criteria | [`DEFINITION_OF_DONE.md`](DEFINITION_OF_DONE.md) |
 | Decisions with rejected alternatives | [`docs/adr/`](adr/) |
 | Progress + task boundaries | [`TASKS.md`](../TASKS.md), mapped to the spec's Phase 1–7 |
-| Staleness mechanism | `research/` + `headache/` frontmatter (`status`, `owner`, `review-by`) |
+| Staleness mechanism | `docs/research/` + `docs/headache/` frontmatter (`status`, `owner`, `review-by`) |
 | Verify, don't trust the agent | DoD rule: builds green on your machine before merge |
 
 ## The one-line rule for us

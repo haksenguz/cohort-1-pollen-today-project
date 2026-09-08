@@ -33,8 +33,8 @@ If identity is wrong, fix it before pushing.
 - Backend: FastAPI + SQLModel (`backend/`). Package manager for Python: `uv`.
 - Data model: `docs/erd/allergy_ai.dmm` (Luna Modeler) is the ERD. Regenerate it
   and `schema.sql` from `docs/erd/gen_dmm.py`.
-- Frontend is a phone-first **PWA**, designed and built separately. Do not
-  scaffold or build frontend UI here unless asked.
+- Frontend is a phone-first **PWA** in `frontend/` (prototype only for now).
+  Do not scaffold or build frontend UI there unless asked.
 - Safety-critical rule: the LLM only does conversation + extraction; the
   deterministic engine in `backend/app/services/triage.py` owns every safety
   decision. Keep its tests green.
