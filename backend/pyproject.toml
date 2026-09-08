@@ -9,6 +9,8 @@ dependencies = [
     "asyncpg>=0.29",
     "pydantic-settings>=2.4",
     "httpx>=0.27",
+    "alembic>=1.13",
+    "greenlet>=3.0",
 ]
 
 [dependency-groups]
