@@ -1,5 +1,10 @@
 # Allergy AI Companion — working rules for Claude
 
+> [AGENTS.md](AGENTS.md) is the contract every agent follows, and the spec is
+> [docs/pollen_documentation.md](docs/pollen_documentation.md). Read both first.
+> How we keep agents on-spec: [docs/GOVERNANCE.md](docs/GOVERNANCE.md). Where
+> AGENTS.md and this file disagree, AGENTS.md wins.
+
 ## Git push identity — MANDATORY LAW
 
 Every commit and push in this repo goes out as **ismoiljon1101**. No exceptions.
