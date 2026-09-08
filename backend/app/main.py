@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import environment, health, triage
+from app.api import chat, environment, health, triage
 from app.core.config import get_settings
 
 settings = get_settings()
@@ -39,6 +39,7 @@ app.add_middleware(
 app.include_router(health.router)
 app.include_router(environment.router)
 app.include_router(triage.router)
+app.include_router(chat.router)
 
 
 @app.get("/")
