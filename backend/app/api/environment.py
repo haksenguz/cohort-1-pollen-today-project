@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from typing import Annotated
 
 import httpx
@@ -11,6 +12,8 @@ from app.services import air_quality_service as aqs
 from app.services import pollen_service as ps
 from app.services import risk
 from app.services import weather_service as ws
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/environment", tags=["environment"])
 
@@ -44,13 +47,28 @@ class EnvironmentResponse(BaseModel):
 
 
 async def _gather(lat: float, lon: float) -> EnvironmentResponse:
+    """Fetch pollen/AQI/weather concurrently and feed the deterministic risk
+    scorer. Each provider degrades independently (see the *_service modules)
+    so one being down/unkeyed never 500s this endpoint; return_exceptions here
+    is a second line of defense in case a provider's own guard is bypassed —
+    an unexpected failure just becomes an empty block instead of a 500."""
     key = get_settings().pollen_api_key
     async with httpx.AsyncClient() as client:
         weather, air, pollen = await asyncio.gather(
             ws.fetch_weather(lat, lon, client),
             aqs.fetch_air_quality(lat, lon, client),
             ps.fetch_pollen(lat, lon, key),
+            return_exceptions=True,
         )
+    if isinstance(weather, BaseException):
+        logger.warning("weather provider raised unexpectedly", exc_info=weather)
+        weather = ws.WeatherData()
+    if isinstance(air, BaseException):
+        logger.warning("air quality provider raised unexpectedly", exc_info=air)
+        air = aqs.AirQualityData()
+    if isinstance(pollen, BaseException):
+        logger.warning("pollen provider raised unexpectedly", exc_info=pollen)
+        pollen = ps.PollenData()
     pts, level = risk.score(
         risk.EnvInput(
             tree_pollen=pollen.tree,

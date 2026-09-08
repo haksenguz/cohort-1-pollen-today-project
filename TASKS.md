@@ -18,10 +18,11 @@ in parallel. Phases map to the roadmap in `docs/pollen_documentation.md` §21.
 
 ## In progress
 
-- [~] **Phase 1 — real environmental providers** (`feat/env-providers`, PR open).
-      Weather + air quality now live via Open-Meteo (keyless). Pollen returns a
-      marked sample until a Korea provider is chosen. `Touches`:
-      `backend/app/services/{pollen,air_quality,weather}_service.py`,
+- [~] **Phase 1 — real environmental providers** (`feat/env-providers-v2`, PR
+      open). Weather + air quality live via Open-Meteo (keyless), each degrades
+      to an empty block (never a 500) on timeout/HTTP-error/network failure.
+      Pollen returns a marked sample until a Korea provider is chosen.
+      `Touches`: `backend/app/services/{pollen,air_quality,weather}_service.py`,
       `api/environment.py`. Remaining: pick + wire a Korea pollen provider,
       research real threshold bands.
 
