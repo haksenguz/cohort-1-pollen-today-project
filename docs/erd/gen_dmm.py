@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 """Generate a Luna Modeler .dmm (PostgreSQL) project for Allergy AI Companion."""
 import json, uuid, time
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+DMM_OUT = Path(__file__).resolve().parent / "allergy_ai.dmm"
+SCHEMA_OUT = REPO_ROOT / "backend" / "db" / "init" / "01_schema.sql"
 
 def uid(): return str(uuid.uuid4())
 
@@ -243,12 +248,12 @@ doc = dict(
     order=list(tname_to_id.values()), collapsedTreeItems=[], reverseStats={},
 )
 
-out = "allergy_ai.dmm"
+out = DMM_OUT
 with open(out, "w", encoding="utf-8") as f:
     json.dump(doc, f, indent=1)
 print(f"wrote {out}: {len(tables)} tables, {len(relations)} relations")
 
-# ---- also emit schema.sql ----------------------------------------------
+# ---- also emit backend/db/init/01_schema.sql ----------------------------
 def sql_type(c):
     dt, p = c["dt"], c["param"]
     if dt == "serial": return "SERIAL"
@@ -275,6 +280,6 @@ for tname, cols in SCHEMA.items():
         body.append("    UNIQUE (email)")
     lines.append(",\n".join(body + fks))
     lines.append(");\n")
-with open("schema.sql", "w", encoding="utf-8") as f:
+with open(SCHEMA_OUT, "w", encoding="utf-8") as f:
     f.write("\n".join(lines))
-print("wrote schema.sql")
+print(f"wrote {SCHEMA_OUT}")

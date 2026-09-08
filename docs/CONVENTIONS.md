@@ -30,9 +30,9 @@ Detail behind [`AGENTS.md`](../AGENTS.md). Small and specific on purpose.
 
 ## Git
 
-- Branch `feat/ismoiljon`, PR into `main`. Conventional Commits
-  (`feat:`, `fix:`, `docs:`, `chore:`). Author **ismoiljon1101**, no
-  `Co-Authored-By`.
+- Feature branch, PR into `develop`. `main` is stable and deploy-only.
+  Conventional Commits (`feat:`, `fix:`, `docs:`, `chore:`). Author
+  **ismoiljon1101**, no `Co-Authored-By`.
 
 ## Config and secrets
 

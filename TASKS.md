@@ -8,7 +8,7 @@ in parallel. Phases map to the roadmap in `docs/pollen_documentation.md` §21.
 ## Done
 
 - [x] Reset repo to Allergy AI Companion, archive spec → `docs/pollen_documentation.md`
-- [x] ERD in Luna Modeler (`docs/erd/allergy_ai.dmm`) + `schema.sql` + generator
+- [x] ERD in Luna Modeler (`docs/erd/allergy_ai.dmm`) + `backend/db/init/01_schema.sql` + generator
 - [x] Backend scaffold: FastAPI + SQLModel, config, db, models (10 tables)
 - [x] Deterministic risk scoring (§14) + rule-based triage (§4), 10 tests green
 - [x] `/health`, `/api/environment/current`, `/api/triage` endpoints
