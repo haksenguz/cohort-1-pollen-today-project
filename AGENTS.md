@@ -37,8 +37,8 @@ other way round.
    `backend/app/core/enums.py`. Do not redefine a payload the spec already
    defines.
 8. The ERD is `docs/erd/allergy_ai.dmm`. Change it by editing
-   `docs/erd/gen_dmm.py` and regenerating (it also emits `schema.sql`). Never
-   hand-edit the generated files.
+   `docs/erd/gen_dmm.py` and regenerating (it also emits
+   `backend/db/init/01_schema.sql`). Never hand-edit the generated files.
 9. Read `TASKS.md` before non-trivial work. Two tasks whose `Touches` overlap do
    not run in parallel.
 10. Backend Python uses `uv`. Web uses `pnpm`, never `npm`/`yarn`.
