@@ -1,10 +1,16 @@
+import asyncio
 from typing import Annotated
 
+import httpx
 from fastapi import APIRouter, Query
 from pydantic import BaseModel
 
+from app.core.config import get_settings
 from app.core.enums import PollenLevel, RiskLevel
+from app.services import air_quality_service as aqs
+from app.services import pollen_service as ps
 from app.services import risk
+from app.services import weather_service as ws
 
 router = APIRouter(prefix="/api/environment", tags=["environment"])
 
@@ -34,31 +40,40 @@ class EnvironmentResponse(BaseModel):
     weather: WeatherBlock
     points: int
     risk: RiskLevel
+    pollen_is_sample: bool
 
 
-def _stub_conditions(lat: float, lon: float) -> EnvironmentResponse:
-    """Placeholder until pollen/AQI/weather providers are wired (Phase 1)."""
-    pollen = PollenBlock(tree=PollenLevel.HIGH, grass=PollenLevel.MODERATE, weed=PollenLevel.LOW)
-    aqi = AirQualityBlock(pm25=42, pm10=68)
-    weather = WeatherBlock(temperature=25, humidity=55, wind=4.2)
+async def _gather(lat: float, lon: float) -> EnvironmentResponse:
+    key = get_settings().pollen_api_key
+    async with httpx.AsyncClient() as client:
+        weather, air, pollen = await asyncio.gather(
+            ws.fetch_weather(lat, lon, client),
+            aqs.fetch_air_quality(lat, lon, client),
+            ps.fetch_pollen(lat, lon, key),
+        )
     pts, level = risk.score(
         risk.EnvInput(
             tree_pollen=pollen.tree,
             grass_pollen=pollen.grass,
             weed_pollen=pollen.weed,
-            pm25=aqi.pm25,
-            pm10=aqi.pm10,
-            wind_speed=weather.wind,
+            pm25=air.pm25,
+            pm10=air.pm10,
+            wind_speed=weather.wind_speed,
         )
     )
     return EnvironmentResponse(
         latitude=lat,
         longitude=lon,
-        pollen=pollen,
-        air_quality=aqi,
-        weather=weather,
+        pollen=PollenBlock(tree=pollen.tree, grass=pollen.grass, weed=pollen.weed),
+        air_quality=AirQualityBlock(pm25=air.pm25, pm10=air.pm10),
+        weather=WeatherBlock(
+            temperature=weather.temperature,
+            humidity=weather.humidity,
+            wind=weather.wind_speed,
+        ),
         points=pts,
         risk=level,
+        pollen_is_sample=pollen.is_sample,
     )
 
 
@@ -67,4 +82,4 @@ async def current(
     lat: Annotated[float, Query(ge=-90, le=90)],
     lon: Annotated[float, Query(ge=-180, le=180)],
 ) -> EnvironmentResponse:
-    return _stub_conditions(lat, lon)
+    return await _gather(lat, lon)
