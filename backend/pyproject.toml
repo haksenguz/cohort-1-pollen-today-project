@@ -11,6 +11,9 @@ dependencies = [
     "httpx>=0.27",
     "langgraph>=0.2",
     "openai>=1.50",
+    "pwdlib[bcrypt]>=0.2.1",
+    "pyjwt>=2.9",
+    "greenlet>=3.5.5",
 ]
 
 [dependency-groups]
@@ -18,6 +21,7 @@ dev = [
     "pytest>=8.3",
     "pytest-asyncio>=0.24",
     "ruff>=0.6",
+    "aiosqlite>=0.20",
 ]
 
 [tool.fastapi]
