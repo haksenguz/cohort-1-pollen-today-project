@@ -214,7 +214,7 @@ When healthcare evaluation is appropriate:
 User Location
       │
           ▼
-Maps / Places API
+Naver Local Search API
       │
           ▼
 Nearby Medical Facilities
@@ -287,8 +287,8 @@ User actions:
                 │                  │                  │
                            ▼                             ▼                             ▼
         ┌──────────────┐    ┌──────────────┐   ┌──────────────┐
-        │ Pollen API   │    │ Symptom Agent│   │ Maps / Places│
-        │ AQI API      │    │ Triage Engine│   │ API          │
+        │ Pollen API   │    │ Symptom Agent│   │ Naver Local  │
+        │ AQI API      │    │ Triage Engine│   │ Search API   │
         │ Weather API  │    │ LLM          │   │              │
         └──────────────┘    └──────────────┘   └──────────────┘
                                     │
@@ -544,7 +544,7 @@ created_at
   Database              PostgreSQL
   Cache                 Redis
   Background jobs       Celery / Cron
-  Maps                  Google Maps Platform
+  Maps                  Naver Local Search API
   Pollen                Pollen API
   Air Quality           AirKorea / suitable API
   Weather               Weather API
@@ -869,7 +869,7 @@ Hospital Agent
 User GPS
       │
           ▼
-Maps / Places API
+Naver Local Search API
       │
           ▼
 Nearby Facilities
@@ -921,7 +921,9 @@ DATABASE_URL=postgresql://user:password@localhost:5432/allergy_ai
 
 OPENAI_API_KEY=
 
-GOOGLE_MAPS_API_KEY=
+NAVER_CLIENT_ID=
+
+NAVER_CLIENT_SECRET=
 
 POLLEN_API_KEY=
 
