@@ -1,6 +1,6 @@
 """SQLModel tables — 1:1 with docs/erd/allergy_ai.dmm."""
 
-from datetime import datetime
+from datetime import UTC, datetime
 
 from sqlalchemy import Column
 from sqlalchemy.dialects.postgresql import JSONB
@@ -8,7 +8,7 @@ from sqlmodel import Field, SQLModel
 
 
 def _now() -> datetime:
-    return datetime.utcnow()
+    return datetime.now(UTC)
 
 
 class User(SQLModel, table=True):

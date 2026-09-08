@@ -38,9 +38,7 @@ class EnvironmentResponse(BaseModel):
 
 def _stub_conditions(lat: float, lon: float) -> EnvironmentResponse:
     """Placeholder until pollen/AQI/weather providers are wired (Phase 1)."""
-    pollen = PollenBlock(
-        tree=PollenLevel.HIGH, grass=PollenLevel.MODERATE, weed=PollenLevel.LOW
-    )
+    pollen = PollenBlock(tree=PollenLevel.HIGH, grass=PollenLevel.MODERATE, weed=PollenLevel.LOW)
     aqi = AirQualityBlock(pm25=42, pm10=68)
     weather = WeatherBlock(temperature=25, humidity=55, wind=4.2)
     pts, level = risk.score(
