@@ -38,15 +38,14 @@ with `{"detail": "Could not validate credentials"}`.
 | `DELETE /api/allergies/{allergy_id}` | **Bearer required** |
 | `GET /api/environment/current` | Public |
 | `POST /api/triage` | Public |
-| `POST /api/chat` | Public (see note below) |
+| `POST /api/chat` | Bearer token |
 | `GET /api/hospitals/nearby` | Public |
 
-**`POST /api/chat` is not identity-checked yet.** `ChatRequest.user_id`
-defaults to `1` and the caller supplies it directly; there is no
-`CurrentUser` dependency on this route today. The code comment in
-`chat.py` calls this out as a Phase 2 gap ("Phase 2 (auth) lands the real
-identity; until then the caller supplies it"). Do not treat `user_id` on
-this endpoint as authenticated.
+**`POST /api/chat` takes its identity from the token.** `ChatRequest.user_id`
+is gone. The route depends on `CurrentUser`, and the conversation is looked up
+before the stream opens, so a `conversation_id` belonging to another user is
+rejected with `404` rather than `403` — the endpoint never confirms that
+someone else's conversation exists.
 
 ---
 
@@ -245,16 +244,20 @@ everything else (see `triage.py`'s `EMERGENCY_SYMPTOMS`).
 
 ## `POST /api/chat`
 
-**Auth:** none currently (see the [Auth](#auth) note above). **Body:** `ChatRequest`
+**Auth:** `Authorization: Bearer <token>`, required. **Body:** `ChatRequest`
 
 | field | type | notes |
 | --- | --- | --- |
 | `message` | `str` | 1–2000 chars |
 | `conversation_id` | `int \| null` | omit to start a new conversation |
-| `user_id` | `int` | defaults to `1`, caller-supplied, not verified |
+
+A `user_id` in the body is ignored. The user is the token holder.
+
+**Status codes:** `401` without a valid token. `404` when `conversation_id`
+does not exist or belongs to someone else.
 
 ```json
-{ "message": "I've had itchy eyes and sneezing since this morning", "conversation_id": null, "user_id": 1 }
+{ "message": "I've had itchy eyes and sneezing since this morning", "conversation_id": null }
 ```
 
 ### Response: this is Server-Sent Events, not a plain JSON body

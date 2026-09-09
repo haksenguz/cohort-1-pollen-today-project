@@ -25,3 +25,6 @@ pgdata/
 .DS_Store
 .idea/
 .vscode/
+
+# agent worktrees / local claude state
+.claude/

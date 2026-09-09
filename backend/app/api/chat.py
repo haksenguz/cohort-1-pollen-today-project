@@ -28,6 +28,7 @@ from app.agents import symptom_agent
 from app.core.config import get_settings
 from app.core.db import SessionDep
 from app.core.enums import ConversationStatus, MessageRole
+from app.core.security import CurrentUser
 from app.models import Conversation, Message, SymptomEvent, TriageResult
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
@@ -37,8 +38,6 @@ logger = logging.getLogger(__name__)
 class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=2000)
     conversation_id: int | None = None
-    # Phase 2 (auth) lands the real identity; until then the caller supplies it.
-    user_id: int = Field(default=1)
 
 
 class ChatResponse(BaseModel):
@@ -65,6 +64,10 @@ async def _get_or_create_conversation(
     if conversation_id is not None:
         conversation = await session.get(Conversation, conversation_id)
         if conversation is None:
+            raise HTTPException(status_code=404, detail="conversation not found")
+        if conversation.user_id != user_id:
+            # Same 404 as "missing" on purpose, so this never confirms that a
+            # conversation belonging to someone else exists.
             raise HTTPException(status_code=404, detail="conversation not found")
         return conversation
 
@@ -155,11 +158,12 @@ async def _persist_turn(
 
 
 async def _run_chat(
-    req: ChatRequest, session: AsyncSession, llm: symptom_agent.LLMClient
+    req: ChatRequest,
+    session: AsyncSession,
+    llm: symptom_agent.LLMClient,
+    user_id: int,
+    conversation: Conversation,
 ) -> AsyncIterator[str]:
-    conversation = await _get_or_create_conversation(
-        session, conversation_id=req.conversation_id, user_id=req.user_id
-    )
     state = await _load_state(session, conversation)
 
     try:
@@ -172,7 +176,7 @@ async def _run_chat(
     await _persist_turn(
         session,
         conversation,
-        user_id=req.user_id,
+        user_id=user_id,
         user_message=req.message,
         result=result,
     )
@@ -196,15 +200,44 @@ async def _run_chat(
     yield _sse("done", payload.model_dump())
 
 
+class _LazyLLMClient:
+    """Builds the real client on first use, not at dependency-resolution time.
+
+    Constructing eagerly made a missing `openai_api_key` a 500 on every chat
+    request, including ones that should have been rejected as unauthenticated,
+    because FastAPI resolves this before the auth dependency runs. Deferring it
+    means a misconfigured key surfaces as the stream's `error` event instead.
+    """
+
+    def __init__(self, api_key: str) -> None:
+        self._api_key = api_key
+        self._client: symptom_agent.LLMClient | None = None
+
+    def complete(self, messages) -> str:
+        if self._client is None:
+            self._client = symptom_agent.get_llm_client(self._api_key)
+        return self._client.complete(messages)
+
+
 def get_llm() -> symptom_agent.LLMClient:
     """FastAPI dependency so tests can swap in a fake without a real API key."""
-    settings = get_settings()
-    return symptom_agent.get_llm_client(settings.openai_api_key)
+    return _LazyLLMClient(get_settings().openai_api_key)
 
 
 LLMDep = Annotated[symptom_agent.LLMClient, Depends(get_llm)]
 
 
 @router.post("")
-async def chat(req: ChatRequest, session: SessionDep, llm: LLMDep) -> StreamingResponse:
-    return StreamingResponse(_run_chat(req, session, llm), media_type="text/event-stream")
+async def chat(
+    req: ChatRequest, session: SessionDep, llm: LLMDep, user: CurrentUser
+) -> StreamingResponse:
+    # Resolve the conversation before the stream opens. Raising inside the
+    # generator would be too late: the 200 and its headers are already sent,
+    # so a 404 there would never reach the client.
+    conversation = await _get_or_create_conversation(
+        session, conversation_id=req.conversation_id, user_id=user.id
+    )
+    return StreamingResponse(
+        _run_chat(req, session, llm, user.id, conversation),
+        media_type="text/event-stream",
+    )
