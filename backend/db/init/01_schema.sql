@@ -7,8 +7,8 @@ CREATE TABLE users (
     password_hash VARCHAR(255) NOT NULL,
     latitude NUMERIC(9,6),
     longitude NUMERIC(9,6),
-    created_at TIMESTAMP NOT NULL DEFAULT now(),
-    updated_at TIMESTAMP NOT NULL DEFAULT now(),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE (email)
 );
 
@@ -17,7 +17,7 @@ CREATE TABLE user_allergies (
     user_id INTEGER NOT NULL,
     allergen VARCHAR(30) NOT NULL,
     severity VARCHAR(10) NOT NULL,
-    created_at TIMESTAMP NOT NULL DEFAULT now(),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
@@ -25,8 +25,8 @@ CREATE TABLE conversations (
     id SERIAL PRIMARY KEY,
     user_id INTEGER NOT NULL,
     status VARCHAR(12) NOT NULL DEFAULT 'ACTIVE',
-    created_at TIMESTAMP NOT NULL DEFAULT now(),
-    updated_at TIMESTAMP NOT NULL DEFAULT now(),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
@@ -35,7 +35,7 @@ CREATE TABLE messages (
     conversation_id INTEGER NOT NULL,
     role VARCHAR(10) NOT NULL,
     content TEXT NOT NULL,
-    created_at TIMESTAMP NOT NULL DEFAULT now(),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
 );
 
@@ -49,7 +49,7 @@ CREATE TABLE symptom_events (
     possible_trigger VARCHAR(50),
     breathing_difficulty BOOLEAN NOT NULL DEFAULT false,
     airway_swelling BOOLEAN NOT NULL DEFAULT false,
-    created_at TIMESTAMP NOT NULL DEFAULT now(),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
     FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE SET NULL
 );
@@ -60,7 +60,7 @@ CREATE TABLE triage_results (
     risk_level VARCHAR(12) NOT NULL,
     recommendation TEXT,
     rule_version VARCHAR(20),
-    created_at TIMESTAMP NOT NULL DEFAULT now(),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     FOREIGN KEY (symptom_event_id) REFERENCES symptom_events(id) ON DELETE CASCADE
 );
 
@@ -77,7 +77,7 @@ CREATE TABLE environment_snapshots (
     humidity NUMERIC(5,2),
     wind_speed NUMERIC(5,2),
     risk_level VARCHAR(12),
-    captured_at TIMESTAMP NOT NULL DEFAULT now()
+    captured_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE TABLE alerts (
@@ -88,7 +88,7 @@ CREATE TABLE alerts (
     alert_type VARCHAR(15) NOT NULL,
     message TEXT NOT NULL,
     is_read BOOLEAN NOT NULL DEFAULT false,
-    created_at TIMESTAMP NOT NULL DEFAULT now(),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
     FOREIGN KEY (environment_snapshot_id) REFERENCES environment_snapshots(id) ON DELETE SET NULL
 );
@@ -102,8 +102,8 @@ CREATE TABLE notification_preferences (
     min_risk_level VARCHAR(12) NOT NULL DEFAULT 'MODERATE',
     quiet_hours_start INTEGER,
     quiet_hours_end INTEGER,
-    created_at TIMESTAMP NOT NULL DEFAULT now(),
-    updated_at TIMESTAMP NOT NULL DEFAULT now(),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE (user_id),
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
@@ -114,7 +114,7 @@ CREATE TABLE hospital_searches (
     latitude NUMERIC(9,6) NOT NULL,
     longitude NUMERIC(9,6) NOT NULL,
     specialty VARCHAR(40),
-    created_at TIMESTAMP NOT NULL DEFAULT now(),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
@@ -129,6 +129,6 @@ CREATE TABLE hospital_results (
     phone VARCHAR(40),
     place_id VARCHAR(120),
     rank INTEGER,
-    created_at TIMESTAMP NOT NULL DEFAULT now(),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     FOREIGN KEY (hospital_search_id) REFERENCES hospital_searches(id) ON DELETE CASCADE
 );

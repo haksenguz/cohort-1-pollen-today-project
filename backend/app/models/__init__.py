@@ -1,14 +1,24 @@
 """SQLModel tables — 1:1 with docs/erd/allergy_ai.dmm."""
 
 from datetime import UTC, datetime
+from typing import Any
 
-from sqlalchemy import Column
+from sqlalchemy import Column, DateTime
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlmodel import Field, SQLModel
 
 
 def _now() -> datetime:
     return datetime.now(UTC)
+
+
+# Every timestamp column is TIMESTAMPTZ. `_now()` returns an aware datetime, and
+# asyncpg refuses to write one into a naive column, so the two have to agree.
+_TS = DateTime(timezone=True)
+
+
+def _ts_field() -> Any:
+    return Field(default_factory=_now, sa_type=_TS)
 
 
 class User(SQLModel, table=True):
@@ -18,8 +28,8 @@ class User(SQLModel, table=True):
     password_hash: str = Field(max_length=255)
     latitude: float | None = None
     longitude: float | None = None
-    created_at: datetime = Field(default_factory=_now)
-    updated_at: datetime = Field(default_factory=_now)
+    created_at: datetime = _ts_field()
+    updated_at: datetime = _ts_field()
 
 
 class UserAllergy(SQLModel, table=True):
@@ -28,7 +38,7 @@ class UserAllergy(SQLModel, table=True):
     user_id: int = Field(foreign_key="users.id", index=True)
     allergen: str = Field(max_length=30)
     severity: str = Field(max_length=10)
-    created_at: datetime = Field(default_factory=_now)
+    created_at: datetime = _ts_field()
 
 
 class Conversation(SQLModel, table=True):
@@ -36,8 +46,8 @@ class Conversation(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     user_id: int = Field(foreign_key="users.id", index=True)
     status: str = Field(default="ACTIVE", max_length=12)
-    created_at: datetime = Field(default_factory=_now)
-    updated_at: datetime = Field(default_factory=_now)
+    created_at: datetime = _ts_field()
+    updated_at: datetime = _ts_field()
 
 
 class Message(SQLModel, table=True):
@@ -46,7 +56,7 @@ class Message(SQLModel, table=True):
     conversation_id: int = Field(foreign_key="conversations.id", index=True)
     role: str = Field(max_length=10)
     content: str
-    created_at: datetime = Field(default_factory=_now)
+    created_at: datetime = _ts_field()
 
 
 class SymptomEvent(SQLModel, table=True):
@@ -60,7 +70,7 @@ class SymptomEvent(SQLModel, table=True):
     possible_trigger: str | None = Field(default=None, max_length=50)
     breathing_difficulty: bool = False
     airway_swelling: bool = False
-    created_at: datetime = Field(default_factory=_now)
+    created_at: datetime = _ts_field()
 
 
 class TriageResult(SQLModel, table=True):
@@ -70,7 +80,7 @@ class TriageResult(SQLModel, table=True):
     risk_level: str = Field(max_length=12)
     recommendation: str | None = None
     rule_version: str | None = Field(default=None, max_length=20)
-    created_at: datetime = Field(default_factory=_now)
+    created_at: datetime = _ts_field()
 
 
 class EnvironmentSnapshot(SQLModel, table=True):
@@ -87,7 +97,7 @@ class EnvironmentSnapshot(SQLModel, table=True):
     humidity: float | None = None
     wind_speed: float | None = None
     risk_level: str | None = Field(default=None, max_length=12)
-    captured_at: datetime = Field(default_factory=_now)
+    captured_at: datetime = _ts_field()
 
 
 class Alert(SQLModel, table=True):
@@ -101,7 +111,7 @@ class Alert(SQLModel, table=True):
     alert_type: str = Field(max_length=15)
     message: str
     is_read: bool = False
-    created_at: datetime = Field(default_factory=_now)
+    created_at: datetime = _ts_field()
 
 
 class NotificationPreference(SQLModel, table=True):
@@ -114,8 +124,8 @@ class NotificationPreference(SQLModel, table=True):
     min_risk_level: str = Field(default="MODERATE", max_length=12)
     quiet_hours_start: int | None = None
     quiet_hours_end: int | None = None
-    created_at: datetime = Field(default_factory=_now)
-    updated_at: datetime = Field(default_factory=_now)
+    created_at: datetime = _ts_field()
+    updated_at: datetime = _ts_field()
 
 
 class HospitalSearch(SQLModel, table=True):
@@ -125,7 +135,7 @@ class HospitalSearch(SQLModel, table=True):
     latitude: float
     longitude: float
     specialty: str | None = Field(default=None, max_length=40)
-    created_at: datetime = Field(default_factory=_now)
+    created_at: datetime = _ts_field()
 
 
 class HospitalResult(SQLModel, table=True):
@@ -140,4 +150,4 @@ class HospitalResult(SQLModel, table=True):
     phone: str | None = Field(default=None, max_length=40)
     place_id: str | None = Field(default=None, max_length=120)
     rank: int | None = None
-    created_at: datetime = Field(default_factory=_now)
+    created_at: datetime = _ts_field()

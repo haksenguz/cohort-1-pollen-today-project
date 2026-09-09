@@ -14,10 +14,10 @@ def uid(): return str(uuid.uuid4())
 def C(name, dt, param="", nn=True, pk=False, fk=None, default="", comment=""):
     return dict(name=name, dt=dt, param=param, nn=nn, pk=pk, fk=fk, default=default, comment=comment)
 
-TS = ("timestamp without time zone", "", True)
+TS = ("timestamp with time zone", "", True)
 def pk_id(): return C("id", "serial", nn=True, pk=True)
-def created(): return C("created_at", "timestamp without time zone", default="now()")
-def updated(): return C("updated_at", "timestamp without time zone", default="now()")
+def created(): return C("created_at", "timestamp with time zone", default="now()")
+def updated(): return C("updated_at", "timestamp with time zone", default="now()")
 
 SCHEMA = {
  "users": [
@@ -81,7 +81,7 @@ SCHEMA = {
     C("humidity", "numeric", "5,2", nn=False),
     C("wind_speed", "numeric", "5,2", nn=False),
     C("risk_level", "character varying", "12", nn=False, comment="LOW|MODERATE|HIGH"),
-    C("captured_at", "timestamp without time zone", default="now()"),
+    C("captured_at", "timestamp with time zone", default="now()"),
  ],
  "alerts": [
     pk_id(),
@@ -271,7 +271,7 @@ def sql_type(c):
     if dt == "serial": return "SERIAL"
     if dt == "character varying": return f"VARCHAR({p})" if p else "VARCHAR"
     if dt == "numeric": return f"NUMERIC({p})" if p else "NUMERIC"
-    if dt == "timestamp without time zone": return "TIMESTAMP"
+    if dt == "timestamp with time zone": return "TIMESTAMPTZ"
     return dt.upper()
 
 lines = ["-- Allergy AI Companion — PostgreSQL schema (generated from docs/erd/gen_dmm.py)",
