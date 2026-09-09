@@ -37,7 +37,7 @@ with `{"detail": "Could not validate credentials"}`.
 | `POST /api/allergies` | **Bearer required** |
 | `DELETE /api/allergies/{allergy_id}` | **Bearer required** |
 | `GET /api/environment/current` | Public |
-| `POST /api/triage` | Public |
+| `POST /api/triage` | **Bearer required** |
 | `POST /api/chat` | Bearer token |
 | `GET /api/hospitals/nearby` | Public |
 
@@ -212,7 +212,7 @@ are fetched concurrently and each degrades independently. See
 
 ## `POST /api/triage`
 
-**Auth:** none. **Body:** `TriageRequest`
+**Auth:** `Authorization: Bearer <token>`, required. **Body:** `TriageRequest`
 
 | field | type | notes |
 | --- | --- | --- |
@@ -225,6 +225,11 @@ are fetched concurrently and each degrades independently. See
 { "symptoms": ["sneezing", "itchy_eyes"], "severity": 4, "breathing_difficulty": false, "airway_swelling": false }
 ```
 
+Auth became required in Phase 4 (triage persistence). `symptom_events.user_id`
+is a `NOT NULL` foreign key, so a submission now needs an identity to attach
+to — the endpoint was public only while nothing was written to the database.
+`401` on a missing/invalid token, same shape as every other protected route.
+
 **200**: `TriageResponse`, always produced by `triage.assess()`.
 
 ```json
@@ -232,13 +237,20 @@ are fetched concurrently and each degrades independently. See
   "level": "LOW",
   "recommendation": "Symptoms look mild. Consider an antihistamine and monitor.",
   "reasons": [],
-  "rule_version": "triage-2026-09-07"
+  "rule_version": "triage-2026-09-07",
+  "symptom_event_id": 12,
+  "triage_result_id": 9
 }
 ```
 
 `level` is a `TriageLevel` (`LOW | MODERATE | EMERGENCY`). Any red-flag
 symptom or either boolean flag forces `EMERGENCY` and short-circuits
-everything else (see `triage.py`'s `EMERGENCY_SYMPTOMS`).
+everything else (see `triage.py`'s `EMERGENCY_SYMPTOMS`) — the verdict on the
+wire is always the same enum value the deterministic engine returned, never
+inferred or reconstructed. Every call persists a `symptom_events` row (the
+submitted symptoms) and a linked `triage_results` row (the verdict);
+`symptom_event_id`/`triage_result_id` are those rows' ids, so a client or
+auditor can trace a response back to what was stored.
 
 ---
 
