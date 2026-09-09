@@ -57,29 +57,51 @@ Read this before planning anything. Most of the backend exists.
 
 ## Ismoiljon — `feat/ismoiljon`
 
-- [ ] **I1. Phase 4, triage persistence.** Persist `symptom_events` and
-      `triage_results`, emergency short-circuit end to end.
-      `Touches`: `backend/app/api/triage.py`, `services/triage.py`, `models`.
-- [ ] **I2. Real pollen provider.** Currently a flagged sample, not real data.
-      Pick a provider that covers Korea, note rate limits, then implement.
-      `Touches`: `docs/research/`, `backend/app/services/pollen_service.py`.
-- [ ] **I3. Naver credentials + live test.** Code is done, keys are not wired.
-      `Touches`: `.env`, `backend/app/services/hospital_service.py`.
-- [ ] **I4. Phase 6, notifications.** Scheduled environment checks, alerts,
-      user preferences. `Touches`:
-      `backend/app/services/notification_service.py`, scheduler.
-- [ ] **I5. Frontend shell.** Vite + React + PWA scaffold, routing, auth screens,
-      API client. Jack builds the chat screen inside this shell.
-      `Touches`: `frontend/` except `frontend/src/chat/`.
-- [ ] **I6. Risk + hospital screens.** `Touches`: `frontend/src/`.
+- [x] **I1. Phase 4, triage persistence.** Done. `POST /api/triage` now needs
+      a token, writes both rows, and returns their ids. Emergency verified
+      against real Postgres.
+- [x] **I2. Real pollen provider.** Code done, see
+      `docs/research/pollen-providers.md`. KMA's index. **Still returns the
+      flagged sample until a key exists — see I3.**
+- [ ] **I3. API keys + live test.** Nothing here is code. Get the keys, put
+      them in `backend/.env`, confirm real data comes back.
+      - [ ] Naver: `NAVER_CLIENT_ID`, `NAVER_CLIENT_SECRET`. Without them
+            `/api/hospitals/nearby` answers `provider_available: false`.
+      - [ ] Pollen: `POLLEN_API_KEY` from data.go.kr. Without it pollen is a
+            flagged sample, which is the one thing a reviewer will notice.
+      - [ ] OpenAI: `OPENAI_API_KEY`. Without it chat asks its safety question
+            but extracts nothing, so it never reaches a verdict. Jack needs
+            this for J2.
+      `Touches`: `.env` only.
+- [x] **I4. Phase 6, notifications.** Done. APScheduler, alert generation,
+      preferences with quiet hours. Generates and stores only, sends nothing.
+- [x] **I5. Frontend shell.** Done. Vite, React, TypeScript, PWA, auth screens,
+      typed API client. Login verified end to end against the live backend.
+- [ ] **I6. Risk + hospital screens.** The Today and Alerts tabs are
+      placeholders today. The shell and the typed client are ready.
+      `Touches`: `frontend/src/` except `frontend/src/chat/`.
+- [ ] **I7. Postgres in CI.** Tests run on SQLite, which is why the
+      TIMESTAMPTZ bug reached `main` with 135 tests green. Add a Postgres
+      service to the workflow. `Touches`: `.github/workflows/ci.yml`,
+      `backend/tests/conftest.py`.
+- [ ] **I8. Build the frontend in CI.** Nothing checks it today.
+      `Touches`: `.github/workflows/ci.yml`.
 
 ## Blocking the demo
 
-Pollen readings are invented. Everything else can ship around it; this one is
-the first thing a reviewer will ask about. That is **I2**.
+Three keys, none of them code: pollen, Naver, OpenAI. That is **I3**. Until the
+pollen key exists the app reports invented pollen numbers, which is the first
+thing a reviewer will ask about.
+
+## Verified working
+
+Run against real Postgres and live providers on 2026-09-09: register, login,
+allergy CRUD, environment for Seoul with real weather and air quality, triage
+both mild and emergency with rows persisted, chat streaming and stored, alerts
+and preferences, and frontend login.
 
 ## Parking lot
 
 - ML personalization (Phase 7)
 - Rate limiting and abuse protection on the chat endpoint
-- Real Postgres in CI — tests currently run on in-memory SQLite
+- `WEATHER_API_KEY` is dead config, nothing reads it
