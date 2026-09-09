@@ -12,8 +12,8 @@ Every commit and push goes out as **ismoiljon1101**. No exceptions.
 - Author name: **Ismoiljon**
 - Author email: **ismoiljonedu@gmail.com**
 - **Team repo** is `origin` = **github.com/haksenguz/cohort-1-pollen-today-project**.
-  We work here now: feature branch, PR into `develop`. `main` is stable and
-  deploy-only. Also keep the `Ismoiljon1101` fork (`mine`) in sync.
+  Ismoiljon works on `feat/ismoiljon`, Jack works on `feat/jack`, both merge
+  into `main`. Also keep the `Ismoiljon1101` fork (`mine`) in sync.
 - **Never** commit or push as Claude. **Never** add a `Co-Authored-By` trailer
   or any Claude/AI attribution to commits or PRs.
 - **Never** force-push `main` on either remote.
@@ -27,6 +27,31 @@ git remote -v           # origin -> haksenguz (team), mine -> Ismoiljon1101 (for
 ```
 
 If identity is wrong, fix it before pushing.
+
+## How we work — two people, two lanes
+
+Owners and the current task list live in [TASKS.md](TASKS.md). The contract
+between the lanes is [docs/API_CONTRACT.md](docs/API_CONTRACT.md); change it
+only by agreement, because the other lane builds against it.
+
+- **Ismoiljon** (tech lead) → `feat/ismoiljon`. Triage, environment, hospitals,
+  auth, notifications, and the frontend shell.
+- **Jack** (AI engineer) → `feat/jack`. The conversation vertical end to end:
+  the agent graph, the chat endpoint, the chat screen.
+
+Rules that keep the lanes apart:
+
+- Jack never edits `backend/app/services/triage.py` or `risk.py`.
+- Ismoiljon never edits `backend/app/agents/`.
+- `backend/app/main.py` and `backend/pyproject.toml` collide no matter how we
+  split, so **Ismoiljon owns both**. Jack asks for additions.
+- Rebase on `main` before merging, so conflicts get resolved locally rather
+  than in the merge: `git fetch origin && git rebase origin/main`.
+- `main` stays green. Run the gate before you merge:
+
+```bash
+cd backend && uv run ruff check . && uv run ruff format --check . && uv run pytest -q
+```
 
 ## Project
 
