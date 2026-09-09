@@ -93,6 +93,17 @@ SCHEMA = {
     C("is_read", "boolean", default="false"),
     created(),
  ],
+ "notification_preferences": [
+    pk_id(),
+    C("user_id", "integer", fk=("users", "Cascade")),
+    C("alert_pollen", "boolean", default="true"),
+    C("alert_air_quality", "boolean", default="true"),
+    C("alert_weather", "boolean", default="true"),
+    C("min_risk_level", "character varying", "12", default="'MODERATE'", comment="LOW|MODERATE|HIGH|EMERGENCY"),
+    C("quiet_hours_start", "integer", nn=False, comment="0-23, local hour"),
+    C("quiet_hours_end", "integer", nn=False, comment="0-23, local hour"),
+    created(), updated(),
+ ],
  "hospital_searches": [
     pk_id(),
     C("user_id", "integer", fk=("users", "Cascade")),
@@ -122,6 +133,7 @@ POS = {
  "conversations": (340, 60), "messages": (620, 60),
  "symptom_events": (340, 320), "triage_results": (340, 640),
  "environment_snapshots": (900, 60), "alerts": (900, 420),
+ "notification_preferences": (620, 420),
  "hospital_searches": (620, 640), "hospital_results": (900, 780),
 }
 COLORS = ["#1976d2","#9c27b0","#2e7d32","#00838f","#c62828","#6d4c41",
@@ -278,6 +290,8 @@ for tname, cols in SCHEMA.items():
             fks.append(f"    FOREIGN KEY ({c['name']}) REFERENCES {pn}(id) ON DELETE {od.upper().replace('NO ACTION','NO ACTION')}")
     if tname == "users":
         body.append("    UNIQUE (email)")
+    if tname == "notification_preferences":
+        body.append("    UNIQUE (user_id)")
     lines.append(",\n".join(body + fks))
     lines.append(");\n")
 with open(SCHEMA_OUT, "w", encoding="utf-8") as f:

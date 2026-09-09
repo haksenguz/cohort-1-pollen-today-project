@@ -1,6 +1,6 @@
 """Shared test fixtures: an in-memory SQLite DB standing in for Postgres.
 
-Only the tables auth/users/allergies touch are created — `symptom_events`
+Only the tables auth/users/allergies/notifications touch are created — `symptom_events`
 uses a Postgres-only JSONB column that SQLite's dialect can't compile, and
 this suite has no business creating tables outside its own scope.
 """
@@ -15,7 +15,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.core.db import get_session
 from app.main import app
-from app.models import User, UserAllergy
+from app.models import Alert, EnvironmentSnapshot, NotificationPreference, User, UserAllergy
 
 
 @pytest_asyncio.fixture
@@ -28,7 +28,14 @@ async def session() -> AsyncGenerator[AsyncSession, None]:
     async with engine.begin() as conn:
         await conn.run_sync(
             lambda sync_conn: User.metadata.create_all(
-                sync_conn, tables=[User.__table__, UserAllergy.__table__]
+                sync_conn,
+                tables=[
+                    User.__table__,
+                    UserAllergy.__table__,
+                    EnvironmentSnapshot.__table__,
+                    Alert.__table__,
+                    NotificationPreference.__table__,
+                ],
             )
         )
 

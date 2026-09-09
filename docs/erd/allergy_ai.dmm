@@ -1,6 +1,6 @@
 {
  "tables": {
-  "7ac31391-f182-4be4-ba4a-8a07b65e17c5": {
+  "1c0d8ea8-dbe4-4d4c-8205-5edd88676b84": {
    "lines": [],
    "embeddable": false,
    "objectType": "table",
@@ -14,12 +14,12 @@
     "schema": "public"
    },
    "desc": "",
-   "id": "7ac31391-f182-4be4-ba4a-8a07b65e17c5",
+   "id": "1c0d8ea8-dbe4-4d4c-8205-5edd88676b84",
    "name": "users",
    "cols": [
     {
      "data": "",
-     "id": "51cc5540-212b-4621-bea7-35576b0b8b27",
+     "id": "3613403e-8855-490a-a188-459fd7ca0cc9",
      "name": "id",
      "datatype": "serial",
      "param": "",
@@ -40,7 +40,7 @@
     },
     {
      "data": "",
-     "id": "5bcbd7b4-b865-4fa5-ae47-a6b141c44d54",
+     "id": "2158122d-2d23-4377-b08d-e154814a61c5",
      "name": "email",
      "datatype": "character varying",
      "param": "255",
@@ -61,7 +61,7 @@
     },
     {
      "data": "",
-     "id": "7fcd83dc-4fbf-4bca-800e-e373b3b61438",
+     "id": "4f3a8584-0af5-472b-ae45-9a0b108dac31",
      "name": "password_hash",
      "datatype": "character varying",
      "param": "255",
@@ -82,7 +82,7 @@
     },
     {
      "data": "",
-     "id": "c54d51bb-a086-4eb9-9ca2-b02b7ee89019",
+     "id": "65d4c98e-20cb-4780-9f5a-45e6092e6283",
      "name": "latitude",
      "datatype": "numeric",
      "param": "9,6",
@@ -103,7 +103,7 @@
     },
     {
      "data": "",
-     "id": "fd51298e-202d-4a55-bd76-8dc570fa075b",
+     "id": "83d947de-0b48-4fbc-81db-a3a60edfd7ea",
      "name": "longitude",
      "datatype": "numeric",
      "param": "9,6",
@@ -124,7 +124,7 @@
     },
     {
      "data": "",
-     "id": "2089fb04-ab62-419c-bb66-c5bbbcc90c05",
+     "id": "54f1dcff-a480-4ac0-b845-c89ca9d2a062",
      "name": "created_at",
      "datatype": "timestamp without time zone",
      "param": "",
@@ -145,7 +145,7 @@
     },
     {
      "data": "",
-     "id": "d93c9f89-c371-4099-a177-08ecbe815b13",
+     "id": "453cd949-6316-48dd-9144-fae81b604fd7",
      "name": "updated_at",
      "datatype": "timestamp without time zone",
      "param": "",
@@ -166,21 +166,22 @@
     }
    ],
    "relations": [
-    "8918d907-e460-4e10-bedf-fa716cb7f290",
-    "f0dd7fee-c081-4578-85ea-57bed851539a",
-    "31f28453-5d6d-4f3d-ae79-a0595dd696a1",
-    "36720f7e-61a2-4805-ab29-610f3a02c3de",
-    "da089431-3fac-4f40-ba8e-b9688295150d"
+    "b97d1941-87db-42c5-87f4-789a0a6222f3",
+    "f5499bcf-ab70-4f97-a477-4bdc46d52316",
+    "ed7c8e4c-225a-486e-8617-d2004810ad0c",
+    "2ffbdeca-1b81-4d87-8d67-f250bbd474b7",
+    "64750f1a-0cb5-4e7e-b54a-fb7170b45113",
+    "1a92b8ba-e4ef-44b3-a05c-df954ca18a5f"
    ],
    "keys": [
     {
-     "id": "857e5d2b-b1d0-4725-a276-cd83797a1f77",
+     "id": "5ef7f2cd-21fc-47e2-be08-0af83db8730e",
      "isPk": true,
      "name": "users_pkey",
      "cols": [
       {
-       "id": "e9e82e55-90ac-4920-9fb4-6c7f77b1f253",
-       "colid": "51cc5540-212b-4621-bea7-35576b0b8b27"
+       "id": "90fdeef3-7c6e-456d-8af5-2f165fa9e09f",
+       "colid": "3613403e-8855-490a-a188-459fd7ca0cc9"
       }
      ]
     }
@@ -192,7 +193,7 @@
    "generateCustomCode": true,
    "customCode": ""
   },
-  "8525b62e-6ee3-441f-a65b-047c95c84a1b": {
+  "c78b1429-b7c4-494a-8720-5ba79841f2ac": {
    "lines": [],
    "embeddable": false,
    "objectType": "table",
@@ -206,12 +207,12 @@
     "schema": "public"
    },
    "desc": "",
-   "id": "8525b62e-6ee3-441f-a65b-047c95c84a1b",
+   "id": "c78b1429-b7c4-494a-8720-5ba79841f2ac",
    "name": "user_allergies",
    "cols": [
     {
      "data": "",
-     "id": "403762ae-fdf7-4483-9e6a-19b55e4290e4",
+     "id": "f11eb462-73ea-4050-9dd7-96a0961d63a8",
      "name": "id",
      "datatype": "serial",
      "param": "",
@@ -232,7 +233,7 @@
     },
     {
      "data": "",
-     "id": "d0bc4145-6926-4055-b3fd-ee0a8977c6b1",
+     "id": "05dbf19d-e4ad-45c3-8fb3-3ad1305761cc",
      "name": "user_id",
      "datatype": "integer",
      "param": "",
@@ -253,7 +254,7 @@
     },
     {
      "data": "",
-     "id": "14fa0a74-ca16-4aff-82df-ae224c1ec589",
+     "id": "5df3f5ba-c81c-46c6-9e30-c3370ce3aa4b",
      "name": "allergen",
      "datatype": "character varying",
      "param": "30",
@@ -274,7 +275,7 @@
     },
     {
      "data": "",
-     "id": "fa9675a7-e624-4cce-bde3-fc1960d23657",
+     "id": "07e4adba-ad62-4215-bbd6-a5bed81e7f38",
      "name": "severity",
      "datatype": "character varying",
      "param": "10",
@@ -295,7 +296,7 @@
     },
     {
      "data": "",
-     "id": "e7ed8f11-eeeb-431a-8455-474f00378124",
+     "id": "ddcebbf9-18e7-403c-a114-eb9c044e401d",
      "name": "created_at",
      "datatype": "timestamp without time zone",
      "param": "",
@@ -316,17 +317,17 @@
     }
    ],
    "relations": [
-    "8918d907-e460-4e10-bedf-fa716cb7f290"
+    "b97d1941-87db-42c5-87f4-789a0a6222f3"
    ],
    "keys": [
     {
-     "id": "989fbff6-cd62-4f5a-851f-61961f600cf3",
+     "id": "165659eb-ad15-463f-93a2-8f932b48f229",
      "isPk": true,
      "name": "user_allergies_pkey",
      "cols": [
       {
-       "id": "f768c1a3-e7b7-48be-b5c7-f2dd337bc98b",
-       "colid": "403762ae-fdf7-4483-9e6a-19b55e4290e4"
+       "id": "372bebd6-6fbe-4f63-b85c-b45a1a1b82d1",
+       "colid": "f11eb462-73ea-4050-9dd7-96a0961d63a8"
       }
      ]
     }
@@ -338,7 +339,7 @@
    "generateCustomCode": true,
    "customCode": ""
   },
-  "601d8ae1-8f3d-4ad2-8b65-aee067ca59d6": {
+  "dea7dea6-dae8-46b7-9b8e-017d1f63438d": {
    "lines": [],
    "embeddable": false,
    "objectType": "table",
@@ -352,12 +353,12 @@
     "schema": "public"
    },
    "desc": "",
-   "id": "601d8ae1-8f3d-4ad2-8b65-aee067ca59d6",
+   "id": "dea7dea6-dae8-46b7-9b8e-017d1f63438d",
    "name": "conversations",
    "cols": [
     {
      "data": "",
-     "id": "d91a8efc-d7cc-4541-be0c-e2aa185dbd8e",
+     "id": "3503cf37-2a15-4eaa-a6d1-f82f306c4c95",
      "name": "id",
      "datatype": "serial",
      "param": "",
@@ -378,7 +379,7 @@
     },
     {
      "data": "",
-     "id": "d7094afe-c8c9-49f6-b87d-675eea05d51c",
+     "id": "d9f31822-2784-41f8-999b-eaf40ca606c6",
      "name": "user_id",
      "datatype": "integer",
      "param": "",
@@ -399,7 +400,7 @@
     },
     {
      "data": "",
-     "id": "86f07172-1222-4cc5-a118-6dcdc63d601b",
+     "id": "b99846bd-bcca-4a74-8e43-efbf07518ff0",
      "name": "status",
      "datatype": "character varying",
      "param": "12",
@@ -420,7 +421,7 @@
     },
     {
      "data": "",
-     "id": "f6318076-f13f-4723-b21a-845a4c45ab43",
+     "id": "a57d86f7-ddfd-4b34-82db-51987384a474",
      "name": "created_at",
      "datatype": "timestamp without time zone",
      "param": "",
@@ -441,7 +442,7 @@
     },
     {
      "data": "",
-     "id": "0800a538-bd3a-46ec-8ad7-4fc0f0969838",
+     "id": "cbc2ca17-9a37-462c-b48c-36d71b51cd22",
      "name": "updated_at",
      "datatype": "timestamp without time zone",
      "param": "",
@@ -462,19 +463,19 @@
     }
    ],
    "relations": [
-    "f0dd7fee-c081-4578-85ea-57bed851539a",
-    "b37d10e2-4940-495c-9dd2-1fb797c0364d",
-    "ff27a9f3-2fae-47fa-a508-aa0d666a66e0"
+    "f5499bcf-ab70-4f97-a477-4bdc46d52316",
+    "cdea4ad3-e4e1-440e-b3e7-3c781965621e",
+    "503721cc-c4d1-4ab1-807f-ea56a1046ca4"
    ],
    "keys": [
     {
-     "id": "ac3aaa5c-11ee-4571-93b3-048aa013bff8",
+     "id": "c43729a7-8974-4fae-9943-9fdca8b7915e",
      "isPk": true,
      "name": "conversations_pkey",
      "cols": [
       {
-       "id": "45669792-0473-4ee8-be1b-9f246096210b",
-       "colid": "d91a8efc-d7cc-4541-be0c-e2aa185dbd8e"
+       "id": "1bc641c5-0cd2-47c1-b1c9-40b9cc1ed52e",
+       "colid": "3503cf37-2a15-4eaa-a6d1-f82f306c4c95"
       }
      ]
     }
@@ -486,7 +487,7 @@
    "generateCustomCode": true,
    "customCode": ""
   },
-  "ba4b803b-d8de-4896-a25b-fd3f2f92539b": {
+  "d179825e-8ebd-4c19-903b-e728a249a236": {
    "lines": [],
    "embeddable": false,
    "objectType": "table",
@@ -500,12 +501,12 @@
     "schema": "public"
    },
    "desc": "",
-   "id": "ba4b803b-d8de-4896-a25b-fd3f2f92539b",
+   "id": "d179825e-8ebd-4c19-903b-e728a249a236",
    "name": "messages",
    "cols": [
     {
      "data": "",
-     "id": "a3e35638-5ffe-4bf5-befe-34d5aa9fe6f7",
+     "id": "7824699b-cc31-4beb-ae09-c816e3c95fba",
      "name": "id",
      "datatype": "serial",
      "param": "",
@@ -526,7 +527,7 @@
     },
     {
      "data": "",
-     "id": "94dec315-316b-4f17-bedb-26852edded2d",
+     "id": "519fe30d-6bc1-48ef-8897-a94d992af5f4",
      "name": "conversation_id",
      "datatype": "integer",
      "param": "",
@@ -547,7 +548,7 @@
     },
     {
      "data": "",
-     "id": "c04fa661-fa4a-4762-82f0-d7920ec2f75d",
+     "id": "837e6be7-039a-4a5e-8f65-e2888c899f24",
      "name": "role",
      "datatype": "character varying",
      "param": "10",
@@ -568,7 +569,7 @@
     },
     {
      "data": "",
-     "id": "69d72b05-cb2f-4954-a39b-c844e9d84273",
+     "id": "dae8e68c-328f-4bda-ae0a-2d2782f226af",
      "name": "content",
      "datatype": "text",
      "param": "",
@@ -589,7 +590,7 @@
     },
     {
      "data": "",
-     "id": "a9fd4c6c-2a97-4c99-a051-ac64815bbe94",
+     "id": "fb076583-8a08-40f6-a8d0-f8f63aa8c63c",
      "name": "created_at",
      "datatype": "timestamp without time zone",
      "param": "",
@@ -610,17 +611,17 @@
     }
    ],
    "relations": [
-    "b37d10e2-4940-495c-9dd2-1fb797c0364d"
+    "cdea4ad3-e4e1-440e-b3e7-3c781965621e"
    ],
    "keys": [
     {
-     "id": "878ced0b-183e-46fe-9160-730f49dc0ee1",
+     "id": "784d12e3-9943-4e98-bd68-27cb17e2b2ac",
      "isPk": true,
      "name": "messages_pkey",
      "cols": [
       {
-       "id": "d64fa144-69c1-470c-9171-d8d64631dae2",
-       "colid": "a3e35638-5ffe-4bf5-befe-34d5aa9fe6f7"
+       "id": "1641d8ea-ac27-4bca-9e87-77731b48b3dc",
+       "colid": "7824699b-cc31-4beb-ae09-c816e3c95fba"
       }
      ]
     }
@@ -632,7 +633,7 @@
    "generateCustomCode": true,
    "customCode": ""
   },
-  "2876c5be-72b5-43a1-b11c-64eae6795b1e": {
+  "e6cf8968-abd1-4646-8fd9-5ee541fed490": {
    "lines": [],
    "embeddable": false,
    "objectType": "table",
@@ -646,12 +647,12 @@
     "schema": "public"
    },
    "desc": "",
-   "id": "2876c5be-72b5-43a1-b11c-64eae6795b1e",
+   "id": "e6cf8968-abd1-4646-8fd9-5ee541fed490",
    "name": "symptom_events",
    "cols": [
     {
      "data": "",
-     "id": "284ed7d1-fd83-4f82-9496-efab645b9005",
+     "id": "e80daa18-48a3-4f1d-98a3-6b584a9381f2",
      "name": "id",
      "datatype": "serial",
      "param": "",
@@ -672,7 +673,7 @@
     },
     {
      "data": "",
-     "id": "0366d92a-7cc2-4282-b596-0a95ccde79fa",
+     "id": "074c96a2-3c6f-4ed1-95b9-dabcaa4fde29",
      "name": "user_id",
      "datatype": "integer",
      "param": "",
@@ -693,7 +694,7 @@
     },
     {
      "data": "",
-     "id": "081e51ef-d9aa-453a-af03-13bb81ac1e42",
+     "id": "3598eb32-f801-4d75-a13f-895285110ba3",
      "name": "conversation_id",
      "datatype": "integer",
      "param": "",
@@ -714,7 +715,7 @@
     },
     {
      "data": "",
-     "id": "3bb4695b-2472-4dd2-afc7-02d43bfbeb76",
+     "id": "1aa04728-3b25-4882-99ea-32c415c2b5be",
      "name": "symptoms",
      "datatype": "jsonb",
      "param": "",
@@ -735,7 +736,7 @@
     },
     {
      "data": "",
-     "id": "4c72ae14-69ad-41ed-af91-500a279323f5",
+     "id": "1697ab1a-6271-4615-a538-e3aa5351e81e",
      "name": "severity",
      "datatype": "integer",
      "param": "",
@@ -756,7 +757,7 @@
     },
     {
      "data": "",
-     "id": "dba86e59-4f30-4780-8178-794bc486d841",
+     "id": "3081bb71-7583-44f2-bab5-4862e99196fd",
      "name": "duration",
      "datatype": "character varying",
      "param": "50",
@@ -777,7 +778,7 @@
     },
     {
      "data": "",
-     "id": "7cb6f6ee-4658-4ea1-b342-cc8f6ac31640",
+     "id": "239f3785-2c1a-4b63-9da5-417b166110f5",
      "name": "possible_trigger",
      "datatype": "character varying",
      "param": "50",
@@ -798,7 +799,7 @@
     },
     {
      "data": "",
-     "id": "f1483194-0bed-4c29-9b52-5f5d9f13bac6",
+     "id": "a796c58e-f271-4e8d-b491-8e250034dd26",
      "name": "breathing_difficulty",
      "datatype": "boolean",
      "param": "",
@@ -819,7 +820,7 @@
     },
     {
      "data": "",
-     "id": "a0a4a3b8-c93c-4b6d-8a8a-24b63a9fc242",
+     "id": "a3e9e717-8b80-49b1-b636-0b825e32111d",
      "name": "airway_swelling",
      "datatype": "boolean",
      "param": "",
@@ -840,7 +841,7 @@
     },
     {
      "data": "",
-     "id": "e469e46d-7ba1-4289-b50f-0710c3454ad7",
+     "id": "9d7169d5-5829-44a1-a3a2-b2811368b285",
      "name": "created_at",
      "datatype": "timestamp without time zone",
      "param": "",
@@ -861,19 +862,19 @@
     }
    ],
    "relations": [
-    "31f28453-5d6d-4f3d-ae79-a0595dd696a1",
-    "ff27a9f3-2fae-47fa-a508-aa0d666a66e0",
-    "aaa9eaae-fe5f-41c9-8e76-e07c86be074b"
+    "ed7c8e4c-225a-486e-8617-d2004810ad0c",
+    "503721cc-c4d1-4ab1-807f-ea56a1046ca4",
+    "e548f519-9d89-4c89-8324-50e3a4a57a0d"
    ],
    "keys": [
     {
-     "id": "19d4844c-cb9f-4215-9a5a-0d96b375cee3",
+     "id": "027a1fff-b404-44e8-8fec-4027c62167c8",
      "isPk": true,
      "name": "symptom_events_pkey",
      "cols": [
       {
-       "id": "01e0deba-1c75-4f9e-b844-491076103e40",
-       "colid": "284ed7d1-fd83-4f82-9496-efab645b9005"
+       "id": "f7ce3229-6c35-42fc-8a48-f62df8415120",
+       "colid": "e80daa18-48a3-4f1d-98a3-6b584a9381f2"
       }
      ]
     }
@@ -885,7 +886,7 @@
    "generateCustomCode": true,
    "customCode": ""
   },
-  "482a53f4-33ca-4413-87bb-38effddbf753": {
+  "6b744e49-a0f5-4579-a6ea-ef094e3c147b": {
    "lines": [],
    "embeddable": false,
    "objectType": "table",
@@ -899,12 +900,12 @@
     "schema": "public"
    },
    "desc": "",
-   "id": "482a53f4-33ca-4413-87bb-38effddbf753",
+   "id": "6b744e49-a0f5-4579-a6ea-ef094e3c147b",
    "name": "triage_results",
    "cols": [
     {
      "data": "",
-     "id": "341b4616-5325-4eb2-b471-132112391d01",
+     "id": "864475c5-6105-43d2-9022-b2aea7afe448",
      "name": "id",
      "datatype": "serial",
      "param": "",
@@ -925,7 +926,7 @@
     },
     {
      "data": "",
-     "id": "4f62acd9-5658-4cfb-983c-bc2769d6ebeb",
+     "id": "2fbf944d-a23f-4069-ba75-3dfeec010bd9",
      "name": "symptom_event_id",
      "datatype": "integer",
      "param": "",
@@ -946,7 +947,7 @@
     },
     {
      "data": "",
-     "id": "563b4d97-3811-4c3c-bd9b-4156722a834b",
+     "id": "0bb1cb84-7767-4467-9a1b-37a2dadc7bd9",
      "name": "risk_level",
      "datatype": "character varying",
      "param": "12",
@@ -967,7 +968,7 @@
     },
     {
      "data": "",
-     "id": "bf158887-c18c-49db-82d8-d28fea47bd0e",
+     "id": "39c4f4f6-7430-4df8-9260-8a4ac1632d25",
      "name": "recommendation",
      "datatype": "text",
      "param": "",
@@ -988,7 +989,7 @@
     },
     {
      "data": "",
-     "id": "1f9a10e2-6215-438e-bc67-e8a65d702b3a",
+     "id": "04146713-d1a2-48b0-96cd-4ac3967dafaa",
      "name": "rule_version",
      "datatype": "character varying",
      "param": "20",
@@ -1009,7 +1010,7 @@
     },
     {
      "data": "",
-     "id": "5034082d-6f63-42f0-bd1c-d94df5d0a4b0",
+     "id": "ef92766f-d87c-4206-8443-0b15b4d2e877",
      "name": "created_at",
      "datatype": "timestamp without time zone",
      "param": "",
@@ -1030,17 +1031,17 @@
     }
    ],
    "relations": [
-    "aaa9eaae-fe5f-41c9-8e76-e07c86be074b"
+    "e548f519-9d89-4c89-8324-50e3a4a57a0d"
    ],
    "keys": [
     {
-     "id": "fe87f467-9818-49bf-b4f0-35e25f5a9819",
+     "id": "83972691-205f-4d84-94bd-786c3b8a5cdb",
      "isPk": true,
      "name": "triage_results_pkey",
      "cols": [
       {
-       "id": "b9287439-aa50-4d12-a371-167c5cf3e332",
-       "colid": "341b4616-5325-4eb2-b471-132112391d01"
+       "id": "421f1dcb-9741-4ab2-88bd-7cd9c559ea75",
+       "colid": "864475c5-6105-43d2-9022-b2aea7afe448"
       }
      ]
     }
@@ -1052,7 +1053,7 @@
    "generateCustomCode": true,
    "customCode": ""
   },
-  "fbc2b8b1-fad8-45a6-aaab-643c4804437d": {
+  "3da0f35a-8f51-437e-ac6d-67cdbdb1af03": {
    "lines": [],
    "embeddable": false,
    "objectType": "table",
@@ -1066,12 +1067,12 @@
     "schema": "public"
    },
    "desc": "",
-   "id": "fbc2b8b1-fad8-45a6-aaab-643c4804437d",
+   "id": "3da0f35a-8f51-437e-ac6d-67cdbdb1af03",
    "name": "environment_snapshots",
    "cols": [
     {
      "data": "",
-     "id": "9493d81b-e345-4511-8600-0247c897524b",
+     "id": "16018c8c-0b07-4f2c-89bc-d580f380e111",
      "name": "id",
      "datatype": "serial",
      "param": "",
@@ -1092,7 +1093,7 @@
     },
     {
      "data": "",
-     "id": "b669d2a8-b5c4-4c38-a1f2-412bb6d05b22",
+     "id": "13c5c680-4b5a-459c-8486-ba1189263c36",
      "name": "latitude",
      "datatype": "numeric",
      "param": "9,6",
@@ -1113,7 +1114,7 @@
     },
     {
      "data": "",
-     "id": "d23592e0-144d-4bf9-864b-dfe6b29fa119",
+     "id": "d97c204d-f4d9-41a3-b92f-9a962a8d7771",
      "name": "longitude",
      "datatype": "numeric",
      "param": "9,6",
@@ -1134,7 +1135,7 @@
     },
     {
      "data": "",
-     "id": "13287574-8168-4afa-aebf-fc7fab17fa34",
+     "id": "df5d8c5f-68f4-490a-9db1-64ce051e6d3f",
      "name": "tree_pollen",
      "datatype": "character varying",
      "param": "10",
@@ -1155,7 +1156,7 @@
     },
     {
      "data": "",
-     "id": "24324049-8aa6-4125-bbe0-37866dfd9441",
+     "id": "a188467c-f87a-47d8-b319-8f2270791008",
      "name": "grass_pollen",
      "datatype": "character varying",
      "param": "10",
@@ -1176,7 +1177,7 @@
     },
     {
      "data": "",
-     "id": "28238a70-3b17-4bbe-9b6f-f23560a3f831",
+     "id": "a785d9c5-db4f-4e2e-a786-a13ad4b0e8b4",
      "name": "weed_pollen",
      "datatype": "character varying",
      "param": "10",
@@ -1197,7 +1198,7 @@
     },
     {
      "data": "",
-     "id": "ca1b2249-aa1f-4e31-b154-b02d36c7f0a1",
+     "id": "aa185f8d-f2ec-4cc2-bd1e-752177f91f25",
      "name": "pm25",
      "datatype": "numeric",
      "param": "6,2",
@@ -1218,7 +1219,7 @@
     },
     {
      "data": "",
-     "id": "775bafbb-f376-4966-a371-558898965285",
+     "id": "e66acf59-21d6-4ddb-888c-36b5605ff85f",
      "name": "pm10",
      "datatype": "numeric",
      "param": "6,2",
@@ -1239,7 +1240,7 @@
     },
     {
      "data": "",
-     "id": "2fbbebaa-fb26-4f9c-9539-06bb2a10999d",
+     "id": "5fd5d5a8-3093-4262-8065-695de07cd5a8",
      "name": "temperature",
      "datatype": "numeric",
      "param": "5,2",
@@ -1260,7 +1261,7 @@
     },
     {
      "data": "",
-     "id": "ddbb9dde-b3ca-4f81-8057-073d57db447b",
+     "id": "9f338a1e-3403-4501-abb1-21087c02e64c",
      "name": "humidity",
      "datatype": "numeric",
      "param": "5,2",
@@ -1281,7 +1282,7 @@
     },
     {
      "data": "",
-     "id": "818035a9-ad3e-4e84-abc1-14bfebc25e08",
+     "id": "d03211a1-7837-4c84-a817-2e828c074d26",
      "name": "wind_speed",
      "datatype": "numeric",
      "param": "5,2",
@@ -1302,7 +1303,7 @@
     },
     {
      "data": "",
-     "id": "25736a2c-8d2d-403a-8041-633614923fea",
+     "id": "d9a1c0bb-e768-4aec-953b-e891987a3119",
      "name": "risk_level",
      "datatype": "character varying",
      "param": "12",
@@ -1323,7 +1324,7 @@
     },
     {
      "data": "",
-     "id": "cb6aa3a9-99ff-49bb-8791-023a14b0e84b",
+     "id": "16cff71a-e11c-4244-817b-84a0c8e5900c",
      "name": "captured_at",
      "datatype": "timestamp without time zone",
      "param": "",
@@ -1344,17 +1345,17 @@
     }
    ],
    "relations": [
-    "36af0ee9-d6cd-4f8b-8b86-f05b5731c2ba"
+    "d35aa858-55b6-4e25-8809-8a2765c1eb01"
    ],
    "keys": [
     {
-     "id": "08ae0d4b-fa98-45e1-a800-2657ac36fde7",
+     "id": "fda88609-1402-4456-80dd-21659940a872",
      "isPk": true,
      "name": "environment_snapshots_pkey",
      "cols": [
       {
-       "id": "3a216a63-7b0e-4b98-a64b-15d49b57c3b3",
-       "colid": "9493d81b-e345-4511-8600-0247c897524b"
+       "id": "bfaf0073-731c-4d4e-8042-b2050f1f21d3",
+       "colid": "16018c8c-0b07-4f2c-89bc-d580f380e111"
       }
      ]
     }
@@ -1366,7 +1367,7 @@
    "generateCustomCode": true,
    "customCode": ""
   },
-  "6a593263-2a63-4988-9e89-cd9d186ccefc": {
+  "61a7049e-48f3-4db3-b900-d25b9f228eca": {
    "lines": [],
    "embeddable": false,
    "objectType": "table",
@@ -1380,12 +1381,12 @@
     "schema": "public"
    },
    "desc": "",
-   "id": "6a593263-2a63-4988-9e89-cd9d186ccefc",
+   "id": "61a7049e-48f3-4db3-b900-d25b9f228eca",
    "name": "alerts",
    "cols": [
     {
      "data": "",
-     "id": "576bf235-2fbc-45e9-98c9-58285a89b1c8",
+     "id": "28ef1f30-0816-45f0-8df8-c741fb1d7682",
      "name": "id",
      "datatype": "serial",
      "param": "",
@@ -1406,7 +1407,7 @@
     },
     {
      "data": "",
-     "id": "6bb81a7f-7a9f-4614-9b8d-a4a273310a2f",
+     "id": "5cc22e55-0243-49cc-8308-5dd9c30deffa",
      "name": "user_id",
      "datatype": "integer",
      "param": "",
@@ -1427,7 +1428,7 @@
     },
     {
      "data": "",
-     "id": "52f92bf1-89ef-4471-b69f-8cd17dcb7b7e",
+     "id": "f454163b-ec38-4a6a-9c93-f87f9f7f5438",
      "name": "environment_snapshot_id",
      "datatype": "integer",
      "param": "",
@@ -1448,7 +1449,7 @@
     },
     {
      "data": "",
-     "id": "0194e6a4-d603-4027-a0ca-7a54930053a5",
+     "id": "7d75efcb-e4d2-41cd-b1af-ef18d2553325",
      "name": "risk_level",
      "datatype": "character varying",
      "param": "12",
@@ -1469,7 +1470,7 @@
     },
     {
      "data": "",
-     "id": "929e3029-77df-4c72-8893-ead9b6cc10b9",
+     "id": "8d3621af-cf36-43a3-a851-5e7557649e2a",
      "name": "alert_type",
      "datatype": "character varying",
      "param": "15",
@@ -1490,7 +1491,7 @@
     },
     {
      "data": "",
-     "id": "f7633e64-a216-4e24-a406-e980294c85d8",
+     "id": "30be2257-c9e8-4009-af70-b33a2c11b2c4",
      "name": "message",
      "datatype": "text",
      "param": "",
@@ -1511,7 +1512,7 @@
     },
     {
      "data": "",
-     "id": "f654335d-0e0a-41bc-b0fa-4060f17df8c7",
+     "id": "e6f260f9-7efd-4cdf-8de3-c8d6665e6427",
      "name": "is_read",
      "datatype": "boolean",
      "param": "",
@@ -1532,7 +1533,7 @@
     },
     {
      "data": "",
-     "id": "e651ddcd-aeae-48c0-b487-3e0832f45b5c",
+     "id": "dce12414-76fe-46d4-bf2f-6ca2a5bcbeda",
      "name": "created_at",
      "datatype": "timestamp without time zone",
      "param": "",
@@ -1553,18 +1554,18 @@
     }
    ],
    "relations": [
-    "36720f7e-61a2-4805-ab29-610f3a02c3de",
-    "36af0ee9-d6cd-4f8b-8b86-f05b5731c2ba"
+    "2ffbdeca-1b81-4d87-8d67-f250bbd474b7",
+    "d35aa858-55b6-4e25-8809-8a2765c1eb01"
    ],
    "keys": [
     {
-     "id": "712fde84-28e7-449b-a0d4-6da2271b1408",
+     "id": "268ce9d1-e847-41af-a66c-76b04f63c749",
      "isPk": true,
      "name": "alerts_pkey",
      "cols": [
       {
-       "id": "4e056f79-2488-45ac-8c7e-165611035560",
-       "colid": "576bf235-2fbc-45e9-98c9-58285a89b1c8"
+       "id": "bc21d1f6-6288-4509-bbf1-1bb4f4cb35d0",
+       "colid": "28ef1f30-0816-45f0-8df8-c741fb1d7682"
       }
      ]
     }
@@ -1576,7 +1577,7 @@
    "generateCustomCode": true,
    "customCode": ""
   },
-  "eda0583e-a883-41d4-9d6e-ae112ae509f8": {
+  "4b3a21b4-eb66-4ade-8347-04c45c7be462": {
    "lines": [],
    "embeddable": false,
    "objectType": "table",
@@ -1590,12 +1591,12 @@
     "schema": "public"
    },
    "desc": "",
-   "id": "eda0583e-a883-41d4-9d6e-ae112ae509f8",
-   "name": "hospital_searches",
+   "id": "4b3a21b4-eb66-4ade-8347-04c45c7be462",
+   "name": "notification_preferences",
    "cols": [
     {
      "data": "",
-     "id": "b082cb1f-30c2-43b5-939d-72a2ae9bf6fe",
+     "id": "c4a6ffd5-9843-4e9e-9361-8ca6e986a9a3",
      "name": "id",
      "datatype": "serial",
      "param": "",
@@ -1616,7 +1617,7 @@
     },
     {
      "data": "",
-     "id": "fc31fdc1-21ab-4daa-a456-fb6989665f38",
+     "id": "eb42b363-619f-439a-962c-2504cdb0f0b1",
      "name": "user_id",
      "datatype": "integer",
      "param": "",
@@ -1637,14 +1638,14 @@
     },
     {
      "data": "",
-     "id": "891e81bd-4db8-4f16-ad76-682dad3284e5",
-     "name": "latitude",
-     "datatype": "numeric",
-     "param": "9,6",
+     "id": "72136c6e-5076-47f7-9cf7-50f40416d8bd",
+     "name": "alert_pollen",
+     "datatype": "boolean",
+     "param": "",
      "pk": false,
      "nn": true,
      "comment": "",
-     "defaultvalue": "",
+     "defaultvalue": "true",
      "collation": "",
      "fk": false,
      "after": "",
@@ -1658,14 +1659,14 @@
     },
     {
      "data": "",
-     "id": "6316a52a-9869-4e15-b565-04caf1700346",
-     "name": "longitude",
-     "datatype": "numeric",
-     "param": "9,6",
+     "id": "e3268d13-75e9-4975-9e73-7ff24562fe77",
+     "name": "alert_air_quality",
+     "datatype": "boolean",
+     "param": "",
      "pk": false,
      "nn": true,
      "comment": "",
-     "defaultvalue": "",
+     "defaultvalue": "true",
      "collation": "",
      "fk": false,
      "after": "",
@@ -1679,13 +1680,55 @@
     },
     {
      "data": "",
-     "id": "174ded7a-45d6-46e0-b360-ccdf1b54b13a",
-     "name": "specialty",
+     "id": "ce81733a-e73a-4e8e-8085-b1da0cf560e2",
+     "name": "alert_weather",
+     "datatype": "boolean",
+     "param": "",
+     "pk": false,
+     "nn": true,
+     "comment": "",
+     "defaultvalue": "true",
+     "collation": "",
+     "fk": false,
+     "after": "",
+     "pg": {
+      "generatedIdentity": "no",
+      "storage": "",
+      "compression": ""
+     },
+     "list": false,
+     "estimatedSize": ""
+    },
+    {
+     "data": "",
+     "id": "57ac3103-7416-40bd-9450-74bdce03bf32",
+     "name": "min_risk_level",
      "datatype": "character varying",
-     "param": "40",
+     "param": "12",
+     "pk": false,
+     "nn": true,
+     "comment": "LOW|MODERATE|HIGH|EMERGENCY",
+     "defaultvalue": "'MODERATE'",
+     "collation": "",
+     "fk": false,
+     "after": "",
+     "pg": {
+      "generatedIdentity": "no",
+      "storage": "",
+      "compression": ""
+     },
+     "list": false,
+     "estimatedSize": ""
+    },
+    {
+     "data": "",
+     "id": "35505300-bb45-4f06-b03e-cb30a2608815",
+     "name": "quiet_hours_start",
+     "datatype": "integer",
+     "param": "",
      "pk": false,
      "nn": false,
-     "comment": "",
+     "comment": "0-23, local hour",
      "defaultvalue": "",
      "collation": "",
      "fk": false,
@@ -1700,8 +1743,50 @@
     },
     {
      "data": "",
-     "id": "16e15e34-884b-4525-b9b5-bffbd96a96b6",
+     "id": "aa837420-e0dd-4aa9-b617-23833926afdc",
+     "name": "quiet_hours_end",
+     "datatype": "integer",
+     "param": "",
+     "pk": false,
+     "nn": false,
+     "comment": "0-23, local hour",
+     "defaultvalue": "",
+     "collation": "",
+     "fk": false,
+     "after": "",
+     "pg": {
+      "generatedIdentity": "no",
+      "storage": "",
+      "compression": ""
+     },
+     "list": false,
+     "estimatedSize": ""
+    },
+    {
+     "data": "",
+     "id": "6af50abe-4aa0-473c-a3b2-469d9b5f5b42",
      "name": "created_at",
+     "datatype": "timestamp without time zone",
+     "param": "",
+     "pk": false,
+     "nn": true,
+     "comment": "",
+     "defaultvalue": "now()",
+     "collation": "",
+     "fk": false,
+     "after": "",
+     "pg": {
+      "generatedIdentity": "no",
+      "storage": "",
+      "compression": ""
+     },
+     "list": false,
+     "estimatedSize": ""
+    },
+    {
+     "data": "",
+     "id": "fb5dd300-6fea-4d4f-9e0b-4bd883e5be0a",
+     "name": "updated_at",
      "datatype": "timestamp without time zone",
      "param": "",
      "pk": false,
@@ -1721,18 +1806,17 @@
     }
    ],
    "relations": [
-    "da089431-3fac-4f40-ba8e-b9688295150d",
-    "4874988e-8837-42ee-a576-1a97dee7189b"
+    "64750f1a-0cb5-4e7e-b54a-fb7170b45113"
    ],
    "keys": [
     {
-     "id": "2db2df46-8a3e-48f7-ba1c-f613bcc8d38d",
+     "id": "99a077c9-fcb0-4686-8777-5bfe87050ac9",
      "isPk": true,
-     "name": "hospital_searches_pkey",
+     "name": "notification_preferences_pkey",
      "cols": [
       {
-       "id": "f6fec27d-143e-4294-ada2-63dca9ae09ff",
-       "colid": "b082cb1f-30c2-43b5-939d-72a2ae9bf6fe"
+       "id": "c03dc6ee-6ec0-4311-971f-d6518c316220",
+       "colid": "c4a6ffd5-9843-4e9e-9361-8ca6e986a9a3"
       }
      ]
     }
@@ -1744,7 +1828,7 @@
    "generateCustomCode": true,
    "customCode": ""
   },
-  "1b00f3ea-0a45-463d-9c93-6e596ce572d8": {
+  "79a9004f-265f-46d5-8c33-f52cbab31daf": {
    "lines": [],
    "embeddable": false,
    "objectType": "table",
@@ -1758,12 +1842,12 @@
     "schema": "public"
    },
    "desc": "",
-   "id": "1b00f3ea-0a45-463d-9c93-6e596ce572d8",
-   "name": "hospital_results",
+   "id": "79a9004f-265f-46d5-8c33-f52cbab31daf",
+   "name": "hospital_searches",
    "cols": [
     {
      "data": "",
-     "id": "dd003368-c7eb-4c83-a4d8-d7204b2210a6",
+     "id": "3f5e5d41-ce6f-4603-9bf2-6a13073d4889",
      "name": "id",
      "datatype": "serial",
      "param": "",
@@ -1784,8 +1868,8 @@
     },
     {
      "data": "",
-     "id": "de2ab87a-4db6-49e1-ae78-6a08ff3250f7",
-     "name": "hospital_search_id",
+     "id": "6fa3a564-7637-4b92-b851-085518e20ebe",
+     "name": "user_id",
      "datatype": "integer",
      "param": "",
      "pk": false,
@@ -1805,10 +1889,10 @@
     },
     {
      "data": "",
-     "id": "c436212f-7663-4e43-9c14-acf2b5d0df91",
-     "name": "name",
-     "datatype": "character varying",
-     "param": "200",
+     "id": "2a2f7563-3b72-459d-b43c-04801c2d8a50",
+     "name": "latitude",
+     "datatype": "numeric",
+     "param": "9,6",
      "pk": false,
      "nn": true,
      "comment": "",
@@ -1826,12 +1910,12 @@
     },
     {
      "data": "",
-     "id": "f0493352-24d3-4448-a03e-9ad17ba0f61d",
-     "name": "address",
-     "datatype": "character varying",
-     "param": "300",
+     "id": "f8664d3d-0979-4330-af86-114c041a4b9e",
+     "name": "longitude",
+     "datatype": "numeric",
+     "param": "9,6",
      "pk": false,
-     "nn": false,
+     "nn": true,
      "comment": "",
      "defaultvalue": "",
      "collation": "",
@@ -1847,28 +1931,7 @@
     },
     {
      "data": "",
-     "id": "24766930-c3b1-4cfa-b279-fa38fe149d6a",
-     "name": "distance_m",
-     "datatype": "integer",
-     "param": "",
-     "pk": false,
-     "nn": false,
-     "comment": "",
-     "defaultvalue": "",
-     "collation": "",
-     "fk": false,
-     "after": "",
-     "pg": {
-      "generatedIdentity": "no",
-      "storage": "",
-      "compression": ""
-     },
-     "list": false,
-     "estimatedSize": ""
-    },
-    {
-     "data": "",
-     "id": "9c811965-85d2-4dea-ae72-d3131961a4b6",
+     "id": "99a2df67-e3d5-48b2-9b3f-6083684181b3",
      "name": "specialty",
      "datatype": "character varying",
      "param": "40",
@@ -1889,91 +1952,7 @@
     },
     {
      "data": "",
-     "id": "436586fb-9dc2-4961-a3d1-e8063ce6dac4",
-     "name": "is_open",
-     "datatype": "boolean",
-     "param": "",
-     "pk": false,
-     "nn": false,
-     "comment": "",
-     "defaultvalue": "",
-     "collation": "",
-     "fk": false,
-     "after": "",
-     "pg": {
-      "generatedIdentity": "no",
-      "storage": "",
-      "compression": ""
-     },
-     "list": false,
-     "estimatedSize": ""
-    },
-    {
-     "data": "",
-     "id": "29b7d072-a47c-4354-9fc4-de7ff907ee9b",
-     "name": "phone",
-     "datatype": "character varying",
-     "param": "40",
-     "pk": false,
-     "nn": false,
-     "comment": "",
-     "defaultvalue": "",
-     "collation": "",
-     "fk": false,
-     "after": "",
-     "pg": {
-      "generatedIdentity": "no",
-      "storage": "",
-      "compression": ""
-     },
-     "list": false,
-     "estimatedSize": ""
-    },
-    {
-     "data": "",
-     "id": "92450a17-2a16-4365-80c1-eeb7a70d1569",
-     "name": "place_id",
-     "datatype": "character varying",
-     "param": "120",
-     "pk": false,
-     "nn": false,
-     "comment": "",
-     "defaultvalue": "",
-     "collation": "",
-     "fk": false,
-     "after": "",
-     "pg": {
-      "generatedIdentity": "no",
-      "storage": "",
-      "compression": ""
-     },
-     "list": false,
-     "estimatedSize": ""
-    },
-    {
-     "data": "",
-     "id": "0e9a66ab-1568-4523-8b5a-42cf0fc6df1b",
-     "name": "rank",
-     "datatype": "integer",
-     "param": "",
-     "pk": false,
-     "nn": false,
-     "comment": "",
-     "defaultvalue": "",
-     "collation": "",
-     "fk": false,
-     "after": "",
-     "pg": {
-      "generatedIdentity": "no",
-      "storage": "",
-      "compression": ""
-     },
-     "list": false,
-     "estimatedSize": ""
-    },
-    {
-     "data": "",
-     "id": "dea68aeb-cfee-4ab3-a1d0-5941f99f4a2f",
+     "id": "e32e74a3-6aba-494f-9943-da5616134c86",
      "name": "created_at",
      "datatype": "timestamp without time zone",
      "param": "",
@@ -1994,17 +1973,290 @@
     }
    ],
    "relations": [
-    "4874988e-8837-42ee-a576-1a97dee7189b"
+    "1a92b8ba-e4ef-44b3-a05c-df954ca18a5f",
+    "7c3979d0-fbb3-469c-9344-ede713982753"
    ],
    "keys": [
     {
-     "id": "cbaa5ed8-5d02-45c0-8f44-3a0ed0d38768",
+     "id": "dfd3c77c-f67b-4d59-987f-cc2ec5eb9200",
+     "isPk": true,
+     "name": "hospital_searches_pkey",
+     "cols": [
+      {
+       "id": "3bd521dc-37b5-40b9-8bf4-fea09c9938fe",
+       "colid": "3f5e5d41-ce6f-4603-9bf2-6a13073d4889"
+      }
+     ]
+    }
+   ],
+   "indexes": [],
+   "estimatedSize": "",
+   "visible": true,
+   "generate": true,
+   "generateCustomCode": true,
+   "customCode": ""
+  },
+  "7dd296c7-a21d-4c43-bb56-5f225c76fb32": {
+   "lines": [],
+   "embeddable": false,
+   "objectType": "table",
+   "pg": {
+    "tablespace": "",
+    "inherits": "",
+    "storageParameters": "",
+    "partition": "",
+    "rowsecurity": false,
+    "partitionNames": [],
+    "schema": "public"
+   },
+   "desc": "",
+   "id": "7dd296c7-a21d-4c43-bb56-5f225c76fb32",
+   "name": "hospital_results",
+   "cols": [
+    {
+     "data": "",
+     "id": "4e0ce285-7adc-43da-bd8d-ca30082492b7",
+     "name": "id",
+     "datatype": "serial",
+     "param": "",
+     "pk": true,
+     "nn": true,
+     "comment": "",
+     "defaultvalue": "",
+     "collation": "",
+     "fk": false,
+     "after": "",
+     "pg": {
+      "generatedIdentity": "no",
+      "storage": "",
+      "compression": ""
+     },
+     "list": false,
+     "estimatedSize": ""
+    },
+    {
+     "data": "",
+     "id": "2d173d2a-c33a-47bb-aed4-b9f39690fff3",
+     "name": "hospital_search_id",
+     "datatype": "integer",
+     "param": "",
+     "pk": false,
+     "nn": true,
+     "comment": "",
+     "defaultvalue": "",
+     "collation": "",
+     "fk": true,
+     "after": "",
+     "pg": {
+      "generatedIdentity": "no",
+      "storage": "",
+      "compression": ""
+     },
+     "list": false,
+     "estimatedSize": ""
+    },
+    {
+     "data": "",
+     "id": "2571933d-eaa2-4d09-bf4f-27b862c0f917",
+     "name": "name",
+     "datatype": "character varying",
+     "param": "200",
+     "pk": false,
+     "nn": true,
+     "comment": "",
+     "defaultvalue": "",
+     "collation": "",
+     "fk": false,
+     "after": "",
+     "pg": {
+      "generatedIdentity": "no",
+      "storage": "",
+      "compression": ""
+     },
+     "list": false,
+     "estimatedSize": ""
+    },
+    {
+     "data": "",
+     "id": "c4beb876-4b9a-4224-a68a-a0de8b2ccde9",
+     "name": "address",
+     "datatype": "character varying",
+     "param": "300",
+     "pk": false,
+     "nn": false,
+     "comment": "",
+     "defaultvalue": "",
+     "collation": "",
+     "fk": false,
+     "after": "",
+     "pg": {
+      "generatedIdentity": "no",
+      "storage": "",
+      "compression": ""
+     },
+     "list": false,
+     "estimatedSize": ""
+    },
+    {
+     "data": "",
+     "id": "d44d97cf-9699-4565-9910-2242fdfea190",
+     "name": "distance_m",
+     "datatype": "integer",
+     "param": "",
+     "pk": false,
+     "nn": false,
+     "comment": "",
+     "defaultvalue": "",
+     "collation": "",
+     "fk": false,
+     "after": "",
+     "pg": {
+      "generatedIdentity": "no",
+      "storage": "",
+      "compression": ""
+     },
+     "list": false,
+     "estimatedSize": ""
+    },
+    {
+     "data": "",
+     "id": "003f4b68-95bd-4baf-805c-2a2f7249d694",
+     "name": "specialty",
+     "datatype": "character varying",
+     "param": "40",
+     "pk": false,
+     "nn": false,
+     "comment": "",
+     "defaultvalue": "",
+     "collation": "",
+     "fk": false,
+     "after": "",
+     "pg": {
+      "generatedIdentity": "no",
+      "storage": "",
+      "compression": ""
+     },
+     "list": false,
+     "estimatedSize": ""
+    },
+    {
+     "data": "",
+     "id": "56781b24-112a-4a3b-a528-7c79c29404aa",
+     "name": "is_open",
+     "datatype": "boolean",
+     "param": "",
+     "pk": false,
+     "nn": false,
+     "comment": "",
+     "defaultvalue": "",
+     "collation": "",
+     "fk": false,
+     "after": "",
+     "pg": {
+      "generatedIdentity": "no",
+      "storage": "",
+      "compression": ""
+     },
+     "list": false,
+     "estimatedSize": ""
+    },
+    {
+     "data": "",
+     "id": "bf7677ac-4f4e-41c9-aa1b-508dc501868b",
+     "name": "phone",
+     "datatype": "character varying",
+     "param": "40",
+     "pk": false,
+     "nn": false,
+     "comment": "",
+     "defaultvalue": "",
+     "collation": "",
+     "fk": false,
+     "after": "",
+     "pg": {
+      "generatedIdentity": "no",
+      "storage": "",
+      "compression": ""
+     },
+     "list": false,
+     "estimatedSize": ""
+    },
+    {
+     "data": "",
+     "id": "04f1acde-5a73-4013-8ad8-d26fed677b2b",
+     "name": "place_id",
+     "datatype": "character varying",
+     "param": "120",
+     "pk": false,
+     "nn": false,
+     "comment": "",
+     "defaultvalue": "",
+     "collation": "",
+     "fk": false,
+     "after": "",
+     "pg": {
+      "generatedIdentity": "no",
+      "storage": "",
+      "compression": ""
+     },
+     "list": false,
+     "estimatedSize": ""
+    },
+    {
+     "data": "",
+     "id": "a235ea60-5fc6-4bf9-8daf-a4cebaee2db6",
+     "name": "rank",
+     "datatype": "integer",
+     "param": "",
+     "pk": false,
+     "nn": false,
+     "comment": "",
+     "defaultvalue": "",
+     "collation": "",
+     "fk": false,
+     "after": "",
+     "pg": {
+      "generatedIdentity": "no",
+      "storage": "",
+      "compression": ""
+     },
+     "list": false,
+     "estimatedSize": ""
+    },
+    {
+     "data": "",
+     "id": "1326b57a-afd5-4480-b079-09187736ebaa",
+     "name": "created_at",
+     "datatype": "timestamp without time zone",
+     "param": "",
+     "pk": false,
+     "nn": true,
+     "comment": "",
+     "defaultvalue": "now()",
+     "collation": "",
+     "fk": false,
+     "after": "",
+     "pg": {
+      "generatedIdentity": "no",
+      "storage": "",
+      "compression": ""
+     },
+     "list": false,
+     "estimatedSize": ""
+    }
+   ],
+   "relations": [
+    "7c3979d0-fbb3-469c-9344-ede713982753"
+   ],
+   "keys": [
+    {
+     "id": "03f65013-f0db-4933-9dfc-ca69dccda56b",
      "isPk": true,
      "name": "hospital_results_pkey",
      "cols": [
       {
-       "id": "aa6cfb38-84f2-49af-b9b4-41ed02974b8e",
-       "colid": "dd003368-c7eb-4c83-a4d8-d7204b2210a6"
+       "id": "627eb8e5-5b03-4da7-95d3-7ae5ea4cae14",
+       "colid": "4e0ce285-7adc-43da-bd8d-ca30082492b7"
       }
      ]
     }
@@ -2018,18 +2270,18 @@
   }
  },
  "relations": {
-  "8918d907-e460-4e10-bedf-fa716cb7f290": {
-   "id": "8918d907-e460-4e10-bedf-fa716cb7f290",
+  "b97d1941-87db-42c5-87f4-789a0a6222f3": {
+   "id": "b97d1941-87db-42c5-87f4-789a0a6222f3",
    "type": "non-identifying",
    "cols": [
     {
-     "id": "7338836c-2848-475d-ac1d-72293381d0ff",
-     "parentcol": "51cc5540-212b-4621-bea7-35576b0b8b27",
-     "childcol": "d0bc4145-6926-4055-b3fd-ee0a8977c6b1"
+     "id": "a39047fc-1e35-405f-8cef-84183bade7e8",
+     "parentcol": "3613403e-8855-490a-a188-459fd7ca0cc9",
+     "childcol": "05dbf19d-e4ad-45c3-8fb3-3ad1305761cc"
     }
    ],
-   "child": "8525b62e-6ee3-441f-a65b-047c95c84a1b",
-   "parent": "7ac31391-f182-4be4-ba4a-8a07b65e17c5",
+   "child": "c78b1429-b7c4-494a-8720-5ba79841f2ac",
+   "parent": "1c0d8ea8-dbe4-4d4c-8205-5edd88676b84",
    "c_mp": "true",
    "c_mch": "true",
    "c_ch": "many",
@@ -2038,7 +2290,7 @@
    "c_cch": "",
    "name": "user_allergies_user_id_fkey",
    "desc": "",
-   "parent_key": "857e5d2b-b1d0-4725-a276-cd83797a1f77",
+   "parent_key": "5ef7f2cd-21fc-47e2-be08-0af83db8730e",
    "ri_pd": "Cascade",
    "ri_pu": "No action",
    "generate": true,
@@ -2047,18 +2299,18 @@
    "relationColor": "transparent",
    "linegraphics": "default"
   },
-  "f0dd7fee-c081-4578-85ea-57bed851539a": {
-   "id": "f0dd7fee-c081-4578-85ea-57bed851539a",
+  "f5499bcf-ab70-4f97-a477-4bdc46d52316": {
+   "id": "f5499bcf-ab70-4f97-a477-4bdc46d52316",
    "type": "non-identifying",
    "cols": [
     {
-     "id": "bb0855a8-71a2-46c1-88de-46f3b766de13",
-     "parentcol": "51cc5540-212b-4621-bea7-35576b0b8b27",
-     "childcol": "d7094afe-c8c9-49f6-b87d-675eea05d51c"
+     "id": "86adebd3-b914-40e5-9dbf-ff890a716898",
+     "parentcol": "3613403e-8855-490a-a188-459fd7ca0cc9",
+     "childcol": "d9f31822-2784-41f8-999b-eaf40ca606c6"
     }
    ],
-   "child": "601d8ae1-8f3d-4ad2-8b65-aee067ca59d6",
-   "parent": "7ac31391-f182-4be4-ba4a-8a07b65e17c5",
+   "child": "dea7dea6-dae8-46b7-9b8e-017d1f63438d",
+   "parent": "1c0d8ea8-dbe4-4d4c-8205-5edd88676b84",
    "c_mp": "true",
    "c_mch": "true",
    "c_ch": "many",
@@ -2067,7 +2319,7 @@
    "c_cch": "",
    "name": "conversations_user_id_fkey",
    "desc": "",
-   "parent_key": "857e5d2b-b1d0-4725-a276-cd83797a1f77",
+   "parent_key": "5ef7f2cd-21fc-47e2-be08-0af83db8730e",
    "ri_pd": "Cascade",
    "ri_pu": "No action",
    "generate": true,
@@ -2076,18 +2328,18 @@
    "relationColor": "transparent",
    "linegraphics": "default"
   },
-  "b37d10e2-4940-495c-9dd2-1fb797c0364d": {
-   "id": "b37d10e2-4940-495c-9dd2-1fb797c0364d",
+  "cdea4ad3-e4e1-440e-b3e7-3c781965621e": {
+   "id": "cdea4ad3-e4e1-440e-b3e7-3c781965621e",
    "type": "non-identifying",
    "cols": [
     {
-     "id": "b535283f-493d-48d2-b25a-19a790b743e0",
-     "parentcol": "d91a8efc-d7cc-4541-be0c-e2aa185dbd8e",
-     "childcol": "94dec315-316b-4f17-bedb-26852edded2d"
+     "id": "910f7246-c38f-487e-b3c0-cf24689fcba7",
+     "parentcol": "3503cf37-2a15-4eaa-a6d1-f82f306c4c95",
+     "childcol": "519fe30d-6bc1-48ef-8897-a94d992af5f4"
     }
    ],
-   "child": "ba4b803b-d8de-4896-a25b-fd3f2f92539b",
-   "parent": "601d8ae1-8f3d-4ad2-8b65-aee067ca59d6",
+   "child": "d179825e-8ebd-4c19-903b-e728a249a236",
+   "parent": "dea7dea6-dae8-46b7-9b8e-017d1f63438d",
    "c_mp": "true",
    "c_mch": "true",
    "c_ch": "many",
@@ -2096,7 +2348,7 @@
    "c_cch": "",
    "name": "messages_conversation_id_fkey",
    "desc": "",
-   "parent_key": "ac3aaa5c-11ee-4571-93b3-048aa013bff8",
+   "parent_key": "c43729a7-8974-4fae-9943-9fdca8b7915e",
    "ri_pd": "Cascade",
    "ri_pu": "No action",
    "generate": true,
@@ -2105,18 +2357,18 @@
    "relationColor": "transparent",
    "linegraphics": "default"
   },
-  "31f28453-5d6d-4f3d-ae79-a0595dd696a1": {
-   "id": "31f28453-5d6d-4f3d-ae79-a0595dd696a1",
+  "ed7c8e4c-225a-486e-8617-d2004810ad0c": {
+   "id": "ed7c8e4c-225a-486e-8617-d2004810ad0c",
    "type": "non-identifying",
    "cols": [
     {
-     "id": "70cbae0a-da03-45d2-9d9b-dd9019149e01",
-     "parentcol": "51cc5540-212b-4621-bea7-35576b0b8b27",
-     "childcol": "0366d92a-7cc2-4282-b596-0a95ccde79fa"
+     "id": "1ee606b6-5e46-41fd-964d-f2a330366a4b",
+     "parentcol": "3613403e-8855-490a-a188-459fd7ca0cc9",
+     "childcol": "074c96a2-3c6f-4ed1-95b9-dabcaa4fde29"
     }
    ],
-   "child": "2876c5be-72b5-43a1-b11c-64eae6795b1e",
-   "parent": "7ac31391-f182-4be4-ba4a-8a07b65e17c5",
+   "child": "e6cf8968-abd1-4646-8fd9-5ee541fed490",
+   "parent": "1c0d8ea8-dbe4-4d4c-8205-5edd88676b84",
    "c_mp": "true",
    "c_mch": "true",
    "c_ch": "many",
@@ -2125,7 +2377,7 @@
    "c_cch": "",
    "name": "symptom_events_user_id_fkey",
    "desc": "",
-   "parent_key": "857e5d2b-b1d0-4725-a276-cd83797a1f77",
+   "parent_key": "5ef7f2cd-21fc-47e2-be08-0af83db8730e",
    "ri_pd": "Cascade",
    "ri_pu": "No action",
    "generate": true,
@@ -2134,18 +2386,18 @@
    "relationColor": "transparent",
    "linegraphics": "default"
   },
-  "ff27a9f3-2fae-47fa-a508-aa0d666a66e0": {
-   "id": "ff27a9f3-2fae-47fa-a508-aa0d666a66e0",
+  "503721cc-c4d1-4ab1-807f-ea56a1046ca4": {
+   "id": "503721cc-c4d1-4ab1-807f-ea56a1046ca4",
    "type": "non-identifying",
    "cols": [
     {
-     "id": "73ba33f8-00b3-4a32-b5e5-286db3c1d441",
-     "parentcol": "d91a8efc-d7cc-4541-be0c-e2aa185dbd8e",
-     "childcol": "081e51ef-d9aa-453a-af03-13bb81ac1e42"
+     "id": "de154048-dce1-46e3-a65b-c760a0c38116",
+     "parentcol": "3503cf37-2a15-4eaa-a6d1-f82f306c4c95",
+     "childcol": "3598eb32-f801-4d75-a13f-895285110ba3"
     }
    ],
-   "child": "2876c5be-72b5-43a1-b11c-64eae6795b1e",
-   "parent": "601d8ae1-8f3d-4ad2-8b65-aee067ca59d6",
+   "child": "e6cf8968-abd1-4646-8fd9-5ee541fed490",
+   "parent": "dea7dea6-dae8-46b7-9b8e-017d1f63438d",
    "c_mp": "true",
    "c_mch": "true",
    "c_ch": "many",
@@ -2154,7 +2406,7 @@
    "c_cch": "",
    "name": "symptom_events_conversation_id_fkey",
    "desc": "",
-   "parent_key": "ac3aaa5c-11ee-4571-93b3-048aa013bff8",
+   "parent_key": "c43729a7-8974-4fae-9943-9fdca8b7915e",
    "ri_pd": "Set null",
    "ri_pu": "No action",
    "generate": true,
@@ -2163,18 +2415,18 @@
    "relationColor": "transparent",
    "linegraphics": "default"
   },
-  "aaa9eaae-fe5f-41c9-8e76-e07c86be074b": {
-   "id": "aaa9eaae-fe5f-41c9-8e76-e07c86be074b",
+  "e548f519-9d89-4c89-8324-50e3a4a57a0d": {
+   "id": "e548f519-9d89-4c89-8324-50e3a4a57a0d",
    "type": "non-identifying",
    "cols": [
     {
-     "id": "5058eaeb-f5de-490b-abb3-b0e0a1af7162",
-     "parentcol": "284ed7d1-fd83-4f82-9496-efab645b9005",
-     "childcol": "4f62acd9-5658-4cfb-983c-bc2769d6ebeb"
+     "id": "7f73539e-7277-4468-9531-28fd42f9c299",
+     "parentcol": "e80daa18-48a3-4f1d-98a3-6b584a9381f2",
+     "childcol": "2fbf944d-a23f-4069-ba75-3dfeec010bd9"
     }
    ],
-   "child": "482a53f4-33ca-4413-87bb-38effddbf753",
-   "parent": "2876c5be-72b5-43a1-b11c-64eae6795b1e",
+   "child": "6b744e49-a0f5-4579-a6ea-ef094e3c147b",
+   "parent": "e6cf8968-abd1-4646-8fd9-5ee541fed490",
    "c_mp": "true",
    "c_mch": "true",
    "c_ch": "many",
@@ -2183,7 +2435,7 @@
    "c_cch": "",
    "name": "triage_results_symptom_event_id_fkey",
    "desc": "",
-   "parent_key": "19d4844c-cb9f-4215-9a5a-0d96b375cee3",
+   "parent_key": "027a1fff-b404-44e8-8fec-4027c62167c8",
    "ri_pd": "Cascade",
    "ri_pu": "No action",
    "generate": true,
@@ -2192,18 +2444,18 @@
    "relationColor": "transparent",
    "linegraphics": "default"
   },
-  "36720f7e-61a2-4805-ab29-610f3a02c3de": {
-   "id": "36720f7e-61a2-4805-ab29-610f3a02c3de",
+  "2ffbdeca-1b81-4d87-8d67-f250bbd474b7": {
+   "id": "2ffbdeca-1b81-4d87-8d67-f250bbd474b7",
    "type": "non-identifying",
    "cols": [
     {
-     "id": "18cef471-60b7-41f0-b784-a1bf10c367d0",
-     "parentcol": "51cc5540-212b-4621-bea7-35576b0b8b27",
-     "childcol": "6bb81a7f-7a9f-4614-9b8d-a4a273310a2f"
+     "id": "db38ae23-31f2-4b10-8499-4f61c08f7238",
+     "parentcol": "3613403e-8855-490a-a188-459fd7ca0cc9",
+     "childcol": "5cc22e55-0243-49cc-8308-5dd9c30deffa"
     }
    ],
-   "child": "6a593263-2a63-4988-9e89-cd9d186ccefc",
-   "parent": "7ac31391-f182-4be4-ba4a-8a07b65e17c5",
+   "child": "61a7049e-48f3-4db3-b900-d25b9f228eca",
+   "parent": "1c0d8ea8-dbe4-4d4c-8205-5edd88676b84",
    "c_mp": "true",
    "c_mch": "true",
    "c_ch": "many",
@@ -2212,7 +2464,7 @@
    "c_cch": "",
    "name": "alerts_user_id_fkey",
    "desc": "",
-   "parent_key": "857e5d2b-b1d0-4725-a276-cd83797a1f77",
+   "parent_key": "5ef7f2cd-21fc-47e2-be08-0af83db8730e",
    "ri_pd": "Cascade",
    "ri_pu": "No action",
    "generate": true,
@@ -2221,18 +2473,18 @@
    "relationColor": "transparent",
    "linegraphics": "default"
   },
-  "36af0ee9-d6cd-4f8b-8b86-f05b5731c2ba": {
-   "id": "36af0ee9-d6cd-4f8b-8b86-f05b5731c2ba",
+  "d35aa858-55b6-4e25-8809-8a2765c1eb01": {
+   "id": "d35aa858-55b6-4e25-8809-8a2765c1eb01",
    "type": "non-identifying",
    "cols": [
     {
-     "id": "149e5280-c178-421a-b307-7867ce0e0547",
-     "parentcol": "9493d81b-e345-4511-8600-0247c897524b",
-     "childcol": "52f92bf1-89ef-4471-b69f-8cd17dcb7b7e"
+     "id": "1b140287-4ca5-466a-beb8-355ca63fa303",
+     "parentcol": "16018c8c-0b07-4f2c-89bc-d580f380e111",
+     "childcol": "f454163b-ec38-4a6a-9c93-f87f9f7f5438"
     }
    ],
-   "child": "6a593263-2a63-4988-9e89-cd9d186ccefc",
-   "parent": "fbc2b8b1-fad8-45a6-aaab-643c4804437d",
+   "child": "61a7049e-48f3-4db3-b900-d25b9f228eca",
+   "parent": "3da0f35a-8f51-437e-ac6d-67cdbdb1af03",
    "c_mp": "true",
    "c_mch": "true",
    "c_ch": "many",
@@ -2241,7 +2493,7 @@
    "c_cch": "",
    "name": "alerts_environment_snapshot_id_fkey",
    "desc": "",
-   "parent_key": "08ae0d4b-fa98-45e1-a800-2657ac36fde7",
+   "parent_key": "fda88609-1402-4456-80dd-21659940a872",
    "ri_pd": "Set null",
    "ri_pu": "No action",
    "generate": true,
@@ -2250,27 +2502,27 @@
    "relationColor": "transparent",
    "linegraphics": "default"
   },
-  "da089431-3fac-4f40-ba8e-b9688295150d": {
-   "id": "da089431-3fac-4f40-ba8e-b9688295150d",
+  "64750f1a-0cb5-4e7e-b54a-fb7170b45113": {
+   "id": "64750f1a-0cb5-4e7e-b54a-fb7170b45113",
    "type": "non-identifying",
    "cols": [
     {
-     "id": "47863d49-18b4-4900-a284-4ae17e9f4d62",
-     "parentcol": "51cc5540-212b-4621-bea7-35576b0b8b27",
-     "childcol": "fc31fdc1-21ab-4daa-a456-fb6989665f38"
+     "id": "493003a7-d614-4b70-bd50-859cd18976bc",
+     "parentcol": "3613403e-8855-490a-a188-459fd7ca0cc9",
+     "childcol": "eb42b363-619f-439a-962c-2504cdb0f0b1"
     }
    ],
-   "child": "eda0583e-a883-41d4-9d6e-ae112ae509f8",
-   "parent": "7ac31391-f182-4be4-ba4a-8a07b65e17c5",
+   "child": "4b3a21b4-eb66-4ade-8347-04c45c7be462",
+   "parent": "1c0d8ea8-dbe4-4d4c-8205-5edd88676b84",
    "c_mp": "true",
    "c_mch": "true",
    "c_ch": "many",
    "c_p": "one",
    "c_cp": "",
    "c_cch": "",
-   "name": "hospital_searches_user_id_fkey",
+   "name": "notification_preferences_user_id_fkey",
    "desc": "",
-   "parent_key": "857e5d2b-b1d0-4725-a276-cd83797a1f77",
+   "parent_key": "5ef7f2cd-21fc-47e2-be08-0af83db8730e",
    "ri_pd": "Cascade",
    "ri_pu": "No action",
    "generate": true,
@@ -2279,18 +2531,47 @@
    "relationColor": "transparent",
    "linegraphics": "default"
   },
-  "4874988e-8837-42ee-a576-1a97dee7189b": {
-   "id": "4874988e-8837-42ee-a576-1a97dee7189b",
+  "1a92b8ba-e4ef-44b3-a05c-df954ca18a5f": {
+   "id": "1a92b8ba-e4ef-44b3-a05c-df954ca18a5f",
    "type": "non-identifying",
    "cols": [
     {
-     "id": "0eadf102-1f0e-483d-a9ef-690318b93c40",
-     "parentcol": "b082cb1f-30c2-43b5-939d-72a2ae9bf6fe",
-     "childcol": "de2ab87a-4db6-49e1-ae78-6a08ff3250f7"
+     "id": "68e60a3d-92db-47c5-a0bd-1f314b336c3f",
+     "parentcol": "3613403e-8855-490a-a188-459fd7ca0cc9",
+     "childcol": "6fa3a564-7637-4b92-b851-085518e20ebe"
     }
    ],
-   "child": "1b00f3ea-0a45-463d-9c93-6e596ce572d8",
-   "parent": "eda0583e-a883-41d4-9d6e-ae112ae509f8",
+   "child": "79a9004f-265f-46d5-8c33-f52cbab31daf",
+   "parent": "1c0d8ea8-dbe4-4d4c-8205-5edd88676b84",
+   "c_mp": "true",
+   "c_mch": "true",
+   "c_ch": "many",
+   "c_p": "one",
+   "c_cp": "",
+   "c_cch": "",
+   "name": "hospital_searches_user_id_fkey",
+   "desc": "",
+   "parent_key": "5ef7f2cd-21fc-47e2-be08-0af83db8730e",
+   "ri_pd": "Cascade",
+   "ri_pu": "No action",
+   "generate": true,
+   "generateCustomCode": true,
+   "customCode": "",
+   "relationColor": "transparent",
+   "linegraphics": "default"
+  },
+  "7c3979d0-fbb3-469c-9344-ede713982753": {
+   "id": "7c3979d0-fbb3-469c-9344-ede713982753",
+   "type": "non-identifying",
+   "cols": [
+    {
+     "id": "49a030e6-8a78-49d9-807a-bc64df620dee",
+     "parentcol": "3f5e5d41-ce6f-4603-9bf2-6a13073d4889",
+     "childcol": "2d173d2a-c33a-47bb-aed4-b9f39690fff3"
+    }
+   ],
+   "child": "7dd296c7-a21d-4c43-bb56-5f225c76fb32",
+   "parent": "79a9004f-265f-46d5-8c33-f52cbab31daf",
    "c_mp": "true",
    "c_mch": "true",
    "c_ch": "many",
@@ -2299,7 +2580,7 @@
    "c_cch": "",
    "name": "hospital_results_hospital_search_id_fkey",
    "desc": "",
-   "parent_key": "2db2df46-8a3e-48f7-ba1c-f613bcc8d38d",
+   "parent_key": "dfd3c77c-f67b-4d59-987f-cc2ec5eb9200",
    "ri_pd": "Cascade",
    "ri_pu": "No action",
    "generate": true,
@@ -2310,8 +2591,8 @@
   }
  },
  "notes": {
-  "622e5ba1-3d0d-4ff6-bf4b-7008282a70e7": {
-   "id": "622e5ba1-3d0d-4ff6-bf4b-7008282a70e7",
+  "71121cb3-df08-4a79-9928-4a5a23642ccf": {
+   "id": "71121cb3-df08-4a79-9928-4a5a23642ccf",
    "visible": true,
    "name": "Title",
    "desc": "<h1>Allergy AI Companion</h1><p>Environment monitoring, AI symptom triage, hospital finder.</p>",
@@ -2321,14 +2602,14 @@
  },
  "lines": {},
  "model": {
-  "connectionId": "232cb28c-0441-4049-a6c5-c57e58f861b3",
+  "connectionId": "17f537c8-6744-4c17-b5a1-2ad2bd5f9961",
   "connectionVersion": "PostgreSQL 16",
-  "activeDiagram": "1353e6d9-545b-450e-8173-38b78c2def27",
+  "activeDiagram": "53ca6a84-fe42-4677-b304-15286a338357",
   "caseConvention": "under",
   "color": "transparent",
   "def_coltopk": true,
   "desc": "AI-powered allergy monitoring, symptom triage and hospital finder.",
-  "id": "4f9e6383-f4d7-40d5-b784-8e4fa9637d1d",
+  "id": "ac446839-fc1a-454a-9894-9f88585747cb",
   "isDirty": false,
   "name": "Allergy AI Companion",
   "parentTableInFkCols": true,
@@ -2347,7 +2628,7 @@
   },
   "type": "PG",
   "version": 1,
-  "lastSaved": 1788737184688,
+  "lastSaved": 1788939120936,
   "pg": {
    "schema": "public"
   },
@@ -2386,139 +2667,151 @@
  },
  "otherObjects": {},
  "diagrams": {
-  "1353e6d9-545b-450e-8173-38b78c2def27": {
-   "id": "1353e6d9-545b-450e-8173-38b78c2def27",
+  "53ca6a84-fe42-4677-b304-15286a338357": {
+   "id": "53ca6a84-fe42-4677-b304-15286a338357",
    "lineColor": "transparent",
    "description": "",
    "diagramItems": {
-    "7ac31391-f182-4be4-ba4a-8a07b65e17c5": {
+    "1c0d8ea8-dbe4-4d4c-8205-5edd88676b84": {
      "x": 60,
      "y": 60,
      "gHeight": 170,
      "gWidth": 190,
      "background": "#1976d2",
      "color": "#ffffff",
-     "referencedItemId": "7ac31391-f182-4be4-ba4a-8a07b65e17c5",
+     "referencedItemId": "1c0d8ea8-dbe4-4d4c-8205-5edd88676b84",
      "resized": false,
      "autoExpand": true,
      "backgroundOpacity": "10"
     },
-    "8525b62e-6ee3-441f-a65b-047c95c84a1b": {
+    "c78b1429-b7c4-494a-8720-5ba79841f2ac": {
      "x": 60,
      "y": 320,
      "gHeight": 130,
      "gWidth": 190,
      "background": "#9c27b0",
      "color": "#ffffff",
-     "referencedItemId": "8525b62e-6ee3-441f-a65b-047c95c84a1b",
+     "referencedItemId": "c78b1429-b7c4-494a-8720-5ba79841f2ac",
      "resized": false,
      "autoExpand": true,
      "backgroundOpacity": "10"
     },
-    "601d8ae1-8f3d-4ad2-8b65-aee067ca59d6": {
+    "dea7dea6-dae8-46b7-9b8e-017d1f63438d": {
      "x": 340,
      "y": 60,
      "gHeight": 130,
      "gWidth": 190,
      "background": "#2e7d32",
      "color": "#ffffff",
-     "referencedItemId": "601d8ae1-8f3d-4ad2-8b65-aee067ca59d6",
+     "referencedItemId": "dea7dea6-dae8-46b7-9b8e-017d1f63438d",
      "resized": false,
      "autoExpand": true,
      "backgroundOpacity": "10"
     },
-    "ba4b803b-d8de-4896-a25b-fd3f2f92539b": {
+    "d179825e-8ebd-4c19-903b-e728a249a236": {
      "x": 620,
      "y": 60,
      "gHeight": 130,
      "gWidth": 190,
      "background": "#00838f",
      "color": "#ffffff",
-     "referencedItemId": "ba4b803b-d8de-4896-a25b-fd3f2f92539b",
+     "referencedItemId": "d179825e-8ebd-4c19-903b-e728a249a236",
      "resized": false,
      "autoExpand": true,
      "backgroundOpacity": "10"
     },
-    "2876c5be-72b5-43a1-b11c-64eae6795b1e": {
+    "e6cf8968-abd1-4646-8fd9-5ee541fed490": {
      "x": 340,
      "y": 320,
      "gHeight": 230,
      "gWidth": 190,
      "background": "#c62828",
      "color": "#ffffff",
-     "referencedItemId": "2876c5be-72b5-43a1-b11c-64eae6795b1e",
+     "referencedItemId": "e6cf8968-abd1-4646-8fd9-5ee541fed490",
      "resized": false,
      "autoExpand": true,
      "backgroundOpacity": "10"
     },
-    "482a53f4-33ca-4413-87bb-38effddbf753": {
+    "6b744e49-a0f5-4579-a6ea-ef094e3c147b": {
      "x": 340,
      "y": 640,
      "gHeight": 150,
      "gWidth": 190,
      "background": "#6d4c41",
      "color": "#ffffff",
-     "referencedItemId": "482a53f4-33ca-4413-87bb-38effddbf753",
+     "referencedItemId": "6b744e49-a0f5-4579-a6ea-ef094e3c147b",
      "resized": false,
      "autoExpand": true,
      "backgroundOpacity": "10"
     },
-    "fbc2b8b1-fad8-45a6-aaab-643c4804437d": {
+    "3da0f35a-8f51-437e-ac6d-67cdbdb1af03": {
      "x": 900,
      "y": 60,
      "gHeight": 290,
      "gWidth": 190,
      "background": "#455a64",
      "color": "#ffffff",
-     "referencedItemId": "fbc2b8b1-fad8-45a6-aaab-643c4804437d",
+     "referencedItemId": "3da0f35a-8f51-437e-ac6d-67cdbdb1af03",
      "resized": false,
      "autoExpand": true,
      "backgroundOpacity": "10"
     },
-    "6a593263-2a63-4988-9e89-cd9d186ccefc": {
+    "61a7049e-48f3-4db3-b900-d25b9f228eca": {
      "x": 900,
      "y": 420,
      "gHeight": 190,
      "gWidth": 190,
      "background": "#ef6c00",
      "color": "#ffffff",
-     "referencedItemId": "6a593263-2a63-4988-9e89-cd9d186ccefc",
+     "referencedItemId": "61a7049e-48f3-4db3-b900-d25b9f228eca",
      "resized": false,
      "autoExpand": true,
      "backgroundOpacity": "10"
     },
-    "eda0583e-a883-41d4-9d6e-ae112ae509f8": {
+    "4b3a21b4-eb66-4ade-8347-04c45c7be462": {
+     "x": 620,
+     "y": 420,
+     "gHeight": 230,
+     "gWidth": 190,
+     "background": "#5e35b1",
+     "color": "#ffffff",
+     "referencedItemId": "4b3a21b4-eb66-4ade-8347-04c45c7be462",
+     "resized": false,
+     "autoExpand": true,
+     "backgroundOpacity": "10"
+    },
+    "79a9004f-265f-46d5-8c33-f52cbab31daf": {
      "x": 620,
      "y": 640,
      "gHeight": 150,
      "gWidth": 190,
-     "background": "#5e35b1",
+     "background": "#00695c",
      "color": "#ffffff",
-     "referencedItemId": "eda0583e-a883-41d4-9d6e-ae112ae509f8",
+     "referencedItemId": "79a9004f-265f-46d5-8c33-f52cbab31daf",
      "resized": false,
      "autoExpand": true,
      "backgroundOpacity": "10"
     },
-    "1b00f3ea-0a45-463d-9c93-6e596ce572d8": {
+    "7dd296c7-a21d-4c43-bb56-5f225c76fb32": {
      "x": 900,
      "y": 780,
      "gHeight": 250,
      "gWidth": 190,
-     "background": "#00695c",
+     "background": "#1976d2",
      "color": "#ffffff",
-     "referencedItemId": "1b00f3ea-0a45-463d-9c93-6e596ce572d8",
+     "referencedItemId": "7dd296c7-a21d-4c43-bb56-5f225c76fb32",
      "resized": false,
      "autoExpand": true,
      "backgroundOpacity": "10"
     },
-    "622e5ba1-3d0d-4ff6-bf4b-7008282a70e7": {
+    "71121cb3-df08-4a79-9928-4a5a23642ccf": {
      "x": 60,
      "y": 760,
      "gHeight": 70,
      "gWidth": 260,
      "background": "#ffd54f",
      "color": "#000000",
-     "referencedItemId": "622e5ba1-3d0d-4ff6-bf4b-7008282a70e7",
+     "referencedItemId": "71121cb3-df08-4a79-9928-4a5a23642ccf",
      "resized": false,
      "autoExpand": true,
      "backgroundOpacity": "10"
@@ -2569,16 +2862,17 @@
  },
  "diagramsOrder": [],
  "order": [
-  "7ac31391-f182-4be4-ba4a-8a07b65e17c5",
-  "8525b62e-6ee3-441f-a65b-047c95c84a1b",
-  "601d8ae1-8f3d-4ad2-8b65-aee067ca59d6",
-  "ba4b803b-d8de-4896-a25b-fd3f2f92539b",
-  "2876c5be-72b5-43a1-b11c-64eae6795b1e",
-  "482a53f4-33ca-4413-87bb-38effddbf753",
-  "fbc2b8b1-fad8-45a6-aaab-643c4804437d",
-  "6a593263-2a63-4988-9e89-cd9d186ccefc",
-  "eda0583e-a883-41d4-9d6e-ae112ae509f8",
-  "1b00f3ea-0a45-463d-9c93-6e596ce572d8"
+  "1c0d8ea8-dbe4-4d4c-8205-5edd88676b84",
+  "c78b1429-b7c4-494a-8720-5ba79841f2ac",
+  "dea7dea6-dae8-46b7-9b8e-017d1f63438d",
+  "d179825e-8ebd-4c19-903b-e728a249a236",
+  "e6cf8968-abd1-4646-8fd9-5ee541fed490",
+  "6b744e49-a0f5-4579-a6ea-ef094e3c147b",
+  "3da0f35a-8f51-437e-ac6d-67cdbdb1af03",
+  "61a7049e-48f3-4db3-b900-d25b9f228eca",
+  "4b3a21b4-eb66-4ade-8347-04c45c7be462",
+  "79a9004f-265f-46d5-8c33-f52cbab31daf",
+  "7dd296c7-a21d-4c43-bb56-5f225c76fb32"
  ],
  "collapsedTreeItems": [],
  "reverseStats": {}

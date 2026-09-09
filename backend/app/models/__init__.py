@@ -104,6 +104,20 @@ class Alert(SQLModel, table=True):
     created_at: datetime = Field(default_factory=_now)
 
 
+class NotificationPreference(SQLModel, table=True):
+    __tablename__ = "notification_preferences"
+    id: int | None = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="users.id", index=True, unique=True)
+    alert_pollen: bool = True
+    alert_air_quality: bool = True
+    alert_weather: bool = True
+    min_risk_level: str = Field(default="MODERATE", max_length=12)
+    quiet_hours_start: int | None = None
+    quiet_hours_end: int | None = None
+    created_at: datetime = Field(default_factory=_now)
+    updated_at: datetime = Field(default_factory=_now)
+
+
 class HospitalSearch(SQLModel, table=True):
     __tablename__ = "hospital_searches"
     id: int | None = Field(default=None, primary_key=True)
