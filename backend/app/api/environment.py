@@ -57,7 +57,7 @@ async def _gather(lat: float, lon: float) -> EnvironmentResponse:
         weather, air, pollen = await asyncio.gather(
             ws.fetch_weather(lat, lon, client),
             aqs.fetch_air_quality(lat, lon, client),
-            ps.fetch_pollen(lat, lon, key),
+            ps.fetch_pollen(lat, lon, client, key),
             return_exceptions=True,
         )
     if isinstance(weather, BaseException):
