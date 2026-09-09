@@ -93,6 +93,21 @@ CREATE TABLE alerts (
     FOREIGN KEY (environment_snapshot_id) REFERENCES environment_snapshots(id) ON DELETE SET NULL
 );
 
+CREATE TABLE notification_preferences (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    alert_pollen BOOLEAN NOT NULL DEFAULT true,
+    alert_air_quality BOOLEAN NOT NULL DEFAULT true,
+    alert_weather BOOLEAN NOT NULL DEFAULT true,
+    min_risk_level VARCHAR(12) NOT NULL DEFAULT 'MODERATE',
+    quiet_hours_start INTEGER,
+    quiet_hours_end INTEGER,
+    created_at TIMESTAMP NOT NULL DEFAULT now(),
+    updated_at TIMESTAMP NOT NULL DEFAULT now(),
+    UNIQUE (user_id),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
 CREATE TABLE hospital_searches (
     id SERIAL PRIMARY KEY,
     user_id INTEGER NOT NULL,
