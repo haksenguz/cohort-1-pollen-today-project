@@ -19,10 +19,10 @@ other way round.
    symptoms, or clinical claims. Sample data is labelled as sample.
 3. **Push identity and the repo flow are fixed.** Commit and push as
    **ismoiljon1101** (`ismoiljonedu@gmail.com`). The team repo is `origin` =
-   `github.com/haksenguz/cohort-1-pollen-today-project`. Work on a feature
-   branch, open a PR into `develop`; `main` is stable and deploy-only. Keep the
-   `Ismoiljon1101` fork (`mine`) in sync. Never commit or push as Claude, never
-   a `Co-Authored-By` trailer, never force-push `main`.
+   `github.com/haksenguz/cohort-1-pollen-today-project`. Ismoiljon works on
+   `feat/ismoiljon`, Jack works on `feat/jack`, both merge into `main`. Keep
+   the `Ismoiljon1101` fork (`mine`) in sync. Never commit or push as Claude,
+   never a `Co-Authored-By` trailer, never force-push `main`.
 4. **A change is not done until it builds and its tests pass** on your machine.
    An agent's report is a claim; the running system is the proof. See
    [DEFINITION_OF_DONE](docs/DEFINITION_OF_DONE.md).
