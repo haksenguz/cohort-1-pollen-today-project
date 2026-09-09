@@ -22,7 +22,7 @@ async def _ok_air(lat, lon, http_client):
     return AirQualityData(pm25=10, pm10=20)
 
 
-async def _ok_pollen(lat, lon, api_key=""):
+async def _ok_pollen(lat, lon, http_client, api_key=""):
     return PollenData(tree=PollenLevel.HIGH, grass=PollenLevel.LOW, weed=PollenLevel.LOW)
 
 

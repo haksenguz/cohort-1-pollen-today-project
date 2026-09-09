@@ -113,5 +113,10 @@ async def test_fetch_air_quality_timeout_degrades_to_empty():
 
 @pytest.mark.asyncio
 async def test_fetch_pollen_unkeyed_returns_marked_sample():
-    p = await ps.fetch_pollen(37.5, 127.0, api_key="")
+    # The client is never touched on the unkeyed path, but the signature now
+    # requires one because the keyed path calls a real provider.
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda r: pytest.fail("must not call the provider"))
+    ) as client:
+        p = await ps.fetch_pollen(37.5, 127.0, client, api_key="")
     assert p.is_sample is True
