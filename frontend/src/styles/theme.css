@@ -395,3 +395,192 @@ h2.vt {
   font-family: var(--display);
   font-size: 20px;
 }
+
+/* Today screen — risk card, metric list */
+.risk-card {
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface);
+  padding: 14px 16px 6px;
+  margin-bottom: 18px;
+}
+
+.risk-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.risk-label {
+  font-family: var(--display);
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.risk-points {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--ink-soft);
+  font-weight: 600;
+}
+
+.risk-card .note {
+  margin: 6px 0 12px;
+}
+
+.metric-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.metric-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 9px 0;
+  border-top: 1px solid var(--line);
+  font-size: 14px;
+}
+
+.metric-list li span {
+  color: var(--ink-soft);
+}
+
+.metric-list li b {
+  font-weight: 600;
+}
+
+/* Section heading used on Today and Alerts */
+.vsect {
+  font-family: var(--font);
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  margin: 4px 0 10px;
+}
+
+/* Today screen — hospital list */
+.hospital-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.hospital-row {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  padding: 12px 14px;
+}
+
+.hospital-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.hospital-head b {
+  font-weight: 600;
+  font-size: 14.5px;
+}
+
+.hospital-dist {
+  margin-left: auto;
+  color: var(--ink-soft);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.hospital-addr {
+  font-size: 13px;
+  color: var(--ink-soft);
+  margin-top: 2px;
+}
+
+.hospital-meta {
+  font-size: 12.5px;
+  color: var(--ink-soft);
+  margin-top: 4px;
+}
+
+/* Alerts screen */
+.filter-row {
+  display: flex;
+  justify-content: flex-end;
+  margin: 0 0 10px;
+}
+
+.filter-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+
+.alert-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.alert-row {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  padding: 12px 14px;
+  cursor: pointer;
+}
+
+.alert-row:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 1px;
+}
+
+.alert-row.is-unread {
+  border-color: var(--brand);
+  background: var(--brand-tint);
+}
+
+.alert-row.is-read {
+  opacity: 0.7;
+}
+
+.alert-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13.5px;
+}
+
+.alert-type {
+  color: var(--ink-soft);
+  font-size: 12px;
+  text-transform: capitalize;
+}
+
+.alert-time {
+  margin-left: auto;
+  color: var(--ink-soft);
+  font-size: 12px;
+}
+
+.alert-msg {
+  margin-top: 6px;
+  font-size: 14px;
+  line-height: 1.4;
+}
