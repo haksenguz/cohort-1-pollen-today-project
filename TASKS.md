@@ -1,6 +1,6 @@
 # TASKS — who owns what
 
-Updated: 2026-09-09. Two people, two lanes.
+Updated: 2026-09-11. Two people, two lanes.
 
 - **Ismoiljon** (tech lead) works on `feat/ismoiljon`.
 - **Jack** (AI engineer) works on `feat/jack`.
@@ -80,10 +80,11 @@ Read this before planning anything. Most of the backend exists.
 - [ ] **I6. Risk + hospital screens.** The Today and Alerts tabs are
       placeholders today. The shell and the typed client are ready.
       `Touches`: `frontend/src/` except `frontend/src/chat/`.
-- [ ] **I7. Postgres in CI.** Tests run on SQLite, which is why the
-      TIMESTAMPTZ bug reached `main` with 135 tests green. Add a Postgres
-      service to the workflow. `Touches`: `.github/workflows/ci.yml`,
-      `backend/tests/conftest.py`.
+- [x] **I7. Postgres in CI.** Done. `conftest.py` picks its engine from
+      `TEST_DATABASE_URL`: sqlite by default (fast, no infra), full Postgres
+      in CI (catches dialect bugs like the TIMESTAMPTZ one). Workflow now
+      spins up `postgres:17` and points the test job at it. Locally verified
+      135/135 on both backends.
 - [ ] **I8. Build the frontend in CI.** Nothing checks it today.
       `Touches`: `.github/workflows/ci.yml`.
 
