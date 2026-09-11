@@ -55,6 +55,48 @@ other way round.
     then verify their output yourself. Their work is a hypothesis until it
     builds green.
 
+## Frontend styling — Tailwind v4 (CSS-first), NOT v3
+
+The FE ships on Tailwind v4. The styling decision is recorded in
+[ADR 0003](docs/adr/0003-tailwind-v4-frontend-styling.md). Raw design
+tokens (colors, fonts, spacing) live in `:root` inside `frontend/src/styles/theme.css`;
+a non-inline `@theme` block maps them to Tailwind utilities. Dark mode
+runtime toggle (`data-theme="dark"`) keeps working because tokens are
+raw CSS vars, not `@theme inline`.
+
+When writing Tailwind in this repo, **never**:
+
+- Create or reference `tailwind.config.js`. v4 is CSS-first; the file
+  does not exist and v4 ignores it if it does.
+- Use `@tailwind base;` / `@tailwind components;` / `@tailwind utilities;`.
+  The single import is `@import "tailwindcss";` at the top of `theme.css`.
+- Use `@apply`. Deprecated in v4; use utilities directly in JSX.
+- Use `bg-gradient-to-r` — the v4 name is `bg-linear-to-r`.
+- Use `bg-opacity-50` — the v4 syntax is `bg-black/50` (slash opacity).
+- Use `dark:bg-foo` to swap a token for its dark value. The
+  `@custom-variant dark` already wires tokens automatically; just write
+  `bg-foo` and dark-mode switching follows the CSS var override in
+  `:root[data-theme="dark"]`.
+
+When writing Tailwind in this repo, **always**:
+
+- Read `frontend/src/styles/theme.css` before adding a new token. Append
+  to `:root` first, then to `@theme`. Never define a `--color-*` token
+  inline in a JSX className (`bg-[#2f7d57]` is forbidden — token-only).
+- Reuse `riskClass()`, `formatRisk()`, `formatPollen()` from
+  `frontend/src/utils/format.ts` for risk-level / pollen-level class
+  names and labels. Never invent color or label logic in a component.
+- Keep `theme.css` append-only for new rules during migration; never
+  reformat existing sections.
+- When a JSX element ends up with more than five utility classes that
+  describe one logical thing (e.g. a card), extract a `@utility` block
+  in `theme.css` or a small React component instead of repeating the
+  utility chain everywhere.
+
+The `ofershap/tailwind-best-practices` skill is installed locally to
+catch v3 anti-patterns AI agents produce by default. If your output
+includes any v3 syntax, the build or a follow-up pass will flag it.
+
 ## How the repo is kept (four homes, no overlap)
 
 | Folder | Answers | Changes when |
