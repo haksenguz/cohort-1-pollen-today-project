@@ -39,6 +39,7 @@ export function TodayPage() {
     if (!hasLocation) return;
 
     let cancelled = false;
+    // oxlint-disable-next-line react/set-state-in-effect -- reset-before-refetch on coord change
     setLoaded(false);
     setEnvError(null);
     setHospitalsError(null);

@@ -96,6 +96,40 @@ describe("AlertsPage", () => {
     await waitFor(() => expect(markAlertRead).toHaveBeenCalledWith(7));
   });
 
+  it("marks an alert as read on Enter for keyboard users", async () => {
+    const a = alert({ id: 9, is_read: false });
+    vi.mocked(listAlerts).mockResolvedValue([a]);
+
+    renderPage();
+    const row = (await waitFor(() =>
+      screen.getByText(a.message).closest('[role="button"]'),
+    )) as HTMLElement;
+    row.focus();
+    fireEvent.keyDown(row, { key: "Enter" });
+
+    await waitFor(() => expect(markAlertRead).toHaveBeenCalledWith(9));
+  });
+
+  it("does not send a second PATCH while the first is in flight", async () => {
+    const a = alert({ id: 11, is_read: false });
+    vi.mocked(listAlerts).mockResolvedValue([a]);
+    let resolvePatch!: (v: AlertResponse) => void;
+    vi.mocked(markAlertRead).mockReturnValue(
+      new Promise<AlertResponse>((resolve) => {
+        resolvePatch = resolve;
+      }),
+    );
+
+    renderPage();
+    const row = await waitFor(() => screen.getByText(a.message));
+    fireEvent.click(row);
+    fireEvent.click(row); // second click while first is still pending
+
+    expect(markAlertRead).toHaveBeenCalledTimes(1);
+    resolvePatch(alert({ id: 11, is_read: true }));
+    await waitFor(() => expect(markAlertRead).toHaveBeenCalledTimes(1));
+  });
+
   it("re-fetches with unread_only=true when the filter is on", async () => {
     vi.mocked(listAlerts).mockResolvedValue([alert()]);
 

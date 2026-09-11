@@ -163,7 +163,7 @@ export interface HospitalResult {
   name: string;
   address: string | null;
   distance_m: number | null;
-  specialty: string;
+  specialty: string | null;
   category: string | null;
   phone: string | null;
   rank: number;

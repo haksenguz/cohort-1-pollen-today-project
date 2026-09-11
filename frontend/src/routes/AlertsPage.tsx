@@ -17,6 +17,7 @@ export function AlertsPage() {
 
   useEffect(() => {
     let cancelled = false;
+    // oxlint-disable-next-line react/set-state-in-effect -- reset-before-refetch on filter change
     setError(null);
     setAlerts(null);
 
