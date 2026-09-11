@@ -13,6 +13,9 @@ function App() {
     <BrowserRouter>
       <AuthProvider>
         <Routes>
+          {/* Demo mode: login/register are still routable for manual testing,
+              but the app never sends users there. AuthProvider boots straight
+              into the demo session so RequireAuth always passes. */}
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
 
