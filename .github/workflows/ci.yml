@@ -8,9 +8,27 @@ on:
 jobs:
   backend:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: allergy
+          POSTGRES_PASSWORD: allergy
+          POSTGRES_DB: allergy_ai
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U allergy -d allergy_ai"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     defaults:
       run:
         working-directory: backend
+    env:
+      # CI runs the suite against real Postgres so dialect-specific bugs
+      # (TIMESTAMPTZ, JSONB, array casts) cannot slip through on SQLite.
+      TEST_DATABASE_URL: postgresql+asyncpg://allergy:allergy@localhost:5432/allergy_ai
     steps:
       - uses: actions/checkout@v4
 
@@ -25,5 +43,35 @@ jobs:
       - name: Format check
         run: uv run ruff format --check .
 
-      - name: Tests
+      - name: Tests (Postgres)
         run: uv run pytest -q
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Test
+        run: pnpm test
+
+      - name: Build
+        run: pnpm build

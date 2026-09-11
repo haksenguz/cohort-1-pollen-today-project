@@ -1,6 +1,6 @@
 # TASKS — who owns what
 
-Updated: 2026-09-09. Two people, two lanes.
+Updated: 2026-09-11. Two people, two lanes.
 
 - **Ismoiljon** (tech lead) works on `feat/ismoiljon`.
 - **Jack** (AI engineer) works on `feat/jack`.
@@ -63,8 +63,13 @@ Read this before planning anything. Most of the backend exists.
 - [x] **I2. Real pollen provider.** Code done, see
       `docs/research/pollen-providers.md`. KMA's index. **Still returns the
       flagged sample until a key exists — see I3.**
-- [ ] **I3. API keys + live test.** Nothing here is code. Get the keys, put
-      them in `backend/.env`, confirm real data comes back.
+- [ ] **I3. API keys + live test.** Code side is done: every provider
+      already degrades gracefully when its key is blank (pollen falls
+      back to the flagged sample, hospitals answer
+      `provider_available: false`, chat returns a stream error), and
+      `backend/.env.example` documents where to get each key. The
+      remaining work is non-code: get the keys, put them in
+      `backend/.env`, confirm real data comes back.
       - [ ] Naver: `NAVER_CLIENT_ID`, `NAVER_CLIENT_SECRET`. Without them
             `/api/hospitals/nearby` answers `provider_available: false`.
       - [ ] Pollen: `POLLEN_API_KEY` from data.go.kr. Without it pollen is a
@@ -72,20 +77,31 @@ Read this before planning anything. Most of the backend exists.
       - [ ] OpenAI: `OPENAI_API_KEY`. Without it chat asks its safety question
             but extracts nothing, so it never reaches a verdict. Jack needs
             this for J2.
-      `Touches`: `.env` only.
+      `Touches`: `backend/.env` only (gitignored).
 - [x] **I4. Phase 6, notifications.** Done. APScheduler, alert generation,
       preferences with quiet hours. Generates and stores only, sends nothing.
 - [x] **I5. Frontend shell.** Done. Vite, React, TypeScript, PWA, auth screens,
       typed API client. Login verified end to end against the live backend.
-- [ ] **I6. Risk + hospital screens.** The Today and Alerts tabs are
-      placeholders today. The shell and the typed client are ready.
-      `Touches`: `frontend/src/` except `frontend/src/chat/`.
-- [ ] **I7. Postgres in CI.** Tests run on SQLite, which is why the
-      TIMESTAMPTZ bug reached `main` with 135 tests green. Add a Postgres
-      service to the workflow. `Touches`: `.github/workflows/ci.yml`,
-      `backend/tests/conftest.py`.
-- [ ] **I8. Build the frontend in CI.** Nothing checks it today.
-      `Touches`: `.github/workflows/ci.yml`.
+- [x] **I6. Risk + hospital screens.** Done. `TodayPage` now reads the
+      user's saved lat/lon, calls `/api/environment/current` and
+      `/api/hospitals/nearby` in parallel, and renders a risk chip, a
+      metric list (pollen, PM2.5/PM10, temperature, humidity, wind), and
+      a list of nearby hospitals with name, address, specialty, phone,
+      distance. `AlertsPage` lists stored alerts, supports an "Unread
+      only" filter, and marks an alert read on click. Both pages
+      degrade cleanly when the user has no saved location, when the
+      environment endpoint fails, or when the hospital provider is
+      unkeyed. Vitest + Testing Library added; 35 tests cover the API
+      client, formatters, and both screens.
+- [x] **I7. Postgres in CI.** Done. `conftest.py` picks its engine from
+      `TEST_DATABASE_URL`: sqlite by default (fast, no infra), full Postgres
+      in CI (catches dialect bugs like the TIMESTAMPTZ one). Workflow now
+      spins up `postgres:17` and points the test job at it. Locally verified
+      135/135 on both backends.
+- [x] **I8. Build the frontend in CI.** Done. New `frontend` job on the
+      same workflow: pnpm install (frozen lockfile), oxlint, `pnpm build`
+      (`tsc -b && vite build`). A broken import or type error now blocks
+      a PR instead of waiting for a local reviewer.
 
 ## Blocking the demo
 
