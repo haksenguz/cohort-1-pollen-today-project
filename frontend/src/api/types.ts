@@ -161,10 +161,10 @@ export type HospitalSpecialty =
 
 export interface HospitalResult {
   name: string;
-  address: string;
-  distance_m: number;
+  address: string | null;
+  distance_m: number | null;
   specialty: string;
-  category: string;
+  category: string | null;
   phone: string | null;
   rank: number;
 }
@@ -184,4 +184,33 @@ export interface HospitalNearbyParams {
   specialty?: HospitalSpecialty;
   location_query?: string;
   radius_m?: number;
+}
+
+// ---- Notifications --------------------------------------------------
+
+export interface AlertResponse {
+  id: number;
+  risk_level: RiskLevel;
+  alert_type: string;
+  message: string;
+  is_read: boolean;
+  created_at: string;
+}
+
+export interface PreferenceResponse {
+  alert_pollen: boolean;
+  alert_air_quality: boolean;
+  alert_weather: boolean;
+  min_risk_level: RiskLevel;
+  quiet_hours_start: number | null;
+  quiet_hours_end: number | null;
+}
+
+export interface PreferenceUpdateRequest {
+  alert_pollen?: boolean;
+  alert_air_quality?: boolean;
+  alert_weather?: boolean;
+  min_risk_level?: RiskLevel;
+  quiet_hours_start?: number | null;
+  quiet_hours_end?: number | null;
 }

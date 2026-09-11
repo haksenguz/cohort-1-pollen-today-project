@@ -4,6 +4,7 @@
  */
 import { getToken } from "../auth/token";
 import type {
+  AlertResponse,
   AllergyCreateRequest,
   AllergyResponse,
   ChatResponse,
@@ -13,6 +14,8 @@ import type {
   HospitalNearbyParams,
   HospitalNearbyResponse,
   LoginRequest,
+  PreferenceResponse,
+  PreferenceUpdateRequest,
   RegisterRequest,
   TokenResponse,
   TriageRequest,
@@ -37,7 +40,7 @@ export class ApiError extends Error {
 }
 
 interface RequestOptions {
-  method?: "GET" | "POST" | "PUT" | "DELETE";
+  method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   body?: unknown;
   query?: Record<string, string | number | boolean | undefined | null>;
   auth?: boolean;
@@ -152,6 +155,40 @@ export function getNearbyHospitals(
   const { lat, lon, specialty, location_query, radius_m } = params;
   return request<HospitalNearbyResponse>("/api/hospitals/nearby", {
     query: { lat, lon, specialty, location_query, radius_m },
+  });
+}
+
+// ---- Notifications ---------------------------------------------------
+
+export interface ListAlertsParams {
+  unreadOnly?: boolean;
+}
+
+export function listAlerts(params: ListAlertsParams = {}): Promise<AlertResponse[]> {
+  return request<AlertResponse[]>("/api/alerts", {
+    query: { unread_only: params.unreadOnly },
+    auth: true,
+  });
+}
+
+export function markAlertRead(alertId: number): Promise<AlertResponse> {
+  return request<AlertResponse>(`/api/alerts/${alertId}/read`, {
+    method: "PATCH",
+    auth: true,
+  });
+}
+
+export function readPreferences(): Promise<PreferenceResponse> {
+  return request<PreferenceResponse>("/api/notifications/preferences", { auth: true });
+}
+
+export function updatePreferences(
+  body: PreferenceUpdateRequest,
+): Promise<PreferenceResponse> {
+  return request<PreferenceResponse>("/api/notifications/preferences", {
+    method: "PUT",
+    body,
+    auth: true,
   });
 }
 
