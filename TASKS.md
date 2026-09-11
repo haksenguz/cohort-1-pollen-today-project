@@ -77,9 +77,17 @@ Read this before planning anything. Most of the backend exists.
       preferences with quiet hours. Generates and stores only, sends nothing.
 - [x] **I5. Frontend shell.** Done. Vite, React, TypeScript, PWA, auth screens,
       typed API client. Login verified end to end against the live backend.
-- [ ] **I6. Risk + hospital screens.** The Today and Alerts tabs are
-      placeholders today. The shell and the typed client are ready.
-      `Touches`: `frontend/src/` except `frontend/src/chat/`.
+- [x] **I6. Risk + hospital screens.** Done. `TodayPage` now reads the
+      user's saved lat/lon, calls `/api/environment/current` and
+      `/api/hospitals/nearby` in parallel, and renders a risk chip, a
+      metric list (pollen, PM2.5/PM10, temperature, humidity, wind), and
+      a list of nearby hospitals with name, address, specialty, phone,
+      distance. `AlertsPage` lists stored alerts, supports an "Unread
+      only" filter, and marks an alert read on click. Both pages
+      degrade cleanly when the user has no saved location, when the
+      environment endpoint fails, or when the hospital provider is
+      unkeyed. Vitest + Testing Library added; 35 tests cover the API
+      client, formatters, and both screens.
 - [x] **I7. Postgres in CI.** Done. `conftest.py` picks its engine from
       `TEST_DATABASE_URL`: sqlite by default (fast, no infra), full Postgres
       in CI (catches dialect bugs like the TIMESTAMPTZ one). Workflow now
