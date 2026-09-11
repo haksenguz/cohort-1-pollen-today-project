@@ -63,8 +63,13 @@ Read this before planning anything. Most of the backend exists.
 - [x] **I2. Real pollen provider.** Code done, see
       `docs/research/pollen-providers.md`. KMA's index. **Still returns the
       flagged sample until a key exists — see I3.**
-- [ ] **I3. API keys + live test.** Nothing here is code. Get the keys, put
-      them in `backend/.env`, confirm real data comes back.
+- [ ] **I3. API keys + live test.** Code side is done: every provider
+      already degrades gracefully when its key is blank (pollen falls
+      back to the flagged sample, hospitals answer
+      `provider_available: false`, chat returns a stream error), and
+      `backend/.env.example` documents where to get each key. The
+      remaining work is non-code: get the keys, put them in
+      `backend/.env`, confirm real data comes back.
       - [ ] Naver: `NAVER_CLIENT_ID`, `NAVER_CLIENT_SECRET`. Without them
             `/api/hospitals/nearby` answers `provider_available: false`.
       - [ ] Pollen: `POLLEN_API_KEY` from data.go.kr. Without it pollen is a
@@ -72,7 +77,7 @@ Read this before planning anything. Most of the backend exists.
       - [ ] OpenAI: `OPENAI_API_KEY`. Without it chat asks its safety question
             but extracts nothing, so it never reaches a verdict. Jack needs
             this for J2.
-      `Touches`: `.env` only.
+      `Touches`: `backend/.env` only (gitignored).
 - [x] **I4. Phase 6, notifications.** Done. APScheduler, alert generation,
       preferences with quiet hours. Generates and stores only, sends nothing.
 - [x] **I5. Frontend shell.** Done. Vite, React, TypeScript, PWA, auth screens,
