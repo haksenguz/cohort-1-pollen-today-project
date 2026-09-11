@@ -72,6 +72,7 @@ beforeEach(() => {
     login: vi.fn(),
     register: vi.fn(),
     logout: vi.fn(),
+    updateUser: vi.fn(),
   });
 });
 
@@ -134,6 +135,7 @@ describe("TodayPage — happy path", () => {
       login: vi.fn(),
       register: vi.fn(),
       logout: vi.fn(),
+      updateUser: vi.fn(),
     });
     vi.mocked(getCurrentEnvironment).mockResolvedValue(env());
     vi.mocked(getNearbyHospitals).mockResolvedValue(hospitals());
@@ -164,6 +166,7 @@ describe("TodayPage — degraded paths", () => {
       login: vi.fn(),
       register: vi.fn(),
       logout: vi.fn(),
+      updateUser: vi.fn(),
     });
 
     renderPage();
