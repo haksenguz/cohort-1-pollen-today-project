@@ -31,6 +31,10 @@ entrypoint = "app.main:app"
 
 [tool.ruff]
 line-length = 100
+# Alembic versions are auto-generated; never hand-edit them, so they
+# are excluded from lint and format per the same rule that covers
+# docs/erd/allergy_ai.dmm and backend/db/init/01_schema.sql.
+extend-exclude = ["alembic/versions/*"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP"]
