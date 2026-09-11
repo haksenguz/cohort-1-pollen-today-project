@@ -20,9 +20,17 @@ other way round.
 3. **Push identity and the repo flow are fixed.** Commit and push as
    **ismoiljon1101** (`ismoiljonedu@gmail.com`). The team repo is `origin` =
    `github.com/haksenguz/cohort-1-pollen-today-project`. Ismoiljon works on
-   `feat/ismoiljon`, Jack works on `feat/jack`, both merge into `main`. Keep
-   the `Ismoiljon1101` fork (`mine`) in sync. Never commit or push as Claude,
-   never a `Co-Authored-By` trailer, never force-push `main`.
+   `feat/ismoiljon`, Jack works on `feat/jack`, both merge into `main`. Never
+   commit or push as Claude, never a `Co-Authored-By` trailer, never
+   force-push `main`.
+
+   **Push workflow (revised 2026-09-11).** Direct push to `origin` is the
+   default for `feat/ismoiljon` — Ismoiljon has write access and the PR
+   round-trip is unnecessary overhead. The `Ismoiljon1101` fork (`mine`)
+   is **not** kept in sync by the agent. If Ismoiljon says "push to mine"
+   and `mine` is behind `origin`, that is an error on Ismoiljon's side:
+   **interpret it as "push to `origin`"** (the team repo) and call out
+   the misroute.
 4. **A change is not done until it builds and its tests pass** on your machine.
    An agent's report is a claim; the running system is the proof. See
    [DEFINITION_OF_DONE](docs/DEFINITION_OF_DONE.md).
@@ -32,7 +40,8 @@ other way round.
 
 ## IMPORTANT — expected of every change
 
-6. Work on `feat/ismoiljon`, open a PR. Do not push to `main`.
+6. Work on `feat/ismoiljon`, push directly to `origin` (see rule 3).
+   Do not push to `main`.
 7. Enums and shapes come from one place. Python:
    `backend/app/core/enums.py`. Do not redefine a payload the spec already
    defines.

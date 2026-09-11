@@ -13,7 +13,13 @@ Every commit and push goes out as **ismoiljon1101**. No exceptions.
 - Author email: **ismoiljonedu@gmail.com**
 - **Team repo** is `origin` = **github.com/haksenguz/cohort-1-pollen-today-project**.
   Ismoiljon works on `feat/ismoiljon`, Jack works on `feat/jack`, both merge
-  into `main`. Also keep the `Ismoiljon1101` fork (`mine`) in sync.
+  into `main`.
+- **Push workflow (revised 2026-09-11).** Ismoiljon has write access to
+  `origin`. Push `feat/ismoiljon` directly to `origin` — no PR round-trip
+  for the lane-1 work. The `Ismoiljon1101` fork (`mine`) is **not** kept in
+  sync by the agent; if Ismoiljon says "push to mine" and `mine` is behind
+  `origin`, **treat that as a misroute** — push to `origin` and flag the
+  wording in the response so Ismoiljon knows.
 - **Never** commit or push as Claude. **Never** add a `Co-Authored-By` trailer
   or any Claude/AI attribution to commits or PRs.
 - **Never** force-push `main` on either remote.
