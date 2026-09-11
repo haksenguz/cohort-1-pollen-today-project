@@ -85,8 +85,10 @@ Read this before planning anything. Most of the backend exists.
       in CI (catches dialect bugs like the TIMESTAMPTZ one). Workflow now
       spins up `postgres:17` and points the test job at it. Locally verified
       135/135 on both backends.
-- [ ] **I8. Build the frontend in CI.** Nothing checks it today.
-      `Touches`: `.github/workflows/ci.yml`.
+- [x] **I8. Build the frontend in CI.** Done. New `frontend` job on the
+      same workflow: pnpm install (frozen lockfile), oxlint, `pnpm build`
+      (`tsc -b && vite build`). A broken import or type error now blocks
+      a PR instead of waiting for a local reviewer.
 
 ## Blocking the demo
 
