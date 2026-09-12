@@ -20,6 +20,14 @@ class Settings(BaseSettings):
 
     cors_origins: list[str] = ["http://localhost:3000"]
 
+    # ADR 0003: when DEMO_MODE is on, requests without a bearer token are
+    # resolved to a seeded demo user instead of 401'ing. The frontend's
+    # phone preview / demo path relies on this so /api/alerts and friends
+    # work without a full register+login round-trip. Off by default;
+    # only ever turned on for local demo runs.
+    demo_mode: bool = False
+    demo_user_email: str = "demo@local"
+
 
 @lru_cache
 def get_settings() -> Settings:

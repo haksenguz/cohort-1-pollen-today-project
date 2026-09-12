@@ -12,6 +12,7 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from pwdlib import PasswordHash
 from pwdlib.hashers.bcrypt import BcryptHasher
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.db import SessionDep
@@ -51,10 +52,41 @@ def _credentials_error() -> HTTPException:
     )
 
 
+async def _get_or_create_demo_user(session: AsyncSession) -> User:
+    """ADR 0003: idempotent seed for the demo user. The password hash is
+    a placeholder that can never match a real login attempt — there is no
+    password login for this account; it exists purely so a request with
+    no bearer token, when DEMO_MODE is on, resolves to a known user."""
+    from sqlalchemy import select
+
+    settings = get_settings()
+    existing = await session.execute(select(User).where(User.email == settings.demo_user_email))
+    user = existing.scalar_one_or_none()
+    if user is not None:
+        return user
+    user = User(
+        email=settings.demo_user_email,
+        password_hash="!demo-no-login",  # noqa: S106
+        latitude=37.5665,
+        longitude=126.978,
+    )
+    session.add(user)
+    await session.commit()
+    await session.refresh(user)
+    return user
+
+
 async def get_current_user(
     session: SessionDep,
     token: Annotated[str | None, Depends(oauth2_scheme)],
 ) -> User:
+    # ADR 0003: demo-mode fallback. When DEMO_MODE is on and the request
+    # has no token, resolve to the seeded demo user instead of 401'ing.
+    # Off (the default), this branch is dead code and behaviour is
+    # unchanged.
+    if token is None and get_settings().demo_mode:
+        return await _get_or_create_demo_user(session)
+
     if token is None:
         raise _credentials_error()
     try:
