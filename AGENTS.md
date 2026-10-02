@@ -19,10 +19,10 @@ other way round.
    symptoms, or clinical claims. Sample data is labelled as sample.
 3. **Push identity and the repo flow are fixed.** Commit and push as
    **ismoiljon1101** (`ismoiljonedu@gmail.com`). The team repo is `origin` =
-   `github.com/haksenguz/cohort-1-pollen-today-project`. Ismoiljon works on
-   `feat/ismoiljon`, Jack works on `feat/jack`, both merge into `main`. Never
-   commit or push as Claude, never a `Co-Authored-By` trailer, never
-   force-push `main`.
+   `github.com/haksenguz/cohort-1-pollen-today-project`. Ismoiljon owns
+   `feat/ismoiljon` and works alone (the two-lane split ended 2026-10-02, see
+   `TASKS.md`). Never commit or push as Claude, never a `Co-Authored-By`
+   trailer, never force-push `main`.
 
    **Push workflow (revised 2026-09-11).** Direct push to `origin` is the
    default for `feat/ismoiljon` — Ismoiljon has write access and the PR

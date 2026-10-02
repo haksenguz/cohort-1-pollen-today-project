@@ -12,8 +12,8 @@ Every commit and push goes out as **ismoiljon1101**. No exceptions.
 - Author name: **Ismoiljon**
 - Author email: **ismoiljonedu@gmail.com**
 - **Team repo** is `origin` = **github.com/haksenguz/cohort-1-pollen-today-project**.
-  Ismoiljon works on `feat/ismoiljon`, Jack works on `feat/jack`, both merge
-  into `main`.
+  Ismoiljon works on `feat/ismoiljon` and owns the whole repo since the
+  two-lane split ended 2026-10-02.
 - **Push workflow (revised 2026-09-11).** Ismoiljon has write access to
   `origin`. Push `feat/ismoiljon` directly to `origin` — no PR round-trip
   for the lane-1 work. The `Ismoiljon1101` fork (`mine`) is **not** kept in
@@ -34,23 +34,23 @@ git remote -v           # origin -> haksenguz (team), mine -> Ismoiljon1101 (for
 
 If identity is wrong, fix it before pushing.
 
-## How we work — two people, two lanes
+## How we work — one owner
 
-Owners and the current task list live in [TASKS.md](TASKS.md). The contract
-between the lanes is [docs/API_CONTRACT.md](docs/API_CONTRACT.md); change it
-only by agreement, because the other lane builds against it.
+The current task list lives in [TASKS.md](TASKS.md). The API contract is
+[docs/API_CONTRACT.md](docs/API_CONTRACT.md).
 
-- **Ismoiljon** (tech lead) → `feat/ismoiljon`. Triage, environment, hospitals,
-  auth, notifications, and the frontend shell.
-- **Jack** (AI engineer) → `feat/jack`. The conversation vertical end to end:
-  the agent graph, the chat endpoint, the chat screen.
+- **Ismoiljon** (tech lead) → `feat/ismoiljon`, and owns the whole repo. The
+  two-lane split with Jack ended 2026-10-02; `origin/feat/jack` never got past
+  docs, so Ismoiljon took the conversation vertical too.
 
-Rules that keep the lanes apart:
+The split that still matters is safety, not people.
+[ADR 0001](docs/adr/0001-llm-does-not-decide-safety.md) draws it: the LLM does
+conversation and extraction, the deterministic engine in
+`backend/app/services/triage.py` owns every safety decision. No matter who
+edits `backend/app/agents/`, that rule engine stays a rule engine.
 
-- Jack never edits `backend/app/services/triage.py` or `risk.py`.
-- Ismoiljon never edits `backend/app/agents/`.
-- `backend/app/main.py` and `backend/pyproject.toml` collide no matter how we
-  split, so **Ismoiljon owns both**. Jack asks for additions.
+Working rules:
+
 - Rebase on `main` before merging, so conflicts get resolved locally rather
   than in the merge: `git fetch origin && git rebase origin/main`.
 - `main` stays green. Run the gate before you merge:

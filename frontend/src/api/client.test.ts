@@ -4,14 +4,19 @@
  *   - the bearer token is attached on protected routes,
  *   - JSON bodies parse and errors throw `ApiError`.
  *
- * The test base URL falls through to the default `http://localhost:8000`
- * because the client reads `import.meta.env.VITE_API_BASE_URL`, which is
- * not set in tests — that is fine, we mock the network layer.
+ * URL assertions are written against the exported `API_BASE_URL`, not a
+ * hard-coded `http://localhost:8000`. A developer's `frontend/.env` sets
+ * `VITE_API_BASE_URL` (it often points at a LAN or Tailscale address so a
+ * phone can reach the laptop), and Vite loads it in test mode too. Asserting
+ * the literal localhost default made these tests fail for anyone with a
+ * local .env while still passing in CI. We mock the network layer, so what
+ * matters is that the path is composed onto whatever base is configured.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { getToken } from "../auth/token";
 import {
+  API_BASE_URL,
   ApiError,
   getNearbyHospitals,
   listAlerts,
@@ -66,7 +71,7 @@ describe("listAlerts", () => {
     expect(alerts[0].id).toBe(1);
     expect(fetchSpy).toHaveBeenCalledTimes(1);
     const [url, init] = fetchSpy.mock.calls[0];
-    expect(url).toBe("http://localhost:8000/api/alerts");
+    expect(url).toBe(`${API_BASE_URL}/api/alerts`);
     expect(init.method).toBe("GET");
     expect(init.headers.Authorization).toBe("Bearer tkn-abc");
   });
@@ -103,7 +108,7 @@ describe("markAlertRead", () => {
 
     expect(result.is_read).toBe(true);
     const [url, init] = fetchSpy.mock.calls[0];
-    expect(url).toBe("http://localhost:8000/api/alerts/7/read");
+    expect(url).toBe(`${API_BASE_URL}/api/alerts/7/read`);
     expect(init.method).toBe("PATCH");
     expect(init.headers.Authorization).toBe("Bearer tkn-abc");
   });
@@ -142,7 +147,7 @@ describe("readPreferences", () => {
 
     expect(prefs.min_risk_level).toBe("HIGH");
     const [url, init] = fetchSpy.mock.calls[0];
-    expect(url).toBe("http://localhost:8000/api/notifications/preferences");
+    expect(url).toBe(`${API_BASE_URL}/api/notifications/preferences`);
     expect(init.method).toBe("GET");
   });
 });
@@ -171,7 +176,7 @@ describe("updatePreferences", () => {
 
     expect(prefs.alert_air_quality).toBe(false);
     const [url, init] = fetchSpy.mock.calls[0];
-    expect(url).toBe("http://localhost:8000/api/notifications/preferences");
+    expect(url).toBe(`${API_BASE_URL}/api/notifications/preferences`);
     expect(init.method).toBe("PUT");
     expect(JSON.parse(init.body)).toEqual({
       alert_air_quality: false,

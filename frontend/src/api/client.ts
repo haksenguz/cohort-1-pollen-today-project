@@ -199,7 +199,7 @@ export function updatePreferences(
 // It is not a token-by-token stream — `message.delta` carries the full
 // assistant reply as one string. See docs/API_CONTRACT.md.
 //
-// This belongs to the chat vertical (Jack, frontend/src/chat/) — kept here
+// The chat screen itself lives in frontend/src/chat/ (TASKS.md J5) — kept here
 // only so every endpoint in the contract has a typed client function.
 
 export interface ChatStreamHandlers {

@@ -19,10 +19,9 @@ from app.core.openai_client import (
 class _Msg:
     """Tiny duck-typed stand-in for the agents-side ChatMessage.
 
-    The production module imports ChatMessage from app.agents; that
-    module is Jack's lane. This test stub keeps the new core module
-    independent of the agents module while staying structurally
-    compatible with the LLMClient Protocol.
+    The production module defines its own ChatMessage Protocol; this
+    test stub keeps the core module independent of the agents module
+    while staying structurally compatible with the LLMClient Protocol.
     """
 
     def __init__(self, role: str, content: str) -> None:

@@ -1,29 +1,26 @@
 # TASKS — who owns what
 
-Updated: 2026-09-11. Two people, two lanes.
+Updated: 2026-10-02. One person, one lane.
 
-- **Ismoiljon** (tech lead) works on `feat/ismoiljon`.
-- **Jack** (AI engineer) works on `feat/jack`.
-- Both merge into `main` when a lane is ready. `main` must stay green.
+- **Ismoiljon** (tech lead) owns `feat/ismoiljon` and the whole repo. The
+  two-lane split with Jack ended 2026-10-02: `origin/feat/jack` never got
+  past docs, so Ismoiljon took the conversation vertical too.
+- `main` must stay green. Merge a lane when it is ready.
 
-The API contract between the lanes is [`docs/API_CONTRACT.md`](docs/API_CONTRACT.md).
-Change it only by agreement, because the other lane builds against it.
+The API contract is [`docs/API_CONTRACT.md`](docs/API_CONTRACT.md).
 
 ## The boundary
 
-Jack owns the conversation vertical end to end: the agent graph, the chat
-endpoint, and the chat screen. Ismoiljon owns everything else.
-
-The line is the one already written in
+The line that still matters is not a people split, it is the safety split
+already written in
 [ADR 0001](docs/adr/0001-llm-does-not-decide-safety.md): the LLM does
 conversation and extraction, the deterministic engine decides safety.
 
-- Jack never edits `backend/app/services/triage.py` or `risk.py`.
-- Ismoiljon never edits `backend/app/agents/`.
+- `backend/app/services/triage.py` and `risk.py` stay a rule engine. Never
+  move a safety decision into a prompt, no matter who edits the agents.
 
-Two files collide no matter how we split. **Ismoiljon owns
-`backend/app/main.py` and `backend/pyproject.toml`.** Jack asks for additions
-instead of editing them.
+Ismoiljon now owns everything, including `backend/app/agents/` and
+`backend/app/main.py`. The old per-person restrictions are gone.
 
 ## Already done (on `main`, do not rebuild)
 
@@ -37,12 +34,15 @@ Read this before planning anything. Most of the backend exists.
 - Symptom agent: LangGraph graph, SSE chat endpoint, conversation persistence
 - 82 tests green
 
-## Jack — `feat/jack`
+## The conversation vertical — `feat/ismoiljon`
 
-- [ ] **J1. Review the merged agent.** Read `backend/app/agents/symptom_agent.py`
-      and `api/chat.py`. You own them now. `Touches`: nothing, this is reading.
-- [ ] **J2. Prove it against a real LLM.** Everything so far is tested with a
-      scripted fake. Run it with a real key, fix what breaks.
+Jack never started these. They are the critical path to release, so they
+moved to Ismoiljon's list on 2026-10-02.
+
+- [ ] **J2. Prove it against a real LLM.** The client factory is now verified
+      against a real provider: `app/core/openai_client.py` through OpenRouter,
+      Korean input, JSON out (commit `5a420f2`). Still open: the full
+      `symptom_agent` graph over the SSE endpoint with the real key.
       `Touches`: `backend/app/agents/symptom_agent.py`.
 - [ ] **J3. Prompt + extraction quality.** Symptom, severity, duration, trigger.
       Build a small eval set of real phrasings, including Uzbek and Korean input.
@@ -50,10 +50,15 @@ Read this before planning anything. Most of the backend exists.
 - [ ] **J4. Failure behaviour.** Timeout, rate limit, malformed JSON, empty
       reply. The endpoint must degrade, never 500.
       `Touches`: `backend/app/agents/`, `backend/app/api/chat.py`.
-- [ ] **J5. Chat screen.** The frontend chat UI against the SSE contract.
+- [ ] **J5. Chat screen.** The frontend chat UI against the SSE contract. This
+      is the only surface a reviewer can hold, and it does not exist yet.
       `Touches`: `frontend/src/chat/`.
 - [ ] **J6. Cost + latency guard.** Token caps, model choice, a timeout budget.
       `Touches`: `backend/app/agents/`.
+- [ ] **J7. Collapse the duplicate client.** `OpenAIChatClient` exists in both
+      `app/core/openai_client.py` and `app/agents/symptom_agent.py`. Merge them
+      so there is one boundary with the model.
+      `Touches`: `backend/app/agents/`, `backend/app/core/openai_client.py`.
 
 ## Ismoiljon — `feat/ismoiljon`
 
@@ -70,13 +75,14 @@ Read this before planning anything. Most of the backend exists.
       `backend/.env.example` documents where to get each key. The
       remaining work is non-code: get the keys, put them in
       `backend/.env`, confirm real data comes back.
-      - [ ] Naver: `NAVER_CLIENT_ID`, `NAVER_CLIENT_SECRET`. Without them
-            `/api/hospitals/nearby` answers `provider_available: false`.
-      - [ ] Pollen: `POLLEN_API_KEY` from data.go.kr. Without it pollen is a
-            flagged sample, which is the one thing a reviewer will notice.
-      - [ ] OpenAI: `OPENAI_API_KEY`. Without it chat asks its safety question
-            but extracts nothing, so it never reaches a verdict. Jack needs
-            this for J2.
+      - [x] Naver: `NAVER_CLIENT_ID`, `NAVER_CLIENT_SECRET`. Both live as of
+            2026-10-02, so `/api/hospitals/nearby` returns real hospitals.
+      - [ ] Pollen: `POLLEN_API_KEY` from data.go.kr. Still empty. Without it
+            pollen is a flagged sample, which is the one thing a reviewer will
+            notice. This is the only remaining key and it is the P0.
+      - [x] OpenAI: `OPENAI_API_KEY` live as of 2026-10-02, pointed at an
+            OpenRouter base URL via `OPENAI_BASE_URL` and `OPENAI_MODEL`.
+            Verified end to end, see J2.
       `Touches`: `backend/.env` only (gitignored).
 - [x] **I4. Phase 6, notifications.** Done. APScheduler, alert generation,
       preferences with quiet hours. Generates and stores only, sends nothing.
@@ -105,9 +111,12 @@ Read this before planning anything. Most of the backend exists.
 
 ## Blocking the demo
 
-Three keys, none of them code: pollen, Naver, OpenAI. That is **I3**. Until the
-pollen key exists the app reports invented pollen numbers, which is the first
-thing a reviewer will ask about.
+One key, and it is not code: `POLLEN_API_KEY` from data.go.kr. Naver and
+OpenAI are live. Until the pollen key exists the app reports invented pollen
+numbers, which is the first thing a reviewer will ask about. The escape hatch
+if the key does not land in time: make the fallback state explicit in the UI
+so the app says "pollen unavailable" rather than showing a sample that reads
+like a real reading.
 
 ## Verified working
 
