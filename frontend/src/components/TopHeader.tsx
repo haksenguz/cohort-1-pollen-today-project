@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { SettingsIcon } from "lucide-react";
 import { ChevronRightIcon, LeafIcon, ThemeIcon } from "./icons";
 
 type ThemePref = "system" | "light" | "dark";
@@ -50,6 +51,14 @@ export function TopHeader() {
           <small>Your pocket allergy guide</small>
         </div>
         <span className="spacer" />
+        <button
+          className="iconbtn"
+          onClick={() => navigate("/profile")}
+          title="Profile and settings"
+          aria-label="Profile and settings"
+        >
+          <SettingsIcon aria-hidden="true" />
+        </button>
         <button className="iconbtn" onClick={cycleTheme} title={`Theme: ${pref}`} aria-label="Toggle theme">
           <ThemeIcon />
         </button>

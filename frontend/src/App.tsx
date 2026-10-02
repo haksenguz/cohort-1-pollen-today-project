@@ -5,6 +5,7 @@ import { RequireAuth } from "./auth/RequireAuth";
 import { AlertsPage } from "./routes/AlertsPage";
 import { ChatScreen } from "./chat/ChatScreen";
 import { LoginPage } from "./routes/LoginPage";
+import { ProfilePage } from "./routes/ProfilePage";
 import { RegisterPage } from "./routes/RegisterPage";
 import { TodayPage } from "./routes/TodayPage";
 
@@ -29,6 +30,7 @@ function App() {
             <Route path="/chat" element={<ChatScreen />} />
             <Route path="/today" element={<TodayPage />} />
             <Route path="/alerts" element={<AlertsPage />} />
+            <Route path="/profile" element={<ProfilePage />} />
           </Route>
 
           <Route path="/" element={<Navigate to="/chat" replace />} />
