@@ -21,9 +21,16 @@ from typing import Protocol
 from app.core.config import get_settings
 
 
-class ChatMessage(Protocol):
-    role: str
-    content: str
+class ChatMessageLike(Protocol):
+    """A chat turn as a plain mapping.
+
+    `symptom_agent.ChatMessage` is a TypedDict, so every turn the agent
+    builds is a dict at runtime, not an object with attributes. This
+    module is handed those dicts directly, so the type here is a
+    Mapping rather than an attribute Protocol.
+    """
+
+    def __getitem__(self, key: str) -> str: ...
 
 
 class LLMClient(Protocol):
@@ -33,7 +40,7 @@ class LLMClient(Protocol):
     proxy via OPENAI_BASE_URL); tests supply a scripted fake.
     """
 
-    def complete(self, messages: Sequence[ChatMessage]) -> str: ...
+    def complete(self, messages: Sequence[ChatMessageLike]) -> str: ...
 
 
 def _import_openai_sdk():
@@ -59,10 +66,15 @@ class OpenAIChatClient:
         self._client = OpenAI(**kwargs)
         self._model = model
 
-    def complete(self, messages: Sequence[ChatMessage]) -> str:
+    def complete(self, messages: Sequence[ChatMessageLike]) -> str:
+        # Rebuild each turn as a fresh dict. `symptom_agent` passes
+        # TypedDicts, so touching `m.role` here would raise
+        # AttributeError on the real chat path. Copying also stops a
+        # caller mutating our payload after the call.
+        payload = [{"role": m["role"], "content": m["content"]} for m in messages]
         response = self._client.chat.completions.create(
             model=self._model,
-            messages=[{"role": m.role, "content": m.content} for m in messages],
+            messages=payload,
             temperature=0,
         )
         return response.choices[0].message.content or ""

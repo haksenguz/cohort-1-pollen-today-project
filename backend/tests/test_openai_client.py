@@ -16,23 +16,6 @@ from app.core.openai_client import (
 )
 
 
-class _Msg:
-    """Tiny duck-typed stand-in for the agents-side ChatMessage.
-
-    The production module defines its own ChatMessage Protocol; this
-    test stub keeps the core module independent of the agents module
-    while staying structurally compatible with the LLMClient Protocol.
-    """
-
-    def __init__(self, role: str, content: str) -> None:
-        self.role = role
-        self.content = content
-
-
-# Re-alias for readability inside the tests.
-ChatMessage = _Msg
-
-
 @pytest.fixture
 def fake_settings(monkeypatch):
     """A helper that sets OPENAI_API_KEY to a sentinel and clears the rest."""
@@ -111,12 +94,74 @@ def test_openai_chat_client_calls_completions(monkeypatch):
     client = OpenAIChatClient(api_key="sk-test", model="gpt-4o-mini")
     out = client.complete(
         [
-            ChatMessage(role="system", content="you are helpful"),
-            ChatMessage(role="user", content="hello"),
+            {"role": "system", "content": "you are helpful"},
+            {"role": "user", "content": "hello"},
         ]
     )
 
     assert out == "hi"
+
+
+def test_complete_accepts_dict_messages(monkeypatch):
+    """The real chat path: symptom_agent.ChatMessage is a TypedDict.
+
+    This is the shape production actually sends. The client previously
+    read `m.role`, which raised AttributeError on dicts and made every
+    live chat turn fail extraction.
+    """
+    captured: dict = {}
+
+    class FakeCompletions:
+        def create(self, **kwargs):
+            captured.update(kwargs)
+
+            class _Resp:
+                choices = [type("C", (), {"message": type("M", (), {"content": "hi"})()})()]
+
+            return _Resp()
+
+    class FakeOpenAI:
+        def __init__(self, **kwargs):
+            self.chat = type("Chat", (), {"completions": FakeCompletions()})()
+
+    monkeypatch.setattr("app.core.openai_client._import_openai_sdk", lambda: FakeOpenAI)
+
+    client = OpenAIChatClient(api_key="sk-test", model="gpt-4o-mini")
+    out = client.complete(
+        [
+            {"role": "system", "content": "you are helpful"},
+            {"role": "user", "content": "hello"},
+        ]
+    )
+
+    assert out == "hi"
+    assert captured["messages"] == [
+        {"role": "system", "content": "you are helpful"},
+        {"role": "user", "content": "hello"},
+    ]
+
+
+def test_complete_does_not_mutate_caller_messages(monkeypatch):
+    """The payload sent to the SDK is a copy, not the caller's objects."""
+
+    class FakeCompletions:
+        def create(self, **kwargs):
+            class _Resp:
+                choices = [type("C", (), {"message": type("M", (), {"content": "ok"})()})()]
+
+            return _Resp()
+
+    class FakeOpenAI:
+        def __init__(self, **kwargs):
+            self.chat = type("Chat", (), {"completions": FakeCompletions()})()
+
+    monkeypatch.setattr("app.core.openai_client._import_openai_sdk", lambda: FakeOpenAI)
+
+    original = {"role": "user", "content": "hello"}
+    client = OpenAIChatClient(api_key="sk-test", model="gpt-4o-mini")
+    client.complete([original])
+
+    assert original == {"role": "user", "content": "hello"}
 
 
 def test_get_client_from_settings_reads_all_three(fake_settings):
