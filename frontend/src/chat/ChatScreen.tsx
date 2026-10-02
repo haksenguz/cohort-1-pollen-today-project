@@ -27,6 +27,14 @@ const UserMessage = () => (
 
 const AssistantMessage = () => (
   <MessagePrimitive.Root className="aui-msg aui-msg-bot">
+    {/* ErrorPrimitive.Message reads the error off the enclosing message via
+        useMessageError(), so it must sit INSIDE MessagePrimitive.Root. At
+        thread level it threw "The current scope does not have a 'message'
+        property" and unmounted the entire app, blanking /chat, which is the
+        default route and where the installed PWA opens. It renders null
+        when the message has no error, and takes className, which is why it
+        is preferred over MessagePrimitive.Error here. */}
+    <ErrorPrimitive.Message className="aui-error-message" />
     <MessagePrimitive.Content />
   </MessagePrimitive.Root>
 );
@@ -51,10 +59,6 @@ const Composer = () => (
 
 const Thread = () => (
   <ThreadPrimitive.Root className="aui-thread">
-    <ErrorPrimitive.Root className="aui-error">
-      <ErrorPrimitive.Message className="aui-error-message" />
-    </ErrorPrimitive.Root>
-
     <ThreadPrimitive.Viewport className="aui-viewport">
       <ThreadPrimitive.Messages
         components={{ UserMessage, AssistantMessage }}

@@ -873,6 +873,20 @@ h2.vt {
   color: var(--ink-soft);
 }
 
+/* Send and Cancel are both always mounted so the library owns their click
+   behaviour, which means both paint unless something hides the inactive
+   one. While the input still shows its placeholder there is nothing to
+   send, so hide both. This also means there is no visible Stop button
+   mid-run: CSS cannot see the library's running state, and guessing at its
+   internals is what broke this screen once already. Our backend answers a
+   whole turn in one SSE event rather than streaming tokens, so the run is
+   short and the missing cancel is a known, accepted trade-off. Revisit
+   against the assistant-ui composer state if long streams land. */
+.aui-composer:has(.aui-composer-input:placeholder-shown) .aui-send,
+.aui-composer:has(.aui-composer-input:placeholder-shown) .aui-cancel {
+  display: none;
+}
+
 .aui-error {
   margin: 10px 12px 0;
 }
