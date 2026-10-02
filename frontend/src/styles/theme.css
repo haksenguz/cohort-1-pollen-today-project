@@ -1,7 +1,43 @@
 /*
  * Design tokens + shared shell styles, lifted from frontend/prototype.html
  * (the visual reference — match it, don't reinvent it).
+ *
+ * Tailwind v4 is the styling layer (ADR 0003). The raw values in `:root`
+ * stay the single source of truth; the `@theme` block below maps them onto
+ * Tailwind's namespaces. That mapping is deliberately NOT `@theme inline`:
+ * inline bakes the value into the utility at build time and kills runtime
+ * dark-mode switching. Referencing `var()` keeps the whole chain resolving
+ * at runtime, so the `data-theme="dark"` overrides in this file just work.
  */
+
+@import "tailwindcss";
+
+/* The app toggles dark mode with a data attribute on <html>, not a `.dark`
+   class, so the variant has to match what TopHeader actually sets. */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+@theme {
+  --color-app-bg: var(--bg);
+  --color-app-frame: var(--frame);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-ink: var(--ink);
+  --color-ink-soft: var(--ink-soft);
+  --color-line: var(--line);
+  --color-brand: var(--brand);
+  --color-brand-ink: var(--brand-ink);
+  --color-brand-tint: var(--brand-tint);
+  --color-risk-low: var(--low);
+  --color-risk-moderate: var(--moderate);
+  --color-risk-high: var(--high);
+  --color-risk-emergency: var(--emergency);
+  --color-bot: var(--bot);
+  --color-me: var(--me);
+  --color-me-ink: var(--me-ink);
+
+  --font-sans: var(--font);
+  --font-display: var(--display);
+}
 
 :root {
   --bg: #e7ece7;

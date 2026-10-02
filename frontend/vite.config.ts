@@ -1,4 +1,5 @@
 /// <reference types="vitest" />
+import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 import { VitePWA } from "vite-plugin-pwa";
@@ -6,6 +7,9 @@ import { VitePWA } from "vite-plugin-pwa";
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [
+    // Tailwind v4 is CSS-first: no tailwind.config.js, no PostCSS config.
+    // See docs/adr/0003-tailwind-v4-frontend-styling.md.
+    tailwindcss(),
     react(),
     VitePWA({
       // "prompt", not "autoUpdate". UpdatePrompt.tsx is built on the
