@@ -215,7 +215,12 @@ class _LazyLLMClient:
 
     def complete(self, messages) -> str:
         if self._client is None:
-            self._client = symptom_agent.get_llm_client(self._api_key)
+            # Use the core factory so OPENAI_BASE_URL (OpenRouter / Azure /
+            # local proxy) and OPENAI_MODEL are honoured. The factory returns
+            # an object that structurally satisfies symptom_agent.LLMClient.
+            from app.core.openai_client import get_openai_client_from_settings
+
+            self._client = get_openai_client_from_settings()
         return self._client.complete(messages)
 
 

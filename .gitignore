@@ -26,5 +26,8 @@ pgdata/
 .idea/
 .vscode/
 
+# runtime logs
+*.log
+
 # agent worktrees / local claude state
 .claude/

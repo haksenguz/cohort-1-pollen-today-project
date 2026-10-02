@@ -12,6 +12,10 @@ class Settings(BaseSettings):
 
     # external services — keys stay server-side, never shipped to the frontend
     openai_api_key: str = ""
+    # Optional OpenAI-compatible proxy (OpenRouter, Azure OpenAI, local llama.cpp
+    # server, etc). Empty means use OpenAI's default endpoint.
+    openai_base_url: str = ""
+    openai_model: str = "gpt-4o-mini"
     naver_client_id: str = ""
     naver_client_secret: str = ""
     pollen_api_key: str = ""
