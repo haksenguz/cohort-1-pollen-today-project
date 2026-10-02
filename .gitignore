@@ -29,5 +29,12 @@ pgdata/
 # runtime logs
 *.log
 
+# The shadcn CLI created a literal "@" directory at the frontend root before
+# the @/ alias was configured in tsconfig.json. mavis-trash cannot remove it
+# on this OneDrive-backed path ("This function is not supported on this
+# system"), so it is ignored until it can be deleted by hand. It sits outside
+# src/ and has no effect on the build.
+frontend/_stray_at/
+
 # agent worktrees / local claude state
 .claude/

@@ -3,5 +3,16 @@
   "references": [
     { "path": "./tsconfig.app.json" },
     { "path": "./tsconfig.node.json" }
-  ]
+  ],
+  /*
+   * The shadcn CLI resolves the @/ alias from this file, not from
+   * tsconfig.app.json, so the mapping is declared in both. tsc itself uses
+   * the referenced projects. No baseUrl here: TypeScript 6 deprecates it and
+   ./src paths resolve against this file on their own.
+   */
+  "compilerOptions": {
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  }
 }

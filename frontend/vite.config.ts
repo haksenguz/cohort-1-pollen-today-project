@@ -1,11 +1,18 @@
 /// <reference types="vitest" />
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
+import { fileURLToPath, URL } from "node:url";
 import { defineConfig } from "vite";
 import { VitePWA } from "vite-plugin-pwa";
 
 // https://vite.dev/config/
 export default defineConfig({
+  resolve: {
+    // Must match compilerOptions.paths in tsconfig.app.json.
+    alias: {
+      "@": fileURLToPath(new URL("./src", import.meta.url)),
+    },
+  },
   plugins: [
     // Tailwind v4 is CSS-first: no tailwind.config.js, no PostCSS config.
     // See docs/adr/0003-tailwind-v4-frontend-styling.md.

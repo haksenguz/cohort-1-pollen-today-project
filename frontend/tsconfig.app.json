@@ -20,7 +20,15 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "erasableSyntaxOnly": true,
-    "noFallthroughCasesInSwitch": true
+    "noFallthroughCasesInSwitch": true,
+
+    /* Path alias, required by the shadcn CLI and used by every component it
+       writes. Kept in sync with resolve.alias in vite.config.ts. No
+       baseUrl: TypeScript 6 deprecates it, and paths entries that start
+       with ./ resolve against this file anyway. */
+    "paths": {
+      "@/*": ["./src/*"]
+    }
   },
   "include": ["src"]
 }
