@@ -28,6 +28,7 @@ from app.agents import symptom_agent
 from app.core.config import get_settings
 from app.core.db import SessionDep
 from app.core.enums import ConversationStatus, MessageRole
+from app.core.rate_limit import get_limiter
 from app.core.security import CurrentUser
 from app.models import Conversation, Message, SymptomEvent, TriageResult
 
@@ -254,6 +255,26 @@ LLMDep = Annotated[symptom_agent.LLMClient, Depends(get_llm)]
 async def chat(
     req: ChatRequest, session: SessionDep, llm: LLMDep, user: CurrentUser
 ) -> StreamingResponse:
+    # Abuse protection. Each turn is a real model call, so an unbounded
+    # endpoint is a direct billing risk; auth alone does not bound it.
+    #
+    # Checked here, before the stream opens, so an over-limit caller gets a
+    # real 429 with Retry-After. Raising inside the generator would be too
+    # late — the 200 and its headers are already sent by then.
+    #
+    # The limit is per user, not per conversation: one user must not be able
+    # to escape it by starting a fresh conversation each turn.
+    decision = await get_limiter().check(str(user.id))
+    if not decision.allowed:
+        raise HTTPException(
+            status_code=429,
+            detail=(
+                "You are sending messages too quickly. "
+                f"Please wait about {int(decision.retry_after_seconds) + 1}s and try again."
+            ),
+            headers=decision.headers,
+        )
+
     # Resolve the conversation before the stream opens. Raising inside the
     # generator would be too late: the 200 and its headers are already sent,
     # so a 404 there would never reach the client.
@@ -263,4 +284,5 @@ async def chat(
     return StreamingResponse(
         _run_chat(req, session, llm, user.id, conversation),
         media_type="text/event-stream",
+        headers=decision.headers,
     )

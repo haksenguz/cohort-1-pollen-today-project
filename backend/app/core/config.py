@@ -23,8 +23,14 @@ class Settings(BaseSettings):
     naver_client_id: str = ""
     naver_client_secret: str = ""
     pollen_api_key: str = ""
-    weather_api_key: str = ""
     jwt_secret: str = "change-me"
+
+    # Abuse protection for POST /api/chat. Every turn is a real model call, so
+    # an unbounded endpoint is a direct billing risk. Per-user, per-process,
+    # sliding window — see app/core/rate_limit.py for the (documented) limits
+    # of that choice. 0 or less disables limiting, which is what local dev and
+    # the test suite use.
+    chat_rate_limit_per_minute: int = 20
 
     cors_origins: list[str] = ["http://localhost:3000"]
 

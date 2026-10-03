@@ -47,6 +47,16 @@ before the stream opens, so a `conversation_id` belonging to another user is
 rejected with `404` rather than `403` — the endpoint never confirms that
 someone else's conversation exists.
 
+**`POST /api/chat` is rate limited.** Every turn is a real model call, so the
+endpoint is bounded per user: a sliding window of
+`CHAT_RATE_LIMIT_PER_MINUTE` (default 20, `0` disables). Over the limit the
+response is a `429` with a `Retry-After` header and a detail string saying how
+long to wait. It is raised *before* the stream opens, so it is a real status
+code — a refusal emitted inside the generator would arrive after the `200` and
+its headers were already sent. Every response carries `X-RateLimit-Limit` and
+`X-RateLimit-Remaining`. The window is per process and held in memory: N
+workers would each allow the full limit, and a restart clears it.
+
 ---
 
 ## `GET /health`
@@ -440,7 +450,7 @@ Verified against `backend/app/services/*.py` and `backend/app/core/config.py`.
 
 | Service | Provider | Config setting (env var) | Key required? | Status as of this doc |
 | --- | --- | --- | --- | --- |
-| Weather | Open-Meteo (`api.open-meteo.com`) | none used | No | Live. `weather_api_key` (`WEATHER_API_KEY`) exists in `Settings` but nothing in `weather_service.py` reads it. Dead config. |
+| Weather | Open-Meteo (`api.open-meteo.com`) | none | No | Live and keyless. `weather_api_key` was removed from `Settings` on 2026-10-04 because nothing read it and Open-Meteo needs no key. |
 | Air quality | Open-Meteo Air Quality (`air-quality-api.open-meteo.com`) | none used | No | Live, keyless, same pattern as weather. |
 | Pollen | KMA 꽃가루농도위험지수 (`apis.data.go.kr`, see `docs/research/pollen-providers.md`) | `pollen_api_key` (`POLLEN_API_KEY`) | Optional (graceful fallback) | `fetch_pollen()` calls the real KMA provider when `POLLEN_API_KEY` is set; on any provider failure it degrades to an all-`None` `PollenData` (`is_sample: false` — a real "no data" response, not the sample). With no key it returns `sample_pollen()`: a hardcoded, clearly-flagged (`is_sample: true` → `pollen_is_sample` in the response) sample. The two are never blended. The provider doesn't report a grass reading, so `pollen.grass` stays `null` even with a real key. |
 | Hospitals | Naver Local Search (`openapi.naver.com/v1/search/local.json`) | `naver_client_id` + `naver_client_secret` (`NAVER_CLIENT_ID`, `NAVER_CLIENT_SECRET`) | **Yes, both** | Live when both are set. If either is blank, `NaverLocalClient.search()` raises before any HTTP call and the endpoint degrades to `provider_available: false` (see above), not an error. |

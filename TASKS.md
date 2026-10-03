@@ -129,6 +129,23 @@ returns. Both are covered by regression tests now.
       spins up `postgres:17`.
 - [x] **I8. Build the frontend in CI.** Done. `pnpm install --frozen-lockfile`,
       oxlint, `pnpm build` (`tsc -b && vite build`).
+- [x] **I9. Abuse protection on the chat endpoint.** Done. Every turn of the
+      symptom conversation is a real model call, so an unbounded endpoint is a
+      direct billing risk and authentication alone does not bound a signed-up
+      client. `POST /api/chat` now enforces a per-user sliding window
+      (default 20/min, `CHAT_RATE_LIMIT_PER_MINUTE`, 0 disables). The refusal is
+      a real `429` with `Retry-After`, raised *before* the SSE stream opens —
+      inside the generator the 200 would already be sent and the refusal
+      unreachable. Standard `X-RateLimit-*` headers ride along on both
+      outcomes. No new table and no schema change: state is a per-process
+      in-memory deque, so the ERD and generated SQL are untouched. The
+      concurrency case is tested — without the lock, ten simultaneous requests
+      each read "one slot left" and all ten get in.
+- [x] **I10. Dead config removed.** `WEATHER_API_KEY` / `weather_api_key` is
+      gone from `Settings` and `.env.example`. Open-Meteo is keyless, so
+      nothing ever read it; leaving it in the config invited someone to go
+      looking for a key that does nothing. The spec's own env-var list (§20) is
+      left as written, since that is the historical document it is.
 
 ## Blocking the demo
 
@@ -148,6 +165,20 @@ preferences, and frontend login.
 
 ## Parking lot
 
-- ML personalization (Phase 7)
-- Rate limiting and abuse protection on the chat endpoint
-- `WEATHER_API_KEY` is dead config, nothing reads it
+- **ML personalization (spec Phase 7).** Deliberately not built. The spec says
+  the system "can *eventually* provide personalized insights" — it is a
+  roadmap phase, not a release gate, and its data substrate is already in
+  place: `EnvironmentSnapshot` rows are written hourly by the notification
+  scheduler and `SymptomEvent` rows carry symptoms, severity and trigger per
+  conversation. What does not exist is anything that *reads* that history to
+  find correlations. That is a real feature with a real design question
+  (how many observations before a correlation is meaningful), so it wants its
+  own brief rather than being quietly appended to a release.
+- **Rate limiting beyond the chat endpoint.** `POST /api/chat` is now limited
+  (see the parking-lot resolution below). The other endpoints are read-only or
+  cheap; if the hospital or environment providers ever get keys with quotas
+  worth protecting, they want the same treatment.
+- **Multi-instance rate limiting.** The chat limiter is per-process and in
+  memory, so N workers would each allow the limit and a restart clears it. Fine
+  for the single-instance deployment this is; a shared store (the Redis already
+  in `Settings`) is the upgrade path when it stops being fine.
