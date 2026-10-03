@@ -323,3 +323,129 @@ def test_merge_extraction_ignores_unknown_keys():
 
     assert state["severity"] == 5
     assert "diagnosis" not in state
+
+
+# ---------------------------------------------------------------------------
+# A confirmed red flag short-circuits intake.
+#
+# This is the failure the live J3 eval caught. For "숨쉬기 힘들고 목이 부어서
+# 부풀었어요" (hard to breathe, throat swollen) the model correctly sets both
+# safety flags but returns no severity, so the completeness check said "keep
+# asking" and the app replied "when did these symptoms start?" to a user who
+# had just said they could not breathe. The rule engine returns EMERGENCY for
+# that input no matter what else is known, so asking could only add delay.
+# ---------------------------------------------------------------------------
+
+
+def test_confirmed_breathing_difficulty_triages_without_severity():
+    """No symptoms list, no severity, no second flag — and it still triages."""
+    llm = FakeLLM(
+        [
+            _json(
+                symptoms=[],
+                severity=None,
+                breathing_difficulty=True,
+                airway_swelling=True,
+                ready=False,
+            )
+        ]
+    )
+
+    result = symptom_agent.run_turn(llm, symptom_agent.initial_state(), "I cannot breathe")
+
+    assert result["triage_level"] == TriageLevel.EMERGENCY.value
+    assert result["turn_count"] == 0  # it never asked a follow-up
+
+
+def test_confirmed_breathing_difficulty_alone_triages():
+    """One positive flag is enough; the other may still be unknown."""
+    llm = FakeLLM([_json(symptoms=["sneezing"], severity=None, breathing_difficulty=True)])
+
+    result = symptom_agent.run_turn(llm, symptom_agent.initial_state(), "hard to breathe")
+
+    assert result["triage_level"] == TriageLevel.EMERGENCY.value
+    # The unresolved flag is defaulted to False by the rule engine, never True.
+    assert result["airway_swelling"] is False
+
+
+def test_confirmed_airway_swelling_triages_immediately():
+    llm = FakeLLM([_json(symptoms=[], severity=None, airway_swelling=True)])
+
+    result = symptom_agent.run_turn(llm, symptom_agent.initial_state(), "my throat is swollen")
+
+    assert result["triage_level"] == TriageLevel.EMERGENCY.value
+
+
+def test_red_flag_short_circuit_still_defers_to_the_rule_engine():
+    """The shortcut routes; the rule engine still decides the level and reason.
+
+    This is the ADR 0001 guarantee under the new path: the graph did not
+    compute EMERGENCY, it handed off to `triage_node` early.
+    """
+    llm = FakeLLM(
+        [_json(symptoms=["sneezing"], severity=1, breathing_difficulty=True, airway_swelling=False)]
+    )
+
+    result = symptom_agent.run_turn(llm, symptom_agent.initial_state(), "can't breathe")
+
+    expected = triage.assess(
+        triage.SymptomInput(
+            symptoms=["sneezing"],
+            severity=1,
+            breathing_difficulty=True,
+            airway_swelling=False,
+        )
+    )
+    assert result["triage_level"] == expected.level.value
+    assert result["triage_reasons"] == expected.reasons
+    assert result["triage_rule_version"] == expected.rule_version
+    assert "breathing_difficulty reported" in result["triage_reasons"]
+
+
+def test_an_explicitly_denied_flag_does_not_short_circuit():
+    """`breathing_difficulty: false` is an answer, not a red flag. It must keep
+    asking, exactly as before."""
+    llm = FakeLLM(
+        [
+            _json(
+                symptoms=["sneezing"],
+                severity=None,
+                breathing_difficulty=False,
+                airway_swelling=False,
+                ready=False,
+            )
+        ]
+    )
+
+    result = symptom_agent.run_turn(llm, symptom_agent.initial_state(), "just sneezing")
+
+    assert result["triage_level"] is None
+    assert result["turn_count"] == 1
+
+
+def test_an_unknown_flag_does_not_short_circuit():
+    llm = FakeLLM([_json(symptoms=["sneezing"], severity=2, ready=False)])
+
+    result = symptom_agent.run_turn(llm, symptom_agent.initial_state(), "I keep sneezing")
+
+    assert result["triage_level"] is None
+    assert result["assistant_reply"] == symptom_agent.SAFETY_QUESTION
+
+
+def test_the_red_flag_shortcut_does_not_resurrect_a_downgraded_flag():
+    """A confirmed True flag stays True across turns, so a later garbled turn
+    cannot route past the emergency either."""
+    llm = FakeLLM(
+        [
+            _json(symptoms=["sneezing"], severity=2, breathing_difficulty=True),
+            _json(breathing_difficulty=False, ready=True),
+        ]
+    )
+    state = symptom_agent.initial_state()
+    state = symptom_agent.run_turn(llm, state, "I cannot breathe")
+    assert state["triage_level"] == TriageLevel.EMERGENCY.value
+
+    result = symptom_agent.run_turn(llm, state, "actually I am fine now")
+
+    assert result["breathing_difficulty"] is True
+    assert result["triage_level"] == TriageLevel.EMERGENCY.value

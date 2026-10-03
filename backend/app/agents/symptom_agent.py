@@ -25,6 +25,7 @@ from typing import Protocol, TypedDict
 
 from langgraph.graph import END, StateGraph
 
+from app.core.openai_client import LLMCallError
 from app.services import triage
 
 logger = logging.getLogger(__name__)
@@ -84,6 +85,15 @@ class AllergyState(TypedDict, total=False):
     ready: bool
     extraction_error: bool
 
+    # J4: the `kind` of the last model-call failure ("timeout", "rate_limit",
+    # "unavailable", "malformed"), or None. Set only from an `LLMCallError` —
+    # never from a guess. `app.api.chat` reads it to tell the user their
+    # message could not be processed, instead of silently asking another
+    # question forever. A `None` here with `extraction_error` True means the
+    # model answered but not with parseable JSON, which is a normal, quiet
+    # degradation.
+    llm_error_kind: str | None
+
     assistant_reply: str | None
 
     # Set only by triage_node, only from a TriageOutcome. Never by the LLM.
@@ -117,6 +127,7 @@ def initial_state(history: Sequence[ChatMessage] | None = None) -> AllergyState:
         turn_count=0,
         ready=False,
         extraction_error=False,
+        llm_error_kind=None,
         assistant_reply=None,
         triage_level=None,
         triage_recommendation=None,
@@ -206,6 +217,16 @@ def _has_enough_for_triage(state: AllergyState) -> bool:
     return state.get("severity") is not None
 
 
+def _has_confirmed_red_flag(state: AllergyState) -> bool:
+    """A safety flag the user has affirmatively reported as True.
+
+    This is a *routing* shortcut, not a safety decision. The level itself is
+    still produced only by `triage_node` calling the rule engine, so ADR 0001
+    holds: the LLM never chooses a level, this only decides to stop asking.
+    """
+    return state.get("breathing_difficulty") is True or state.get("airway_swelling") is True
+
+
 def _route_after_extract(state: AllergyState) -> str:
     """Never let the model's self-reported `ready` flag alone decide it is
     time to hand off to the rule engine. A malformed extraction can still
@@ -213,9 +234,20 @@ def _route_after_extract(state: AllergyState) -> str:
     severity, the two safety flags) fails validation and is dropped — trusting
     `ready` there would rush an under-informed conversation into a triage
     call built entirely from defaults. Only the deterministic completeness
-    check, or exhausting the question budget, may route to `triage`.
+    check, a confirmed red flag, or exhausting the question budget may route
+    to `triage`.
     """
     if state.get("turn_count", 0) >= MAX_QUESTIONS:
+        return "triage"
+    # A confirmed red flag short-circuits the rest of the intake. The live J3
+    # eval showed the failure this prevents: for "숨쉬기 힘들고 목이 부어서
+    # 부풀었어요" (hard to breathe, throat swollen) the model sets both safety
+    # flags but returns no severity, so the completeness check below said
+    # "keep asking" and the app replied "when did these symptoms start?" to a
+    # user who had just said they could not breathe. There is nothing left to
+    # learn that changes the answer — the rule engine returns EMERGENCY for
+    # this input regardless — so the only cost of asking is delay.
+    if _has_confirmed_red_flag(state):
         return "triage"
     if _has_enough_for_triage(state):
         return "triage"
@@ -230,9 +262,22 @@ def make_extract_node(llm: LLMClient) -> Callable[[AllergyState], AllergyState]:
         ]
         try:
             raw = llm.complete(prompt)
+        except LLMCallError as exc:
+            # J4: the single client boundary normalizes every provider failure
+            # into an LLMCallError with a `kind`. A timeout or rate limit is a
+            # degraded turn, not a crash: we set extraction_error and return
+            # state unchanged so the router keeps asking / eventually hands off
+            # to the rule engine with whatever we have.
+            logger.warning("symptom_agent: extraction call failed (%s)", exc.kind)
+            state["extraction_error"] = True
+            state["llm_error_kind"] = exc.kind
+            return state
         except Exception:
+            # Defensive: a non-OpenAI client (or an unexpected SDK error) must
+            # still degrade rather than 500 the stream.
             logger.warning("symptom_agent: extraction call to LLM failed", exc_info=True)
             state["extraction_error"] = True
+            state["llm_error_kind"] = "unavailable"
             return state
 
         data = _safe_json_loads(raw)
@@ -260,6 +305,11 @@ def make_ask_question_node(llm: LLMClient) -> Callable[[AllergyState], AllergySt
             ]
             try:
                 question = (llm.complete(prompt) or "").strip()
+            except LLMCallError as exc:
+                # J4: same degradation for the question call — fall back to the
+                # generic question rather than failing the turn.
+                logger.warning("symptom_agent: question call failed (%s)", exc.kind)
+                question = ""
             except Exception:
                 logger.warning("symptom_agent: question call to LLM failed", exc_info=True)
                 question = ""
@@ -340,27 +390,9 @@ def run_turn(llm: LLMClient, state: AllergyState, user_message: str) -> AllergyS
     return graph.invoke(next_state)
 
 
-class OpenAIChatClient:
-    """Thin wrapper around the OpenAI SDK satisfying `LLMClient`."""
-
-    def __init__(self, api_key: str, model: str = "gpt-4o-mini") -> None:
-        from openai import OpenAI
-
-        self._client = OpenAI(api_key=api_key)
-        self._model = model
-
-    def complete(self, messages: Sequence[ChatMessage]) -> str:
-        response = self._client.chat.completions.create(
-            model=self._model,
-            messages=list(messages),
-            temperature=0,
-        )
-        return response.choices[0].message.content or ""
-
-
-def get_llm_client(api_key: str, model: str = "gpt-4o-mini") -> LLMClient:
-    if not api_key:
-        raise RuntimeError(
-            "openai_api_key is not configured; set it in backend/.env before using the chat agent"
-        )
-    return OpenAIChatClient(api_key=api_key, model=model)
+# J7: the duplicate `OpenAIChatClient` and `get_llm_client` that used to live
+# here are gone. There is now exactly one boundary with a model, in
+# `app/core/openai_client.py`; it satisfies this module's structural
+# `LLMClient` Protocol. `app.api.chat` builds the real client through
+# `get_openai_client_from_settings()` and passes it in, so this module imports
+# no concrete SDK and its tests keep running against a scripted fake.

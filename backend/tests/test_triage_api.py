@@ -22,6 +22,7 @@ import pytest
 from app.api import triage as triage_api
 from app.core.enums import TriageLevel
 from app.models import SymptomEvent, TriageResult, User
+from app.services import triage as triage_service
 
 
 @dataclass
@@ -78,7 +79,9 @@ async def test_low_severity_persists_symptom_event_and_triage_result() -> None:
     result = results[0]
     assert result.symptom_event_id == event.id
     assert result.risk_level == TriageLevel.LOW
-    assert result.rule_version == "triage-2026-09-07"
+    # Read the constant rather than hardcoding a date: this is exactly the
+    # assertion that should move when the rule engine's rules change.
+    assert result.rule_version == triage_service.RULE_VERSION
 
     assert resp.symptom_event_id == event.id
     assert resp.triage_result_id == result.id

@@ -16,6 +16,10 @@ class Settings(BaseSettings):
     # server, etc). Empty means use OpenAI's default endpoint.
     openai_base_url: str = ""
     openai_model: str = "gpt-4o-mini"
+    # J6 cost + latency guard: hard ceiling on output tokens per call and a
+    # per-call timeout. 0 falls back to the client module's defaults.
+    openai_max_tokens: int = 0
+    openai_timeout_seconds: float = 0.0
     naver_client_id: str = ""
     naver_client_secret: str = ""
     pollen_api_key: str = ""
