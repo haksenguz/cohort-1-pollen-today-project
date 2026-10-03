@@ -11,8 +11,8 @@ human and a model read them the same way.
 - [ ] Backend gate passes locally:
       `cd backend && uv run ruff check . && uv run ruff format --check . && uv run pytest`
 - [ ] CI is green on the PR.
-- [ ] Branch is `feat/ismoiljon`, opened as a PR, commit author is
-      **ismoiljon1101**, no `Co-Authored-By`.
+- [ ] Branch is `feat/ismoiljon`, pushed directly to `origin` (AGENTS.md rule
+      3). Commit author is **ismoiljon1101**, no `Co-Authored-By`.
 - [ ] No hardcoded regions, thresholds, coordinates, URLs, or secrets.
 - [ ] Enums/types come from `backend/app/core/enums.py`, not redefined inline.
 - [ ] Prose follows the human-voice rules. UI copy says what the control does.

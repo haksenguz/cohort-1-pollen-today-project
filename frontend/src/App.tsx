@@ -3,8 +3,9 @@ import { AppShell } from "./components/AppShell";
 import { AuthProvider } from "./auth/AuthContext";
 import { RequireAuth } from "./auth/RequireAuth";
 import { AlertsPage } from "./routes/AlertsPage";
-import { ChatPlaceholderPage } from "./routes/ChatPlaceholderPage";
+import { ChatScreen } from "./chat/ChatScreen";
 import { LoginPage } from "./routes/LoginPage";
+import { ProfilePage } from "./routes/ProfilePage";
 import { RegisterPage } from "./routes/RegisterPage";
 import { TodayPage } from "./routes/TodayPage";
 
@@ -26,9 +27,10 @@ function App() {
               </RequireAuth>
             }
           >
-            <Route path="/chat" element={<ChatPlaceholderPage />} />
+            <Route path="/chat" element={<ChatScreen />} />
             <Route path="/today" element={<TodayPage />} />
             <Route path="/alerts" element={<AlertsPage />} />
+            <Route path="/profile" element={<ProfilePage />} />
           </Route>
 
           <Route path="/" element={<Navigate to="/chat" replace />} />

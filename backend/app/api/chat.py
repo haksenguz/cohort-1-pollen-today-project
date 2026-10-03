@@ -199,6 +199,24 @@ async def _run_chat(
     )
     yield _sse("done", payload.model_dump())
 
+    # J4: a model-call failure is reported *after* the `done` event, and only
+    # when the rule engine did not already reach a verdict on this turn.
+    #
+    # Order matters for ADR 0001. If extraction failed but the deterministic
+    # engine still ran (MAX_QUESTIONS reached, or a previous turn's confirmed
+    # fields were enough), `triage_level` is set and the user must see that
+    # recommendation — an EMERGENCY instruction is not something to withhold
+    # because the provider was flaky. So the error is only emitted when there
+    # is no verdict to deliver.
+    if result.get("llm_error_kind") and not result.get("triage_level"):
+        yield _sse(
+            "error",
+            {
+                "detail": "I could not process that message right now. Please try again.",
+                "kind": result["llm_error_kind"],
+            },
+        )
+
 
 class _LazyLLMClient:
     """Builds the real client on first use, not at dependency-resolution time.
@@ -215,7 +233,12 @@ class _LazyLLMClient:
 
     def complete(self, messages) -> str:
         if self._client is None:
-            self._client = symptom_agent.get_llm_client(self._api_key)
+            # Use the core factory so OPENAI_BASE_URL (OpenRouter / Azure /
+            # local proxy) and OPENAI_MODEL are honoured. The factory returns
+            # an object that structurally satisfies symptom_agent.LLMClient.
+            from app.core.openai_client import get_openai_client_from_settings
+
+            self._client = get_openai_client_from_settings()
         return self._client.complete(messages)
 
 

@@ -19,7 +19,7 @@ src/
   auth/         token storage, auth context, guarded-route wrapper
   components/   app shell: header, bottom nav, icons
   routes/       screens: login, register, today, alerts, chat placeholder
-  chat/         Jack's lane (TASKS.md J5) — empty except README, do not build here
+  chat/         chat screen (TASKS.md J5) — empty except README, not built yet
   styles/       design tokens + shared classes lifted from prototype.html
 ```
 
@@ -45,8 +45,8 @@ and redirects to `/login` when there's no valid session; it also probes
 
 ## Chat screen
 
-`/chat` is a placeholder (`src/routes/ChatPlaceholderPage.tsx`) that renders
-"owned by Jack" and nothing else. The real chat UI is Jack's lane
-(TASKS.md J5) and lives in `src/chat/`, which is intentionally empty apart
-from its own README. The SSE client for `POST /api/chat` already exists at
-`src/api/client.ts` (`streamChat`) for that lane to reuse.
+`/chat` is a placeholder (`src/routes/ChatPlaceholderPage.tsx`) that says the
+screen is not built yet and nothing else. The real chat UI is TASKS.md J5 and
+lives in `src/chat/`, which is still empty apart from its own README. The SSE
+client for `POST /api/chat` already exists at `src/api/client.ts`
+(`streamChat`) for that screen to reuse.

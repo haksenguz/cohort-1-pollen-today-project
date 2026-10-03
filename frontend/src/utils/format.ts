@@ -2,7 +2,12 @@
  * Pure display formatters shared by the Today and Alerts screens.
  * No React, no fetch, no DOM. Kept small so unit tests stay fast.
  */
-import type { PollenLevel, RiskLevel } from "../api/types";
+import type {
+  Allergen,
+  AllergySeverity,
+  PollenLevel,
+  RiskLevel,
+} from "../api/types";
 
 const DASH = "—";
 
@@ -47,6 +52,54 @@ export function formatDistance(meters: number | null): string {
 
 export function formatPoints(points: number): string {
   return String(points);
+}
+
+const ALLERGY_LABEL: Record<Allergen, string> = {
+  TREE_POLLEN: "Tree pollen",
+  GRASS_POLLEN: "Grass pollen",
+  WEED_POLLEN: "Weed pollen",
+  PM25: "PM2.5",
+  PM10: "PM10",
+  DUST: "Dust",
+  MOLD: "Mold",
+  OTHER: "Other",
+};
+
+const SEVERITY_LABEL: Record<AllergySeverity, string> = {
+  MILD: "Mild",
+  MODERATE: "Moderate",
+  SEVERE: "Severe",
+};
+
+/**
+ * Every allergen the API accepts, in the order the picker shows them. The
+ * union type is the source of truth; this list is the presentation order,
+ * kept as data rather than an inline array in a component so the form and
+ * any test share one definition.
+ */
+export const ALLERGEN_OPTIONS: readonly Allergen[] = [
+  "TREE_POLLEN",
+  "GRASS_POLLEN",
+  "WEED_POLLEN",
+  "PM25",
+  "PM10",
+  "DUST",
+  "MOLD",
+  "OTHER",
+];
+
+export const ALLERGY_SEVERITIES: readonly AllergySeverity[] = [
+  "MILD",
+  "MODERATE",
+  "SEVERE",
+];
+
+export function formatAllergyLabel(allergen: Allergen): string {
+  return ALLERGY_LABEL[allergen] ?? allergen;
+}
+
+export function formatSeverityLabel(severity: AllergySeverity): string {
+  return SEVERITY_LABEL[severity] ?? severity;
 }
 
 /**

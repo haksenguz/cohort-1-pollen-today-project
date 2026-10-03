@@ -30,9 +30,9 @@ Detail behind [`AGENTS.md`](../AGENTS.md). Small and specific on purpose.
 
 ## Git
 
-- Ismoiljon works on `feat/ismoiljon`, Jack works on `feat/jack`, both merge
-  into `main`. Conventional Commits (`feat:`, `fix:`, `docs:`, `chore:`).
-  Author **ismoiljon1101**, no `Co-Authored-By`.
+- Ismoiljon works on `feat/ismoiljon` and owns the whole repo. Conventional
+  Commits (`feat:`, `fix:`, `docs:`, `chore:`). Author **ismoiljon1101**, no
+  `Co-Authored-By`.
 
 ## Config and secrets
 

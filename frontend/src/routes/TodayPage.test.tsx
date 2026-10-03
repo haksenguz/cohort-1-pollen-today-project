@@ -151,12 +151,59 @@ describe("TodayPage — happy path", () => {
 });
 
 describe("TodayPage — degraded paths", () => {
-  it("renders a sample-data warning when pollen is the flagged sample", async () => {
+  it("withholds the sample pollen values instead of showing them as real", async () => {
+    // I3: the backend's unkeyed sample must not be rendered as a reading.
+    // Showing "Tree pollen: High" with a small disclaimer still reads as data.
     vi.mocked(getCurrentEnvironment).mockResolvedValue(env({ pollen_is_sample: true }));
     vi.mocked(getNearbyHospitals).mockResolvedValue(hospitals());
 
     renderPage();
-    await waitFor(() => expect(screen.getByText(/sample/i)).toBeInTheDocument());
+
+    await waitFor(() => expect(screen.getByText("Unavailable")).toBeInTheDocument());
+    expect(screen.queryByText("Tree pollen")).not.toBeInTheDocument();
+    expect(screen.queryByText("Grass pollen")).not.toBeInTheDocument();
+    expect(screen.queryByText("Weed pollen")).not.toBeInTheDocument();
+    // The reason is still explained, so the user knows it is a gap and not a bug.
+    expect(screen.getByText(/not connected yet/i)).toBeInTheDocument();
+  });
+
+  it("shows real pollen levels when the provider is keyed and answering", async () => {
+    vi.mocked(getCurrentEnvironment).mockResolvedValue(
+      env({ pollen: { tree: "HIGH", grass: "MODERATE", weed: null }, pollen_is_sample: false }),
+    );
+    vi.mocked(getNearbyHospitals).mockResolvedValue(hospitals());
+
+    renderPage();
+
+    await waitFor(() => expect(screen.getByText("Tree pollen")).toBeInTheDocument());
+    expect(screen.queryByText("Unavailable")).not.toBeInTheDocument();
+  });
+
+  it("treats an all-null provider response as unavailable, not as low", async () => {
+    // Keyed but the provider returned nothing (off season / outage). Null
+    // means "no data" — rendering it as "Low" would be an invented reading.
+    vi.mocked(getCurrentEnvironment).mockResolvedValue(
+      env({ pollen: { tree: null, grass: null, weed: null }, pollen_is_sample: false }),
+    );
+    vi.mocked(getNearbyHospitals).mockResolvedValue(hospitals());
+
+    renderPage();
+
+    await waitFor(() => expect(screen.getByText("Unavailable")).toBeInTheDocument());
+    expect(screen.queryByText("Tree pollen")).not.toBeInTheDocument();
+  });
+
+  it("still renders a partial real reading as-is", async () => {
+    // A keyed provider that reports only tree pollen is normal; do not hide it.
+    vi.mocked(getCurrentEnvironment).mockResolvedValue(
+      env({ pollen: { tree: "LOW", grass: null, weed: null }, pollen_is_sample: false }),
+    );
+    vi.mocked(getNearbyHospitals).mockResolvedValue(hospitals());
+
+    renderPage();
+
+    await waitFor(() => expect(screen.getByText("Tree pollen")).toBeInTheDocument());
+    expect(screen.queryByText("Unavailable")).not.toBeInTheDocument();
   });
 
   it("tells the user to add a location when none is set", () => {

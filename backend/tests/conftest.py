@@ -38,17 +38,26 @@ from app.models import (
 )
 
 # Full table list in FK-safe delete order: children first, then parents.
+# This list is *tested* by tests/test_conftest_wipe_order.py — if you
+# add a new FK, run the test suite against Postgres (`TEST_DATABASE_URL`)
+# to see the order violation before the gate does.
 _ALL_TABLES = [
-    Message.__table__,
-    TriageResult.__table__,
-    Alert.__table__,
-    HospitalResult.__table__,
-    Conversation.__table__,
-    SymptomEvent.__table__,
-    UserAllergy.__table__,
+    # children with their own children
+    TriageResult.__table__,  # -> symptom_events
+    # children of Conversation
+    Message.__table__,  # -> conversations
+    SymptomEvent.__table__,  # -> conversations
+    Conversation.__table__,  # -> users
+    # children of HospitalSearch
+    HospitalResult.__table__,  # -> hospital_searches
+    HospitalSearch.__table__,  # -> users
+    # children of User (no grandchildren)
+    Alert.__table__,  # -> users, environment_snapshots
+    UserAllergy.__table__,  # -> users
+    NotificationPreference.__table__,  # -> users
+    # independent
     EnvironmentSnapshot.__table__,
-    HospitalSearch.__table__,
-    NotificationPreference.__table__,
+    # parents last
     User.__table__,
 ]
 

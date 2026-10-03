@@ -87,6 +87,24 @@ export function TodayPage() {
     );
   }
 
+  /**
+   * I3 escape hatch. Without a POLLEN_API_KEY the backend returns a
+   * deterministic *sample* and flags it with `pollen_is_sample`. Rendering those
+   * numbers next to a small disclaimer still reads as a real reading, which is
+   * the one thing this app must not do with health data — so the values are
+   * withheld and the row says "unavailable" instead.
+   *
+   * The second case matters just as much: keyed, but the provider returns
+   * nothing (off season, outage). All three levels null means "no data", not
+   * "low", so it degrades the same way.
+   */
+  const pollenUnavailable =
+    env?.pollen_is_sample === true ||
+    (env !== null &&
+      env.pollen.tree === null &&
+      env.pollen.grass === null &&
+      env.pollen.weed === null);
+
   if (envError && !env) {
     return (
       <>
@@ -115,25 +133,36 @@ export function TodayPage() {
           {env.pollen_is_sample && (
             <div className="note">
               <span>
-                Pollen numbers today are a sample — add the data.go.kr pollen
-                key in <code>backend/.env</code> to see live values.
+                Live pollen data is not connected yet, so today&apos;s pollen
+                levels are withheld rather than shown as an estimate. Add the
+                data.go.kr pollen key in <code>backend/.env</code> to see real
+                values.
               </span>
             </div>
           )}
 
           <ul className="metric-list">
-            <li>
-              <span>Tree pollen</span>
-              <b>{formatPollen(env.pollen.tree)}</b>
-            </li>
-            <li>
-              <span>Grass pollen</span>
-              <b>{formatPollen(env.pollen.grass)}</b>
-            </li>
-            <li>
-              <span>Weed pollen</span>
-              <b>{formatPollen(env.pollen.weed)}</b>
-            </li>
+            {pollenUnavailable ? (
+              <li>
+                <span>Pollen</span>
+                <b>Unavailable</b>
+              </li>
+            ) : (
+              <>
+                <li>
+                  <span>Tree pollen</span>
+                  <b>{formatPollen(env.pollen.tree)}</b>
+                </li>
+                <li>
+                  <span>Grass pollen</span>
+                  <b>{formatPollen(env.pollen.grass)}</b>
+                </li>
+                <li>
+                  <span>Weed pollen</span>
+                  <b>{formatPollen(env.pollen.weed)}</b>
+                </li>
+              </>
+            )}
             <li>
               <span>PM2.5</span>
               <b>{env.air_quality.pm25 ?? "—"} µg/m³</b>

@@ -5,13 +5,18 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  ALLERGEN_OPTIONS,
+  ALLERGY_SEVERITIES,
+  formatAllergyLabel,
   formatDistance,
   formatPollen,
   formatPoints,
   formatRelativeTime,
   formatRisk,
+  formatSeverityLabel,
   riskClass,
 } from "./format";
+import type { AllergySeverity } from "../api/types";
 
 describe("formatRisk", () => {
   it("returns a human label per risk level", () => {
@@ -92,5 +97,50 @@ describe("formatRelativeTime", () => {
 
   it("renders a dash for unparseable input", () => {
     expect(formatRelativeTime("not a date")).toBe("—");
+  });
+});
+
+describe("formatAllergyLabel", () => {
+  it("returns a human label for every allergen", () => {
+    expect(formatAllergyLabel("TREE_POLLEN")).toBe("Tree pollen");
+    expect(formatAllergyLabel("GRASS_POLLEN")).toBe("Grass pollen");
+    expect(formatAllergyLabel("WEED_POLLEN")).toBe("Weed pollen");
+    expect(formatAllergyLabel("PM25")).toBe("PM2.5");
+    expect(formatAllergyLabel("PM10")).toBe("PM10");
+    expect(formatAllergyLabel("DUST")).toBe("Dust");
+    expect(formatAllergyLabel("MOLD")).toBe("Mold");
+    expect(formatAllergyLabel("OTHER")).toBe("Other");
+  });
+
+  it("offers every allergen in the picker, in a fixed order", () => {
+    // Guards the case where someone adds a member to the Allergen type and
+    // forgets the picker list: the option would silently never appear.
+    // Note this cannot be asserted as "label differs from the enum value",
+    // because PM10's label really is "PM10".
+    expect([...ALLERGEN_OPTIONS]).toEqual([
+      "TREE_POLLEN",
+      "GRASS_POLLEN",
+      "WEED_POLLEN",
+      "PM25",
+      "PM10",
+      "DUST",
+      "MOLD",
+      "OTHER",
+    ]);
+  });
+});
+
+describe("formatSeverityLabel", () => {
+  it("returns a human label for every severity", () => {
+    expect(formatSeverityLabel("MILD")).toBe("Mild");
+    expect(formatSeverityLabel("MODERATE")).toBe("Moderate");
+    expect(formatSeverityLabel("SEVERE")).toBe("Severe");
+  });
+
+  it("covers the whole AllergySeverity union", () => {
+    expect(ALLERGY_SEVERITIES).toHaveLength(3);
+    for (const severity of ALLERGY_SEVERITIES as readonly AllergySeverity[]) {
+      expect(formatSeverityLabel(severity)).not.toBe(severity);
+    }
   });
 });
