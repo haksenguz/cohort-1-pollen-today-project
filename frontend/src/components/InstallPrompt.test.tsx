@@ -5,6 +5,11 @@
  * top of page content (it covered the "Save key" button on /login) with no
  * auto-dismiss. This pins the new contract: the component renders nothing
  * of its own and everything lands in the shared Toaster.
+ *
+ * The "renders nothing of its own" assertion is deliberately made *after* the
+ * event fires. Asserting it on an idle render passes against either
+ * implementation — the component returns null before it has anything to show,
+ * so a revert to the old markup slipped through a suite that looked green.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
@@ -59,13 +64,11 @@ afterEach(() => {
 describe("InstallPrompt", () => {
   it("renders no inline markup of its own", () => {
     const { container } = renderWithToaster();
-    // The whole point of the change: nothing from this component lands in
-    // the page flow where it could cover a control.
     expect(container.querySelector(".pwa-toast")).toBeNull();
   });
 
   it("fires a toast with a keyboard-reachable Install action on beforeinstallprompt", async () => {
-    renderWithToaster();
+    const { container } = renderWithToaster();
     fireBeforeInstallPrompt();
 
     await waitFor(() => {
@@ -73,6 +76,15 @@ describe("InstallPrompt", () => {
     });
     // Sonner renders actions as real <button>s, so this stays tab-reachable.
     expect(screen.getByRole("button", { name: "Install" })).toBeTruthy();
+
+    // The load-bearing assertion. Once the component actually has something to
+    // show, it still must not put it in the page flow: no fixed panel of its
+    // own, and the message lives inside the shared toaster rather than in the
+    // component's own markup. Both fail against the pre-sonner version.
+    expect(container.querySelector(".pwa-toast")).toBeNull();
+    const toaster = document.querySelector("[data-sonner-toaster]");
+    expect(toaster).not.toBeNull();
+    expect(toaster?.textContent).toContain("Install for one-tap access.");
   });
 
   it("stays quiet inside the 7-day cooldown after an explicit dismissal", async () => {

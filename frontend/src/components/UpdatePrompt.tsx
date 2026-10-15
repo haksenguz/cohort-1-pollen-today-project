@@ -1,18 +1,21 @@
 /**
- * New-version toast. Listens for the SW update event from vite-plugin-pwa's
- * virtual:pwa-register/react module and shows a small toast with a Refresh
- * button. Clicking calls updateServiceWorker(true) which reloads the page
- * onto the fresh SW.
+ * New-version notification. Listens for the SW update event from
+ * vite-plugin-pwa's virtual:pwa-register/react module and fires a toast with a
+ * Refresh action. Clicking calls updateServiceWorker(true), which reloads the
+ * page onto the fresh SW.
  *
  * iOS PWA users have a longer reload cycle because the OS caches resources
- * aggressively — this toast gives them a clear "tap to update" signal
- * instead of the silent autoUpdate reload.
+ * aggressively — this gives them a clear "tap to update" signal instead of
+ * the silent autoUpdate reload.
+ *
+ * Renders nothing of its own; the shared Toaster in AppShell owns the chrome.
  */
 import { useRegisterSW } from "virtual:pwa-register/react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef } from "react";
+import { toast } from "sonner";
 
 export function UpdatePrompt() {
-  const [visible, setVisible] = useState(false);
+  const announced = useRef(false);
   const {
     needRefresh: [needRefresh, setNeedRefresh],
     updateServiceWorker,
@@ -27,34 +30,25 @@ export function UpdatePrompt() {
   });
 
   useEffect(() => {
-    setVisible(Boolean(needRefresh));
-  }, [needRefresh]);
+    if (!needRefresh || announced.current) return;
+    announced.current = true;
 
-  if (!visible) return null;
-
-  return (
-    <div className="pwa-toast" role="alert" aria-live="polite">
-      <span>A new version is ready.</span>
-      <button
-        type="button"
-        className="pwa-toast-btn"
-        onClick={() => {
+    toast("A new version is ready.", {
+      // An update the user never applies is an update they never get, so this
+      // waits for a decision instead of timing out.
+      duration: Infinity,
+      action: {
+        label: "Refresh",
+        onClick: () => {
           void updateServiceWorker(true);
-        }}
-      >
-        Refresh
-      </button>
-      <button
-        type="button"
-        className="pwa-toast-x"
-        aria-label="Dismiss update"
-        onClick={() => {
-          setNeedRefresh(false);
-          setVisible(false);
-        }}
-      >
-        ×
-      </button>
-    </div>
-  );
+        },
+      },
+      cancel: {
+        label: "Later",
+        onClick: () => setNeedRefresh(false),
+      },
+    });
+  }, [needRefresh, setNeedRefresh, updateServiceWorker]);
+
+  return null;
 }
