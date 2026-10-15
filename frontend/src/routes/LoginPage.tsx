@@ -4,6 +4,7 @@ import type { Location } from "react-router-dom";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { ApiError } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
+import { DevLlmSettingsCard } from "./DevLlmSettingsCard";
 
 export function LoginPage() {
   const { login } = useAuth();
@@ -70,6 +71,11 @@ export function LoginPage() {
           Create one
         </Link>
       </p>
+      {/* Also on Settings, but not only there: the key is server-wide and the
+          Settings screen sits behind authentication, so without it a fresh
+          clone has no way to set one before signing in. Renders nothing unless
+          the backend has DEV_SETTINGS_ENABLED on. */}
+      <DevLlmSettingsCard />
     </div>
   );
 }

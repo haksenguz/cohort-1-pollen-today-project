@@ -5,8 +5,8 @@ import { RequireAuth } from "./auth/RequireAuth";
 import { AlertsPage } from "./routes/AlertsPage";
 import { ChatScreen } from "./chat/ChatScreen";
 import { LoginPage } from "./routes/LoginPage";
-import { ProfilePage } from "./routes/ProfilePage";
 import { RegisterPage } from "./routes/RegisterPage";
+import { SettingsPage } from "./routes/SettingsPage";
 import { TodayPage } from "./routes/TodayPage";
 
 function App() {
@@ -30,7 +30,12 @@ function App() {
             <Route path="/chat" element={<ChatScreen />} />
             <Route path="/today" element={<TodayPage />} />
             <Route path="/alerts" element={<AlertsPage />} />
-            <Route path="/profile" element={<ProfilePage />} />
+            <Route path="/settings" element={<SettingsPage />} />
+            {/* `/profile` was the settings screen's old name. Redirect rather
+                than delete the route: an installed PWA and any saved bookmark
+                still request it, and without this it would fall through to the
+                catch-all and land on Chat. */}
+            <Route path="/profile" element={<Navigate to="/settings" replace />} />
           </Route>
 
           <Route path="/" element={<Navigate to="/chat" replace />} />
