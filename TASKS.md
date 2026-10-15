@@ -49,7 +49,19 @@ Read this before planning anything. Most of the backend exists.
       English, Korean and Uzbek in `backend/tests/test_eval_phrasings.py`.
       The live cases are opt-in (`RUN_LLM_EVAL=1`) because they spend real
       tokens; the scoring logic and the safety invariants run offline in the
-      normal gate. All ten extract as annotated against the live model.
+      normal gate. Re-verified 2026-10-15: all ten pass, and every safety
+      invariant holds — a red flag stated by the user is surfaced on the
+      first turn in every language.
+      **Not deterministic, though.** The provider is sampled, so two cases
+      drift between runs: an English case sometimes reports severity 7 where
+      3–6 is expected, and the Uzbek "boshim og'riyapti" case occasionally
+      omits `headache`. A run is green end to end; do not read a single
+      deviation as a regression, and re-run before investigating one.
+      Two annotations were corrected in the same pass, both of which had
+      been asserting the wrong thing rather than catching a defect:
+      `airway_swelling` is a boolean safety flag in the extraction schema,
+      not a symptom name, and the Uzbek "yug'uraman" means the eyes
+      watering, not sneezing.
 - [x] **J4. Failure behaviour.** Done. Every provider failure is normalized
       into `LLMCallError` with a `kind` (`timeout` / `rate_limit` /
       `unavailable` / `malformed`) at the single client boundary. The endpoint

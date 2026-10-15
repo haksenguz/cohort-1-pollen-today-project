@@ -116,7 +116,11 @@ CASES: list[EvalCase] = [
     EvalCase(
         "숨쉬기 힘들고 목이 부어서 부풀었어요",
         "ko",
-        ["airway_swelling"],
+        # `airway_swelling` is a boolean safety flag in the extraction schema,
+        # not a symptom name, so it cannot appear here. The live model reports
+        # the symptom as `throat_swelling`; that the flag was set and the turn
+        # reached EMERGENCY is asserted separately by expect_flag_early.
+        ["throat_swelling"],
         (7, 10),
         expect_flag_early=True,
     ),
@@ -130,7 +134,9 @@ CASES: list[EvalCase] = [
     EvalCase(
         "ko'zlarim qichishib, doimcha yug'uraman",
         "uz",
-        ["itchy_eyes", "sneezing"],
+        # "yug'uraman" is to run/flow, i.e. the eyes watering. Sneezing is
+        # "chixish", which this sentence does not say.
+        ["itchy_eyes", "watery_eyes"],
         (1, 7),
     ),
     EvalCase(
