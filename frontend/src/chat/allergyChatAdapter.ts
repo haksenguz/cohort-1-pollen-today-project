@@ -19,6 +19,7 @@ import type {
 } from "@assistant-ui/react";
 import { ApiError, streamChat } from "../api/client";
 import type { ChatResponse } from "../api/types";
+import { clearToken } from "../auth/token";
 import { clearActivity, setActivity } from "./activity";
 
 /**
@@ -104,8 +105,17 @@ export const allergyChatAdapter: ChatModelAdapter = {
         options.abortSignal,
       );
     } catch (error) {
-      // Prefer the server's own wording. A 401 or a dead provider should read
-      // as the reason it failed, not as a generic transport error.
+      // A rejected token used to surface as an inline "Could not validate
+      // credentials" that stayed on screen while every retry failed the same
+      // way - a chat screen that could never recover. Drop the dead token and
+      // go to the only place a new one can be issued.
+      if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
+        clearToken();
+        window.location.replace("/login");
+        return { content: [{ type: "text", text: "" }] };
+      }
+      // Otherwise prefer the server's own wording, so a dead provider reads as
+      // the reason it failed rather than as a generic transport error.
       if (error instanceof ApiError) throw new Error(error.detail);
       throw error;
     } finally {

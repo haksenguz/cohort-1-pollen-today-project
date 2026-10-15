@@ -16,43 +16,42 @@ interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 /**
- * Demo mode (added 2026-09-11, removed after the demo). The app boots straight
- * into an authenticated test-user session so a phone or fresh install can use
- * it without going through register/login. The backend is unaffected — every
- * `/api/*` call still uses the bearer flow when a token exists; calls without
- * a token fall back to a known test user on the server side (see ADR 0003).
+ * No demo session.
  *
- * Until that backend fallback lands, protected endpoints will return 401. We
- * log that to the console and stay "authenticated" so the UI keeps working
- * for screens that don't need server-side identity (Today, Alerts read,
- * Profile read-only).
+ * This used to boot straight to "authenticated" with a hardcoded DEMO_USER so a
+ * fresh install could poke at the app without registering. But every protected
+ * endpoint is Bearer-authenticated, so that state was a lie the app could not
+ * honour: POST /api/chat returned 401 "Could not validate credentials" on every
+ * turn, and because the chat screen had no recovery path for a dead token it
+ * read as a permanently stuck agent.
+ *
+ * Demo mode's own note admitted it - "protected endpoints will return 401" -
+ * and the server-side fallback it was waiting on never landed. Authentication
+ * is honest now: no token means signed out, RequireAuth sends you to /login,
+ * and /login is the only place a token can be obtained.
  */
-const DEMO_USER: UserResponse = {
-  id: 0,
-  email: "demo@local",
-  latitude: 37.5665,
-  longitude: 126.978,
-  created_at: "2026-09-11T00:00:00Z",
-  updated_at: "2026-09-11T00:00:00Z",
-};
-
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<UserResponse | null>(DEMO_USER);
-  const [status, setStatus] = useState<AuthContextValue["status"]>("authenticated");
+  const [user, setUser] = useState<UserResponse | null>(null);
+  const [status, setStatus] = useState<AuthContextValue["status"]>("loading");
 
-  // Best-effort: try to hydrate the demo user from the backend so calls that
-  // need a real user id (e.g. /api/allergies) work. If the backend is
-  // unreachable, we keep the offline demo user and the UI degrades gracefully.
   useEffect(() => {
     let cancelled = false;
     async function hydrate() {
-      const token = getToken();
-      if (!token) return;
+      if (!getToken()) {
+        if (!cancelled) setStatus("unauthenticated");
+        return;
+      }
       try {
         const me = await getCurrentUser();
-        if (!cancelled) setUser(me);
+        if (cancelled) return;
+        setUser(me);
+        setStatus("authenticated");
       } catch {
-        // Backend offline — keep the demo user, that's fine.
+        // Drop a stale or rejected token. Left in place it fails every later
+        // request, and nothing on screen distinguishes "signed out" from
+        // "broken".
+        clearToken();
+        if (!cancelled) setStatus("unauthenticated");
       }
     }
     void hydrate();
@@ -61,36 +60,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  // Failures propagate so the login form can show the server's own message.
+  // Swallowing them and reporting success is what made a wrong password look
+  // like a successful sign-in.
   const login = useCallback(async (body: LoginRequest) => {
-    try {
-      const { access_token } = await loginRequest(body);
-      setToken(access_token);
-      const me = await getCurrentUser();
-      setUser(me);
-      setStatus("authenticated");
-    } catch {
-      setUser(DEMO_USER);
-      setStatus("authenticated");
-    }
+    const { access_token } = await loginRequest(body);
+    setToken(access_token);
+    const me = await getCurrentUser();
+    setUser(me);
+    setStatus("authenticated");
   }, []);
 
   const register = useCallback(async (body: RegisterRequest) => {
-    try {
-      const { access_token } = await registerRequest(body);
-      setToken(access_token);
-      const me = await getCurrentUser();
-      setUser(me);
-      setStatus("authenticated");
-    } catch {
-      setUser(DEMO_USER);
-      setStatus("authenticated");
-    }
+    const { access_token } = await registerRequest(body);
+    setToken(access_token);
+    const me = await getCurrentUser();
+    setUser(me);
+    setStatus("authenticated");
   }, []);
 
   const logout = useCallback(() => {
     clearToken();
-    setUser(DEMO_USER);
-    setStatus("authenticated");
+    setUser(null);
+    setStatus("unauthenticated");
   }, []);
 
   const updateUser = useCallback((updated: UserResponse) => {

@@ -17,6 +17,7 @@ import type {
 } from "@assistant-ui/react";
 
 import { ApiError } from "../api/client";
+import { clearToken } from "../auth/token";
 import {
   allergyChatAdapter,
   currentConversationId,
@@ -25,6 +26,7 @@ import {
 
 vi.mock("../auth/token", () => ({
   getToken: vi.fn(() => "tkn-abc"),
+  clearToken: vi.fn(),
 }));
 
 /** Build the SSE body the backend would send for one turn. */
@@ -153,7 +155,7 @@ describe("allergyChatAdapter", () => {
     );
   });
 
-  it("throws the server detail rather than a generic error on a 401", async () => {
+  it("recovers from a 401 by dropping the token and going to /login", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(
@@ -163,11 +165,38 @@ describe("allergyChatAdapter", () => {
         }),
       ),
     );
+    const replace = vi.fn();
+    // jsdom's location.replace navigates for real; stub it so the test does not
+    // tear down the runner.
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: { ...window.location, replace },
+    });
 
-    // The client throws ApiError; the adapter re-throws with the detail so the
-    // screen can show the reason rather than "something went wrong".
+    await runAdapter(runOptions("hi"));
+
+    // Rendering "Could not validate credentials" inline left the user on a
+    // screen where every retry failed identically - indistinguishable from a
+    // stuck agent. The token is gone and /login is the only way forward.
+    expect(clearToken).toHaveBeenCalled();
+    expect(replace).toHaveBeenCalledWith("/login");
+  });
+
+  it("still surfaces the server detail for failures a retry could recover from", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ detail: "You are sending messages too quickly" }), {
+          status: 429,
+          headers: { "content-type": "application/json" },
+        }),
+      ),
+    );
+
+    // A 429 is not an auth problem: the token is still good, so this must be
+    // shown in the thread rather than bouncing the user out of the app.
     await expect(allergyChatAdapter.run(runOptions("hi"))).rejects.toThrow(
-      "Could not validate credentials",
+      "You are sending messages too quickly",
     );
   });
 
