@@ -95,23 +95,36 @@ returns. Both are covered by regression tests now.
       a token, writes both rows, and returns their ids. Emergency verified
       against real Postgres.
 - [x] **I2. Real pollen provider.** Code done, see
-      `docs/research/pollen-providers.md`. KMA's index. **Still returns the
-      flagged sample until a key exists — see I3.**
-- [ ] **I3. API keys + live test.** Naver and OpenAI are live. The one
-      remaining key is `POLLEN_API_KEY` from data.go.kr, and it is the only
-      thing left that is not code.
+      `docs/research/pollen-providers.md`. KMA's index. **Live and verified —
+      see I3.**
+- [x] **I3. API keys + live test.** Done. All three keys are in place and every
+      one has been exercised against its real provider.
       - [x] Naver: `NAVER_CLIENT_ID`, `NAVER_CLIENT_SECRET`. Live since
             2026-10-02; `/api/hospitals/nearby` returns real hospitals.
-      - [ ] Pollen: `POLLEN_API_KEY`. Still empty. **The escape hatch is
-            built**, so this no longer blocks a demo: when the key is absent
-            the Today screen now shows a single `Pollen: Unavailable` row and
-            an explanatory note, instead of rendering the flagged sample as
-            "Tree pollen: High". The same applies when the provider is keyed
-            but returns nothing (off season / outage) — all-null means "no
-            data", not "low". Adding the key turns the real values back on
-            with no code change.
-      - [x] OpenAI: `OPENAI_API_KEY` via `OPENAI_BASE_URL` (OpenRouter) and
-            `OPENAI_MODEL`. Verified end to end, see J2.
+      - [x] Pollen: `POLLEN_API_KEY`. Live and verified 2026-10-15 with
+            `backend/scripts/verify_live_pollen.py` (exit code gates the
+            release check the same way `verify_live_chat.py` does).
+            Getting there meant fixing the integration: the endpoint the code
+            called, `HealthWeatherIdxServiceV3/getPlrsIdxTodyList`, does not
+            exist, and data.go.kr answers HTTP 400
+            `NO_OPENAPI_SERVICE_ERROR` (code 12, "check the call URL for a
+            typo") — which reads like an auth failure. The real service is
+            `HealthWthrIdxServiceV3`, split into `getOakPollenRiskIdxV3`,
+            `getPinePollenRiskIdxV3` and `getWeedsPollenRiskndxV3`, taking a
+            10-digit station code and a `time` announcement stamp rather than
+            an `areaNo`/`date` pair. Full contract, including the two
+            ways it returns "nothing" (out-of-season `resultCode 99`, and a
+            blank `today`), is in `docs/research/pollen-providers.md`.
+            Seoul on 2026-10-15 reads `weed=LOW`, tree withheld as correct for
+            October.
+            **Known limit:** KMA publishes no station for Gwangju, Gangwon,
+            Jeonbuk and Jeonnam. Those provinces show "no data" rather than a
+            neighbour's reading. Closing it needs KMA's named station list, not
+            another key.
+      - [x] OpenAI: `OPENAI_API_KEY` via `OPENAI_BASE_URL` and `OPENAI_MODEL`.
+            Verified end to end, see J2. The key is a MiniMax key, so the base
+            URL must be the MiniMax endpoint — see B-007 for what happens when
+            a key is paired with the wrong host.
       `Touches`: `backend/.env` only (gitignored).
 - [x] **I4. Phase 6, notifications.** Done. APScheduler, alert generation,
       preferences with quiet hours. Generates and stores only, sends nothing.
@@ -132,19 +145,21 @@ returns. Both are covered by regression tests now.
 
 ## Blocking the demo
 
-Nothing in code. The single remaining item is `POLLEN_API_KEY` from
-data.go.kr, and the app is honest about its absence rather than inventing
-numbers, so a demo can go ahead without it.
+Nothing in code and nothing in configuration. All three provider keys are
+issued and verified live. What remains is a decision, not a build: B-010, alert
+delivery. The pipeline generates and stores alerts, but nothing delivers them,
+so a high-pollen alert reaches the user only if they open the Alerts tab.
 
 ## Verified working
 
-Against real Postgres and live providers, 2026-10-03: register, login, the
-full chat graph over SSE in Korean reaching EMERGENCY with a verdict matching
-the rule engine, the ten-phrasing extraction eval across three languages, and
-the Today screen rendering real air quality, weather and nearby hospitals with
-pollen correctly withheld. Earlier, on 2026-09-09: allergy CRUD, environment
-for Seoul, triage both mild and emergency with rows persisted, alerts and
-preferences, and frontend login.
+Against real Postgres and live providers, 2026-10-15: register, login, the full
+chat graph over SSE in Korean reaching EMERGENCY with a verdict matching the
+rule engine, the ten-phrasing extraction eval across three languages, the Today
+screen rendering real air quality, weather and nearby hospitals, and real KMA
+pollen (`weed=LOW` for Seoul, tree correctly withheld out of season). Earlier,
+on 2026-10-03: the same chat and eval results plus triage persistence; earlier
+still, on 2026-09-09: allergy CRUD, environment for Seoul, triage both mild and
+emergency with rows persisted, alerts and preferences, and frontend login.
 
 ## Parking lot
 
