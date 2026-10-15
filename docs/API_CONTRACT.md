@@ -276,8 +276,37 @@ does not exist or belongs to someone else.
 
 `chat()` returns `StreamingResponse(..., media_type="text/event-stream")`.
 Read `backend/app/api/chat.py` for the exact generator (`_run_chat`). It is
-**not** token-by-token streaming. It always emits exactly one of these two
-sequences, then closes the stream:
+**not** token-by-token streaming.
+
+### `status` events (added 2026-10-14)
+
+A turn is two sequential model calls plus the rule engine — several seconds.
+The stream therefore emits one or more `status` events first, each naming the
+part of the turn currently running:
+
+```
+event: status
+data: {"stage": "starting"}
+
+event: status
+data: {"stage": "extracting"}
+...
+```
+
+Stages: `starting`, `extracting`, `asking`, `assessing`, `saving`. Which ones
+appear depends on the branch the graph takes — a first turn that asks the
+safety question goes `starting → extracting → saving` and never reaches
+`asking`, because that turn makes no question-calling model call.
+
+**These are pipeline stages, not tool calls.** The agent has no tools and does
+no function-calling; `LLMClient` is a single `complete(messages) -> str`. A
+client must not render a `status` event as "using tool X". In particular
+`assessing` is the deterministic engine in `app/services/triage.py` reaching a
+verdict, never the model (ADR 0001) — a UI that labels it as model reasoning
+would misstate where the safety decision comes from.
+
+After the status events come exactly one of these two sequences, then the
+stream closes:
 
 **Normal turn**: one `message` event, then one `done` event:
 

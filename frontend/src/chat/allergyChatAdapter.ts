@@ -19,6 +19,7 @@ import type {
 } from "@assistant-ui/react";
 import { ApiError, streamChat } from "../api/client";
 import type { ChatResponse } from "../api/types";
+import { clearActivity, setActivity } from "./activity";
 
 /**
  * The backend identifies a conversation by id and expects it back on the
@@ -78,11 +79,18 @@ export const allergyChatAdapter: ChatModelAdapter = {
       streamError: string | null;
     } = { reply: "", result: null, streamError: null };
 
+    // Show something immediately rather than waiting for the first `status`
+    // event, which cannot arrive until the backend has opened the stream.
+    setActivity("starting");
+
     try {
       await streamChat(
         prompt,
         conversationId,
         {
+          // `status` events name which part of the turn is running. They are
+          // pipeline stages, NOT tool calls — this agent has no tools.
+          onStatus: (event) => setActivity(event.stage),
           onMessage: (delta) => {
             state.reply = delta;
           },
@@ -100,6 +108,10 @@ export const allergyChatAdapter: ChatModelAdapter = {
       // as the reason it failed, not as a generic transport error.
       if (error instanceof ApiError) throw new Error(error.detail);
       throw error;
+    } finally {
+      // Runs on the throw paths too: a failed turn must not leave a spinner
+      // spinning forever next to the error message.
+      clearActivity();
     }
 
     if (state.streamError !== null) throw new Error(state.streamError);

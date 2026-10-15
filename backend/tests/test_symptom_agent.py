@@ -449,3 +449,84 @@ def test_the_red_flag_shortcut_does_not_resurrect_a_downgraded_flag():
 
     assert result["breathing_difficulty"] is True
     assert result["triage_level"] == TriageLevel.EMERGENCY.value
+
+
+# ---------------------------------------------------------------------------
+# Progress reporting (chat activity strip).
+#
+# The stage names are shown to the user while a turn runs, so they are part
+# of the product, not just logging. The allow-list below is the guard: this
+# agent has no tools and performs no function-calling, so a stage like
+# "calling_tool" must never appear, and adding one silently would be the
+# first step toward pretending the model decides safety (ADR 0001).
+# ---------------------------------------------------------------------------
+
+ALLOWED_STAGES = {"extracting", "asking", "assessing"}
+
+
+def test_progress_reports_the_extraction_stage() -> None:
+    stages: list[str] = []
+    llm = FakeLLM([_json(symptoms=["sneezing"], severity=2)])
+
+    symptom_agent.run_turn(llm, symptom_agent.initial_state(), "I am sneezing", stages.append)
+
+    assert stages == ["extracting"]
+
+
+def test_progress_reports_asking_then_assessing_across_turns() -> None:
+    stages: list[str] = []
+    llm = FakeLLM(
+        [
+            _json(symptoms=["sneezing"], breathing_difficulty=False, airway_swelling=False),
+            "How long have you had this?",
+            _json(symptoms=["sneezing"], severity=2, duration="today"),
+        ]
+    )
+
+    # Turn 1 asks the model for the next question...
+    state = symptom_agent.run_turn(
+        llm, symptom_agent.initial_state(), "I am sneezing", stages.append
+    )
+    assert "asking" in stages
+
+    # ...turn 2 is complete enough to reach the rule engine.
+    stages.clear()
+    state = symptom_agent.run_turn(llm, state, "started today", stages.append)
+    assert "assessing" in stages
+    assert state["triage_level"] == TriageLevel.LOW.value
+
+
+def test_progress_only_ever_emits_known_stages() -> None:
+    """No stage may imply a tool call: this agent has none."""
+    stages: list[str] = []
+    llm = FakeLLM(
+        [
+            _json(symptoms=["sneezing"], breathing_difficulty=False, airway_swelling=False),
+            "How long have you had this?",
+            _json(symptoms=["sneezing"], severity=2, duration="today"),
+        ]
+    )
+
+    state = symptom_agent.run_turn(
+        llm, symptom_agent.initial_state(), "I am sneezing", stages.append
+    )
+    symptom_agent.run_turn(llm, state, "started today", stages.append)
+
+    assert stages
+    assert set(stages) <= ALLOWED_STAGES
+
+
+def test_safety_question_turn_makes_no_question_call_and_reports_no_asking() -> None:
+    """With the safety flags unanswered the graph uses SAFETY_QUESTION, a
+    constant — so no model call happens and no `asking` stage may be claimed.
+    """
+    stages: list[str] = []
+    llm = FakeLLM([_json(symptoms=["sneezing"], severity=2)])
+
+    state = symptom_agent.run_turn(
+        llm, symptom_agent.initial_state(), "I am sneezing", stages.append
+    )
+
+    assert state["assistant_reply"] == symptom_agent.SAFETY_QUESTION
+    assert "asking" not in stages
+    assert len(llm.calls) == 1, "the safety turn should cost exactly one model call"

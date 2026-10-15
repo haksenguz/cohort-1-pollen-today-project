@@ -13,10 +13,13 @@ which only ever produces a `triage_level` by calling the deterministic
 level on its own.
 """
 
+import asyncio
 import json
 import logging
+import queue
 from collections.abc import AsyncIterator
 from typing import Annotated
+from weakref import WeakSet
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -166,12 +169,44 @@ async def _run_chat(
 ) -> AsyncIterator[str]:
     state = await _load_state(session, conversation)
 
+    # A turn is two sequential model calls plus the rule engine — several
+    # seconds of silence otherwise, which reads as "broken" rather than
+    # "working". `run_turn` is synchronous, so it runs on a worker thread and
+    # pushes stage labels into a queue that this generator drains, letting the
+    # user watch progress happen instead of receiving it all at the end.
+    #
+    # These stages describe internal steps. The agent has no tools and does no
+    # function-calling, so they must never be rendered as tool invocations.
+    stages: queue.Queue[str] = queue.Queue()
+    yield _sse("status", {"stage": "starting"})
+
+    task = asyncio.create_task(
+        asyncio.to_thread(symptom_agent.run_turn, llm, state, req.message, stages.put)
+    )
+
+    while not task.done():
+        drained = False
+        while True:
+            try:
+                yield _sse("status", {"stage": stages.get_nowait()})
+                drained = True
+            except queue.Empty:
+                break
+        if not drained:
+            await asyncio.sleep(0.02)
+
+    # Anything that landed between the last poll and completion.
+    while not stages.empty():
+        yield _sse("status", {"stage": stages.get_nowait()})
+
     try:
-        result = symptom_agent.run_turn(llm, state, req.message)
+        result = await task
     except Exception:
         logger.exception("symptom_agent.run_turn failed")
         yield _sse("error", {"detail": "the symptom agent failed to process this message"})
         return
+
+    yield _sse("status", {"stage": "saving"})
 
     await _persist_turn(
         session,
@@ -227,9 +262,28 @@ class _LazyLLMClient:
     means a misconfigured key surfaces as the stream's `error` event instead.
     """
 
+    # Every instance built so far, so the dev-settings endpoint can drop
+    # memoised clients after the key changes mid-process. Without this a client
+    # created before the change keeps calling the old key until it is
+    # garbage-collected.
+    #
+    # A WeakSet, not a list: `get_llm` is a per-request dependency, so a plain
+    # list would pin one `_LazyLLMClient` — and the `OpenAI` client holding the
+    # httpx connection pool it memoises — per request for the life of the
+    # process. Those sockets are never closed. Weak refs let a finished request
+    # drop its instance while `reset_cached_clients` still reaches the ones
+    # genuinely in flight.
+    _instances: "WeakSet[_LazyLLMClient]" = WeakSet()
+
     def __init__(self, api_key: str) -> None:
         self._api_key = api_key
         self._client: symptom_agent.LLMClient | None = None
+        _LazyLLMClient._instances.add(self)
+
+    @classmethod
+    def reset_cached_clients(cls) -> None:
+        for instance in list(cls._instances):
+            instance._client = None
 
     def complete(self, messages) -> str:
         if self._client is None:

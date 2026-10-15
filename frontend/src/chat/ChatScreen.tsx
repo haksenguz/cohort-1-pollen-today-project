@@ -17,7 +17,33 @@ import {
   ThreadPrimitive,
   useLocalRuntime,
 } from "@assistant-ui/react";
+import { useSyncExternalStore } from "react";
 import { allergyChatAdapter } from "./allergyChatAdapter";
+import { getActivity, subscribeActivity } from "./activity";
+import { ChatAgentStatus } from "./ChatAgentStatus";
+
+/**
+ * Live stage indicator.
+ *
+ * A turn is two model calls plus the rule engine — several seconds. Without
+ * this the composer sits there doing nothing and the whole screen reads as
+ * broken. The text is the pipeline stage the backend reported; it never says
+ * "using tool", because this agent has no tools and does no function-calling
+ * (ADR 0001). `assessing` deliberately reads "applying the safety rules",
+ * since that verdict comes from the deterministic engine and not the model.
+ */
+function AgentActivity() {
+  const activity = useSyncExternalStore(subscribeActivity, getActivity);
+  if (!activity) return null;
+  return (
+    <p className="aui-activity" role="status" aria-live="polite">
+      {/* Keyed on the sequence so the pulse animation restarts on every
+          stage change instead of continuing from the previous stage. */}
+      <span className="aui-activity-dot" key={activity.seq} aria-hidden="true" />
+      {activity.label}
+    </p>
+  );
+}
 
 const UserMessage = () => (
   <MessagePrimitive.Root className="aui-msg aui-msg-me">
@@ -77,6 +103,8 @@ const Thread = () => (
       </ThreadPrimitive.Empty>
     </ThreadPrimitive.Viewport>
 
+    <ChatAgentStatus />
+    <AgentActivity />
     <Composer />
     <p className="aui-disclaimer">
       Not a diagnosis. If you have trouble breathing or swelling of the

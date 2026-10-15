@@ -9,6 +9,9 @@ import type {
   AllergyResponse,
   ChatResponse,
   ChatErrorEvent,
+  ChatStatusEvent,
+  DevLlmSettingsResponse,
+  DevLlmSettingsUpdateRequest,
   EnvironmentResponse,
   Health,
   HospitalNearbyParams,
@@ -192,6 +195,24 @@ export function updatePreferences(
   });
 }
 
+// ---- Dev settings (local dev only) ---------------------------------------
+//
+// Only reachable when the backend sets DEV_SETTINGS_ENABLED=true, which is
+// true solely in a gitignored local .env. The route is unauthenticated by
+// design; that is only safe because the flag is off in every other build. A
+// 404 therefore means "feature absent", not "something went wrong", and both
+// callers below treat it that way rather than surfacing an error.
+
+export function readDevLlmSettings(): Promise<DevLlmSettingsResponse> {
+  return request<DevLlmSettingsResponse>("/api/dev/llm");
+}
+
+export function saveDevLlmSettings(
+  body: DevLlmSettingsUpdateRequest,
+): Promise<DevLlmSettingsResponse> {
+  return request<DevLlmSettingsResponse>("/api/dev/llm", { method: "PUT", body });
+}
+
 // ---- Chat (SSE) ------------------------------------------------------
 //
 // POST /api/chat is Bearer-protected and streams Server-Sent Events: one
@@ -206,6 +227,8 @@ export interface ChatStreamHandlers {
   onMessage?: (delta: string) => void;
   onDone?: (response: ChatResponse) => void;
   onError?: (error: ChatErrorEvent) => void;
+  /** Fired for each `status` event: which part of the turn is running now. */
+  onStatus?: (event: ChatStatusEvent) => void;
 }
 
 export async function streamChat(
@@ -273,6 +296,8 @@ function parseSseEvent(rawEvent: string, handlers: ChatStreamHandlers): void {
 
   if (eventName === "message") {
     handlers.onMessage?.(data.delta as string);
+  } else if (eventName === "status") {
+    handlers.onStatus?.(data as ChatStatusEvent);
   } else if (eventName === "done") {
     handlers.onDone?.(data as ChatResponse);
   } else if (eventName === "error") {

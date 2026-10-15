@@ -114,6 +114,17 @@ class LLMClient(Protocol):
     def complete(self, messages: Sequence[ChatMessage]) -> str: ...
 
 
+# Reports what the agent is doing, stage by stage, so `app.api.chat` can tell
+# the user the turn is alive. A turn is two sequential model calls plus the
+# rule engine — several seconds with nothing on screen otherwise, which reads
+# as "broken" rather than "working".
+#
+# These are progress labels, NOT tool calls: this graph has no tools and no
+# function-calling. The stage names describe internal steps, so they must never
+# be phrased as if the model were calling something.
+ProgressCallback = Callable[[str], None]
+
+
 def initial_state(history: Sequence[ChatMessage] | None = None) -> AllergyState:
     """A fresh state, optionally seeded with prior turns loaded from storage."""
     return AllergyState(
@@ -254,12 +265,16 @@ def _route_after_extract(state: AllergyState) -> str:
     return "ask_question"
 
 
-def make_extract_node(llm: LLMClient) -> Callable[[AllergyState], AllergyState]:
+def make_extract_node(
+    llm: LLMClient, progress: ProgressCallback | None = None
+) -> Callable[[AllergyState], AllergyState]:
     def _extract(state: AllergyState) -> AllergyState:
         prompt: list[ChatMessage] = [
             {"role": "system", "content": EXTRACTION_SYSTEM_PROMPT},
             *state.get("messages", []),
         ]
+        if progress is not None:
+            progress("extracting")
         try:
             raw = llm.complete(prompt)
         except LLMCallError as exc:
@@ -289,7 +304,9 @@ def make_extract_node(llm: LLMClient) -> Callable[[AllergyState], AllergyState]:
     return _extract
 
 
-def make_ask_question_node(llm: LLMClient) -> Callable[[AllergyState], AllergyState]:
+def make_ask_question_node(
+    llm: LLMClient, progress: ProgressCallback | None = None
+) -> Callable[[AllergyState], AllergyState]:
     def _ask_question(state: AllergyState) -> AllergyState:
         state["turn_count"] = state.get("turn_count", 0) + 1
 
@@ -303,6 +320,8 @@ def make_ask_question_node(llm: LLMClient) -> Callable[[AllergyState], AllergySt
                 {"role": "system", "content": QUESTION_SYSTEM_PROMPT},
                 *state.get("messages", []),
             ]
+            if progress is not None:
+                progress("asking")
             try:
                 question = (llm.complete(prompt) or "").strip()
             except LLMCallError as exc:
@@ -360,11 +379,29 @@ def triage_node(state: AllergyState) -> AllergyState:
     return state
 
 
-def build_graph(llm: LLMClient):
+def make_triage_node(
+    progress: ProgressCallback | None = None,
+) -> Callable[[AllergyState], AllergyState]:
+    """`triage_node` with a progress hook.
+
+    The stage is labelled as the safety rules running, not the model deciding —
+    that distinction is the whole point of ADR 0001, and it is worth putting in
+    front of the user at the exact moment the verdict is being produced.
+    """
+
+    def _triage(state: AllergyState) -> AllergyState:
+        if progress is not None:
+            progress("assessing")
+        return triage_node(state)
+
+    return _triage
+
+
+def build_graph(llm: LLMClient, progress: ProgressCallback | None = None):
     graph = StateGraph(AllergyState)
-    graph.add_node("extract", make_extract_node(llm))
-    graph.add_node("ask_question", make_ask_question_node(llm))
-    graph.add_node("triage", triage_node)
+    graph.add_node("extract", make_extract_node(llm, progress))
+    graph.add_node("ask_question", make_ask_question_node(llm, progress))
+    graph.add_node("triage", make_triage_node(progress))
 
     graph.set_entry_point("extract")
     graph.add_conditional_edges(
@@ -377,7 +414,12 @@ def build_graph(llm: LLMClient):
     return graph.compile()
 
 
-def run_turn(llm: LLMClient, state: AllergyState, user_message: str) -> AllergyState:
+def run_turn(
+    llm: LLMClient,
+    state: AllergyState,
+    user_message: str,
+    progress: ProgressCallback | None = None,
+) -> AllergyState:
     """Append the user's message and run one pass of the graph: either a
     follow-up question comes back, or a rule-engine triage result does.
     """
@@ -386,7 +428,7 @@ def run_turn(llm: LLMClient, state: AllergyState, user_message: str) -> AllergyS
         *next_state.get("messages", []),
         {"role": "user", "content": user_message},
     ]
-    graph = build_graph(llm)
+    graph = build_graph(llm, progress)
     return graph.invoke(next_state)
 
 

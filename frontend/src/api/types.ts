@@ -7,11 +7,44 @@
 // ---- Enums -----------------------------------------------------------
 
 export type Allergen =
+  // Tree
+  | "BIRCH"
+  | "OAK"
+  | "ALDER"
+  | "WILLOW"
+  | "POPLAR"
+  | "JAPANESE_CEDAR"
+  | "PEACH"
+  | "OLIVE"
+  // Grass
+  | "TIMOTHY"
+  | "COCKSFOOT"
+  | "ZOYSIA"
+  | "BERMUDA_GRASS"
+  | "SILVER_GRASS"
+  | "WEEPING_GRASS"
+  // Weed
+  | "RAGWEED"
+  | "MUGWORT"
+  | "COCKLEBUR"
+  | "BEGGAR_TICKS"
+  | "LAMB_QUARTERS"
+  | "DOCK"
+  // Mould / fungal spore
+  | "ALTERNARIA"
+  | "CLADOSPORIUM"
+  // Indoor
+  | "HOUSE_DUST_MITE"
+  | "COCKROACH"
+  // Particulates
+  | "PM25"
+  | "PM10"
+  // Legacy coarse buckets. Still accepted so existing rows keep scoring —
+  // the backend resolves these by category, which is why BIRCH behaves the
+  // same as TREE_POLLEN without a data migration.
   | "TREE_POLLEN"
   | "GRASS_POLLEN"
   | "WEED_POLLEN"
-  | "PM25"
-  | "PM10"
   | "DUST"
   | "MOLD"
   | "OTHER";
@@ -83,6 +116,47 @@ export interface AllergyCreateRequest {
 }
 
 // ---- Environment -------------------------------------------------------
+
+/**
+ * `GET /api/dev/llm` — the chat agent's server-wide credential.
+ *
+ * `key_hint` is the last few characters only. The key itself is never
+ * returned in any form, not even masked-and-echoed.
+ *
+ * Only reachable when the backend runs with `DEV_SETTINGS_ENABLED=true`,
+ * which is set solely in a gitignored local `.env`. Everywhere else the
+ * route 404s and callers treat this as "the feature is not present".
+ */
+export interface DevLlmSettingsResponse {
+  configured: boolean;
+  key_hint: string | null;
+  base_url: string;
+  model: string;
+}
+
+/**
+ * Body for `PUT /api/dev/llm`.
+ *
+ * An empty string means "leave the saved value unchanged" — never "clear it".
+ * Clearing a credential is a `.env` edit, so there is no accidental way to
+ * wipe a working key by submitting the form empty.
+ */
+export interface DevLlmSettingsUpdateRequest {
+  api_key?: string;
+  base_url?: string;
+  model?: string;
+}
+
+/**
+ * A `status` SSE event from `POST /api/chat`.
+ *
+ * `stage` names a step of the fixed agent pipeline ("extracting", "assessing").
+ * It is NOT a tool call: this agent has no tools and does no function-calling,
+ * so nothing should ever render this as "using tool X".
+ */
+export interface ChatStatusEvent {
+  stage: string;
+}
 
 export interface EnvironmentResponse {
   latitude: number;
