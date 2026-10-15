@@ -55,11 +55,36 @@ export function formatPoints(points: number): string {
 }
 
 const ALLERGY_LABEL: Record<Allergen, string> = {
+  BIRCH: "Birch",
+  OAK: "Oak",
+  ALDER: "Alder",
+  WILLOW: "Willow",
+  POPLAR: "Poplar",
+  JAPANESE_CEDAR: "Japanese cedar",
+  PEACH: "Peach",
+  OLIVE: "Olive",
+  TIMOTHY: "Timothy grass",
+  COCKSFOOT: "Cocksfoot",
+  ZOYSIA: "Zoysia",
+  BERMUDA_GRASS: "Bermuda grass",
+  SILVER_GRASS: "Silver grass",
+  WEEPING_GRASS: "Weeping grass",
+  RAGWEED: "Ragweed",
+  MUGWORT: "Mugwort",
+  COCKLEBUR: "Cocklebur",
+  BEGGAR_TICKS: "Beggar ticks",
+  LAMB_QUARTERS: "Lamb's quarters",
+  DOCK: "Dock",
+  ALTERNARIA: "Alternaria mould",
+  CLADOSPORIUM: "Cladosporium mould",
+  HOUSE_DUST_MITE: "House dust mite",
+  COCKROACH: "Cockroach",
+  PM25: "PM2.5",
+  PM10: "PM10",
+  // Legacy coarse buckets, kept labelable so old rows render sensibly.
   TREE_POLLEN: "Tree pollen",
   GRASS_POLLEN: "Grass pollen",
   WEED_POLLEN: "Weed pollen",
-  PM25: "PM2.5",
-  PM10: "PM10",
   DUST: "Dust",
   MOLD: "Mold",
   OTHER: "Other",
@@ -78,14 +103,37 @@ const SEVERITY_LABEL: Record<AllergySeverity, string> = {
  * any test share one definition.
  */
 export const ALLERGEN_OPTIONS: readonly Allergen[] = [
-  "TREE_POLLEN",
-  "GRASS_POLLEN",
-  "WEED_POLLEN",
+  // Tree
+  "BIRCH",
+  "OAK",
+  "ALDER",
+  "WILLOW",
+  "POPLAR",
+  "JAPANESE_CEDAR",
+  "PEACH",
+  "OLIVE",
+  // Grass
+  "TIMOTHY",
+  "COCKSFOOT",
+  "ZOYSIA",
+  "BERMUDA_GRASS",
+  "SILVER_GRASS",
+  "WEEPING_GRASS",
+  // Weed
+  "RAGWEED",
+  "MUGWORT",
+  "COCKLEBUR",
+  "BEGGAR_TICKS",
+  "LAMB_QUARTERS",
+  "DOCK",
+  // Mould / indoor
+  "ALTERNARIA",
+  "CLADOSPORIUM",
+  "HOUSE_DUST_MITE",
+  "COCKROACH",
+  // Particulates
   "PM25",
   "PM10",
-  "DUST",
-  "MOLD",
-  "OTHER",
 ];
 
 export const ALLERGY_SEVERITIES: readonly AllergySeverity[] = [

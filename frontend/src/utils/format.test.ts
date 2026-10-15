@@ -118,15 +118,62 @@ describe("formatAllergyLabel", () => {
     // Note this cannot be asserted as "label differs from the enum value",
     // because PM10's label really is "PM10".
     expect([...ALLERGEN_OPTIONS]).toEqual([
-      "TREE_POLLEN",
-      "GRASS_POLLEN",
-      "WEED_POLLEN",
+      // Tree
+      "BIRCH",
+      "OAK",
+      "ALDER",
+      "WILLOW",
+      "POPLAR",
+      "JAPANESE_CEDAR",
+      "PEACH",
+      "OLIVE",
+      // Grass
+      "TIMOTHY",
+      "COCKSFOOT",
+      "ZOYSIA",
+      "BERMUDA_GRASS",
+      "SILVER_GRASS",
+      "WEEPING_GRASS",
+      // Weed
+      "RAGWEED",
+      "MUGWORT",
+      "COCKLEBUR",
+      "BEGGAR_TICKS",
+      "LAMB_QUARTERS",
+      "DOCK",
+      // Mould / indoor
+      "ALTERNARIA",
+      "CLADOSPORIUM",
+      "HOUSE_DUST_MITE",
+      "COCKROACH",
+      // Particulates
       "PM25",
       "PM10",
-      "DUST",
-      "MOLD",
-      "OTHER",
     ]);
+  });
+
+  it("labels the named allergens people actually recognise", () => {
+    // The point of B-005: "Tree pollen" is not something a hay-fever sufferer
+    // can say they are allergic to. The picker now offers real species.
+    expect(formatAllergyLabel("BIRCH")).toBe("Birch");
+    expect(formatAllergyLabel("RAGWEED")).toBe("Ragweed");
+    expect(formatAllergyLabel("HOUSE_DUST_MITE")).toBe("House dust mite");
+  });
+
+  it("still labels the legacy coarse buckets", () => {
+    // Existing rows hold these values. They stay valid and must keep
+    // rendering rather than falling through to the raw enum name.
+    expect(formatAllergyLabel("TREE_POLLEN")).toBe("Tree pollen");
+    expect(formatAllergyLabel("DUST")).toBe("Dust");
+    expect(formatAllergyLabel("MOLD")).toBe("Mold");
+    expect(formatAllergyLabel("OTHER")).toBe("Other");
+  });
+
+  it("offers named allergens but keeps legacy ones out of the picker", () => {
+    // Legacy values must remain *accepted* by the API without being
+    // *offered*: showing them again would reintroduce the B-005 problem.
+    expect(ALLERGEN_OPTIONS).not.toContain("TREE_POLLEN");
+    expect(ALLERGEN_OPTIONS).not.toContain("OTHER");
   });
 });
 
