@@ -20,6 +20,11 @@ class Settings(BaseSettings):
     # per-call timeout. 0 falls back to the client module's defaults.
     openai_max_tokens: int = 0
     openai_timeout_seconds: float = 0.0
+    # Local-dev only. When true, `app.api.dev_settings` exposes an
+    # unauthenticated route that can read and write this instance's model
+    # credentials in backend/.env. That is only safe because this stays False
+    # everywhere except a gitignored local .env — never set it in a deploy.
+    dev_settings_enabled: bool = False
     naver_client_id: str = ""
     naver_client_secret: str = ""
     pollen_api_key: str = ""

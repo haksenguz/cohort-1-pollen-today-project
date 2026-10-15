@@ -84,6 +84,18 @@ def _import_openai_sdk():
     return openai.OpenAI
 
 
+def _detail(exc: Exception, message: str) -> str:
+    """Log-safe detail that keeps the exception class visible.
+
+    Several distinct failures collapse into the single `unavailable` kind —
+    a rejected key, a wrong host, and a momentary network blip are all
+    `unavailable`. Without the class name in the log line they are
+    indistinguishable, and a transient blip gets diagnosed as a credential
+    problem (or the reverse) for no reason.
+    """
+    return f"{message} [{type(exc).__name__}]: {exc}"
+
+
 def _classify(exc: Exception) -> LLMCallError:
     """Map an OpenAI SDK / transport exception onto our failure vocabulary.
 
@@ -95,14 +107,14 @@ def _classify(exc: Exception) -> LLMCallError:
     text = str(exc).lower()
 
     if name in ("APITimeoutError", "Timeout", "ReadTimeout", "ConnectTimeout"):
-        return LLMCallError("timeout", f"model call timed out: {exc}")
+        return LLMCallError("timeout", _detail(exc, "model call timed out"))
     if name == "RateLimitError" or "rate limit" in text or "429" in text:
-        return LLMCallError("rate_limit", f"model rate limited: {exc}")
+        return LLMCallError("rate_limit", _detail(exc, "model rate limited"))
     if name in ("APIConnectionError", "APIError", "InternalServerError", "ServiceUnavailable"):
-        return LLMCallError("unavailable", f"model unavailable: {exc}")
+        return LLMCallError("unavailable", _detail(exc, "model unavailable"))
     if name == "AuthenticationError" or "unauthorized" in text or "invalid api key" in text:
-        return LLMCallError("unavailable", f"model rejected the request: {exc}")
-    return LLMCallError("unavailable", f"model call failed: {exc}")
+        return LLMCallError("unavailable", _detail(exc, "model rejected the request"))
+    return LLMCallError("unavailable", _detail(exc, "model call failed"))
 
 
 class OpenAIChatClient:

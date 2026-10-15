@@ -278,6 +278,20 @@ def test_unrecognized_exception_still_becomes_an_llm_call_error():
     assert err.kind == "unavailable"
 
 
+def test_failure_detail_keeps_the_exception_class():
+    """A rejected key, a wrong host, and a momentary network blip all collapse
+    into `unavailable`, so the detail has to keep the exception class or the
+    logs cannot tell them apart.
+    """
+    auth = _classify(type("AuthenticationError", (Exception,), {})("Incorrect API key provided"))
+    conn = _classify(type("APIConnectionError", (Exception,), {})("Connection error."))
+
+    assert auth.kind == conn.kind == "unavailable"
+    assert "AuthenticationError" in auth.detail
+    assert "APIConnectionError" in conn.detail
+    assert auth.detail != conn.detail
+
+
 def test_none_content_is_a_malformed_failure_not_an_empty_string(monkeypatch):
     """A 200 with no body is a failure, not an empty answer.
 

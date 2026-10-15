@@ -1,14 +1,18 @@
 import logging
 import os
 from contextlib import asynccontextmanager
+from typing import Any
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.api import (
     allergies,
     auth,
     chat,
+    dev_settings,
     environment,
     health,
     hospitals,
@@ -71,6 +75,37 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+def _scrub(value: Any) -> Any:
+    """Strip submitted values out of a validation error.
+
+    FastAPI echoes the offending input back in `input` and sometimes in `ctx`.
+    For the dev-settings route that input *is* the API key, so the default 422
+    would hand the secret straight back to whoever posted it — bypassing the
+    404 that hides the route everywhere the flag is off.
+    """
+    if isinstance(value, dict):
+        return {
+            k: ("<redacted>" if k in ("input", "api_key") else _scrub(v)) for k, v in value.items()
+        }
+    if isinstance(value, list):
+        return [_scrub(v) for v in value]
+    return "<redacted>"
+
+
+@app.exception_handler(RequestValidationError)
+async def redact_validation_errors(_: Request, exc: RequestValidationError) -> JSONResponse:
+    return JSONResponse(
+        status_code=422,
+        content={
+            "detail": [
+                {"type": e.get("type"), "loc": e.get("loc"), "msg": e.get("msg")}
+                for e in exc.errors()
+            ]
+        },
+    )
+
+
 app.include_router(health.router)
 app.include_router(environment.router)
 app.include_router(triage.router)
@@ -80,6 +115,11 @@ app.include_router(allergies.router)
 app.include_router(chat.router)
 app.include_router(hospitals.router)
 app.include_router(notifications.router)
+
+# Dark by default: registering this router is harmless while the flag is off,
+# because every route 404s until `dev_settings_enabled` is true — which only
+# ever happens in a gitignored local .env.
+app.include_router(dev_settings.router)
 
 
 @app.get("/")
