@@ -180,7 +180,9 @@ def _announce_candidates(now: dt.datetime) -> list[str]:
     if not hours and now.hour <= _ANNOUNCE_HOURS[0]:
         hours = [_ANNOUNCE_HOURS[0]]
     day = now.strftime("%Y%m%d")
-    return [f"{day}{h:02d}" for h in reversed(hours[:2])]
+    # reversed() before the slice, so the two candidates are genuinely the two
+    # most recent publication hours. Slicing first silently drops 18시.
+    return [f"{day}{h:02d}" for h in list(reversed(hours))[:2]]
 
 
 def parse_kma_today(payload: object) -> PollenLevel | None:

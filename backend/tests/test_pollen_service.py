@@ -10,6 +10,8 @@ and a `today` grade that is blank when KMA published nothing. Each of those is
 pinned here, because each one silently degrades to a wrong reading otherwise.
 """
 
+import datetime as dt
+
 import httpx
 import pytest
 
@@ -121,23 +123,44 @@ async def test_blank_today_reads_as_no_data_not_as_low() -> None:
 
 
 @pytest.mark.asyncio
-async def test_an_unpublished_hour_is_retried_one_hour_earlier() -> None:
+async def test_an_unpublished_hour_is_retried_one_hour_earlier(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """A blank `today` on the newest announcement is a publication gap, not
-    'no pollen in Korea', so the previous stamp is tried before giving up."""
+    'no pollen in Korea', so the previous stamp is tried before giving up.
+
+    The candidate stamps are injected rather than derived from the wall clock:
+    before 07:00 the service only has one candidate hour, so a test that
+    computed them itself passed in the evening and failed in the morning.
+    """
+    stamps = ["2026101512", "2026101506"]
+    monkeypatch.setattr(pollen_service, "_announce_candidates", lambda now: stamps)
     seen: list[str] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
         stamp = request.url.params["time"]
         seen.append(stamp)
-        newest = max(seen)
-        blank = stamp == newest
-        return httpx.Response(200, json=_ok_payload(today="" if blank else "1"))
+        return httpx.Response(200, json=_ok_payload(today="" if stamp == stamps[0] else "1"))
 
     async with _client(handler) as c:
         data = await pollen_service.fetch_pollen(37.5665, 126.9780, c, api_key="k")
 
     assert data.tree == PollenLevel.MODERATE
-    assert len(set(seen)) == 2
+    assert seen == [stamps[0]] * 3 + [stamps[1]] * 3  # both operations per stamp
+
+
+def test_announce_candidates_are_newest_published_hour_first() -> None:
+    """KMA publishes on 06, 12 and 18, so the newest one already happened is
+    the one to ask for. Before 06:00 there is nothing published today yet."""
+    assert pollen_service._announce_candidates(dt.datetime(2026, 10, 15, 19, 5)) == [
+        "2026101518",
+        "2026101512",
+    ]
+    assert pollen_service._announce_candidates(dt.datetime(2026, 10, 15, 13, 0)) == [
+        "2026101512",
+        "2026101506",
+    ]
+    assert pollen_service._announce_candidates(dt.datetime(2026, 10, 15, 3, 0)) == ["2026101506"]
 
 
 @pytest.mark.asyncio

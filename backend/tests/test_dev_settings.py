@@ -36,9 +36,23 @@ def client(tmp_path, monkeypatch) -> TestClient:
 
 
 def _enable(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Turn the flag on for the settings object the request will read."""
-    settings = get_settings()
-    monkeypatch.setattr(settings, "dev_settings_enabled", True, raising=False)
+    """Turn the flag on for the settings object the request will read.
+
+    Set through the environment rather than by patching the cached Settings
+    instance: the PUT handler calls `get_settings.cache_clear()`, which throws
+    that instance away and rebuilds from env + .env, so a patched attribute
+    would be silently dropped. Going through the env also means the result no
+    longer depends on whether the developer running the suite has
+    DEV_SETTINGS_ENABLED in their local .env — which is exactly why this test
+    passed locally and 404'd in CI.
+    """
+    monkeypatch.setenv("DEV_SETTINGS_ENABLED", "true")
+    get_settings.cache_clear()
+
+
+def _disable(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("DEV_SETTINGS_ENABLED", "false")
+    get_settings.cache_clear()
 
 
 def test_endpoints_are_absent_by_default(
@@ -47,7 +61,7 @@ def test_endpoints_are_absent_by_default(
     # Forced explicitly rather than relied on from the ambient .env — a
     # developer who enables dev settings locally would otherwise silently turn
     # this test into a no-op.
-    monkeypatch.setattr(get_settings(), "dev_settings_enabled", False, raising=False)
+    _disable(monkeypatch)
 
     # 404, not 403: an endpoint that was never meant to exist should not even
     # confirm it exists.
