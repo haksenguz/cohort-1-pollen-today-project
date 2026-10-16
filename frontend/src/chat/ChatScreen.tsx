@@ -17,10 +17,21 @@ import {
   ThreadPrimitive,
   useLocalRuntime,
 } from "@assistant-ui/react";
-import { useSyncExternalStore } from "react";
-import { allergyChatAdapter } from "./allergyChatAdapter";
+import { useEffect, useSyncExternalStore } from "react";
+import { allergyChatAdapter, adoptConversation } from "./allergyChatAdapter";
 import { getActivity, subscribeActivity } from "./activity";
 import { ChatAgentStatus } from "./ChatAgentStatus";
+import { AssistantTriage } from "./TriageVerdict";
+import { ChatHistorySheet } from "../components/ChatHistorySheet";
+import {
+  ConversationResumeLoading,
+  ConversationResumeNotice,
+  SuggestedPrompts,
+  conversationRuntimeKey,
+  toThreadMessages,
+  useConversationResume,
+  useConversationRouteId,
+} from "./sessions";
 
 /**
  * Live stage indicator.
@@ -52,7 +63,11 @@ const UserMessage = () => (
 );
 
 const AssistantMessage = () => (
-  <MessagePrimitive.Root className="aui-msg aui-msg-bot">
+  /* The root is a column, not the bubble: the safety verdict sits above the
+     reply as its own banner so an EMERGENCY never reads as another paragraph
+     of body text inside the bubble. The bubble classes move to the wrapper
+     that holds the reply text only. */
+  <MessagePrimitive.Root className="flex w-full flex-col items-start gap-2">
     {/* ErrorPrimitive.Message reads the error off the enclosing message via
         useMessageError(), so it must sit INSIDE MessagePrimitive.Root. At
         thread level it threw "The current scope does not have a 'message'
@@ -61,7 +76,12 @@ const AssistantMessage = () => (
         when the message has no error, and takes className, which is why it
         is preferred over MessagePrimitive.Error here. */}
     <ErrorPrimitive.Message className="aui-error-message" />
-    <MessagePrimitive.Content />
+    <AssistantTriage />
+    <div className="aui-msg aui-msg-bot">
+      {/* The verdict part is rendered above, not here, so the in-bubble
+          fallback is suppressed rather than drawing it twice. */}
+      <MessagePrimitive.Content components={{ data: { Fallback: () => null } }} />
+    </div>
   </MessagePrimitive.Root>
 );
 
@@ -85,6 +105,7 @@ const Composer = () => (
 
 const Thread = () => (
   <ThreadPrimitive.Root className="aui-thread">
+    <ChatHistorySheet />
     <ThreadPrimitive.Viewport className="aui-viewport">
       <ThreadPrimitive.Messages
         components={{ UserMessage, AssistantMessage }}
@@ -99,6 +120,7 @@ const Thread = () => (
             ask a few follow-up questions, then the safety rules decide how
             urgent this is.
           </p>
+          <SuggestedPrompts />
         </div>
       </ThreadPrimitive.Empty>
     </ThreadPrimitive.Viewport>
@@ -114,13 +136,37 @@ const Thread = () => (
 );
 
 export function ChatScreen() {
+  const conversationId = useConversationRouteId();
+  const { state, retry } = useConversationResume(conversationId);
+
+  /* The adapter holds the active conversation id in module state, so a
+     reopened thread has to claim it before the first turn is sent. */
+  useEffect(() => {
+    adoptConversation(conversationId);
+  }, [conversationId]);
+
+  const initialMessages =
+    state.status === "ready" ? toThreadMessages(state.conversation) : [];
+
   // maxSteps 1: our endpoint answers one prompt per request. The default
   // allows a multi-step agent loop, which this backend does not implement.
-  const runtime = useLocalRuntime(allergyChatAdapter, { maxSteps: 1 });
+  const runtime = useLocalRuntime(allergyChatAdapter, { maxSteps: 1, initialMessages });
+
+  /* useLocalRuntime reads initialMessages once at construction, so the
+     provider key is what makes switching conversations rebuild the thread
+     instead of handing the old runtime a new message list. */
+  const key = conversationRuntimeKey(conversationId, state);
+  const showThread = state.status === "new" || state.status === "ready";
 
   return (
-    <AssistantRuntimeProvider runtime={runtime}>
-      <Thread />
+    <AssistantRuntimeProvider key={key} runtime={runtime}>
+      {showThread ? (
+        <Thread />
+      ) : state.status === "loading" ? (
+        <ConversationResumeLoading />
+      ) : (
+        <ConversationResumeNotice error={state.error} onRetry={retry} />
+      )}
     </AssistantRuntimeProvider>
   );
 }

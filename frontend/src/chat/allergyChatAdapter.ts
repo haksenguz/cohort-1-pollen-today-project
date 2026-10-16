@@ -29,8 +29,26 @@ import { clearActivity, setActivity } from "./activity";
  */
 let conversationId: number | null = null;
 
+/**
+ * Name of the data part the verdict travels on. The renderer keys off this,
+ * so both sides import it from here rather than repeating the string.
+ */
+export const TRIAGE_PART_NAME = "triage";
+
 export function resetConversation(): void {
   conversationId = null;
+}
+
+/**
+ * Hand the active conversation id to the adapter from outside.
+ *
+ * `conversationId` is module state, so a conversation reopened from
+ * `/chat/:id` has to hand its id over before the first turn; otherwise the
+ * next message posts `conversation_id: null`, the backend opens a fresh
+ * conversation and the reopened thread is orphaned.
+ */
+export function adoptConversation(id: number | null): void {
+  conversationId = id;
 }
 
 export function currentConversationId(): number | null {
@@ -64,6 +82,34 @@ function lastUserText(options: ChatModelRunOptions): string {
     if (text) return text;
   }
   return "";
+}
+
+type AssistantPart = NonNullable<ChatModelRunResult["content"]>[number];
+
+/**
+ * The verdict rides on the assistant message as a data part rather than
+ * loose component state, so it stays attached to the turn it belongs to and
+ * survives scrolling, re-render and thread switches.
+ *
+ * `triage_level` is null when the backend did not run triage for a turn. That
+ * is an absent verdict, not a LOW one, so no part is emitted and the renderer
+ * has nothing to show.
+ */
+function assistantParts(reply: string, result: ChatResponse | null): AssistantPart[] {
+  const parts: AssistantPart[] = [{ type: "text", text: reply }];
+  const level = result?.triage_level;
+  if (result && level) {
+    const reasons = Array.isArray(result.triage_reasons) ? result.triage_reasons : [];
+    parts.push({
+      type: "data",
+      name: TRIAGE_PART_NAME,
+      data: {
+        level,
+        reasons: reasons.filter((r): r is string => typeof r === "string"),
+      },
+    });
+  }
+  return parts;
 }
 
 export const allergyChatAdapter: ChatModelAdapter = {
@@ -127,6 +173,6 @@ export const allergyChatAdapter: ChatModelAdapter = {
     if (state.streamError !== null) throw new Error(state.streamError);
     if (state.result !== null) conversationId = state.result.conversation_id;
 
-    return { content: [{ type: "text", text: state.reply }] };
+    return { content: assistantParts(state.reply, state.result) };
   },
 };

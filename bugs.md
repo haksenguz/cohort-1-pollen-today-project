@@ -67,32 +67,45 @@ and the reference healthcare-agent architecture in
 
 ### A. Safety-critical — do these before anything else
 
-- [ ] **A1. Render the triage verdict.** Attach `triage_level` + `triage_reasons`
-      to the assistant message (assistant-ui data parts) and render a verdict
-      card. EMERGENCY gets a persistent, high-contrast banner.
-- [ ] **A2. One-tap `tel:119`** on the EMERGENCY card. The disclaimer at
-      `ChatScreen.tsx:109` is static footer text; the call button must be
-      attached to the verdict, at the moment the verdict exists.
+- [x] **A1. Render the triage verdict.** Done 2026-10-16. The verdict rides on
+      an assistant-ui data part (`{type:"data", name:"triage"}`); see
+      `chat/TriageVerdict.tsx`. Deliberately does NOT reuse `formatRisk()` /
+      `riskClass()`: `format.ts:39` does `RISK_CLASS[level] ?? "low"`, which
+      would turn an unreadable level into an all-clear. It has its own
+      `unknown` state instead. Absent verdict renders nothing — a LOW verdict is
+      an explicit statement from the engine, so its absence is not a LOW
+      statement.
+- [x] **A2. One-tap `tel:119`** on the EMERGENCY card. Done 2026-10-16,
+      full-width button inside the verdict banner. The static footer disclaimer
+      is untouched.
 - [ ] **A3. Surface the post-triage next action.** `hospitals.py` exists and the
-      chat never calls it. A verdict should lead to "find care near you".
-- [ ] **A4. Never let a tool change a safety verdict.** Pin with a test that no
-      tool schema can return a `triage_level`, so ADR 0001 cannot be eroded
-      quietly by a future tool.
+      chat still does not call it. A verdict should lead to "find care near
+      you". Not started.
+- [x] **A4. Never let a tool change a safety verdict.** Handed to the backend
+      lane as `backend/tests/test_tool_registry.py`, landed alongside the tool
+      skeleton rather than after it.
 
 ### B. Chat sessions — nothing survives a reload
 
-- [ ] **B1.** `GET /api/conversations` — list, newest first, per user.
-- [ ] **B2.** `GET /api/conversations/{id}` — full message history, resumable.
-- [ ] **B3.** Move the id out of the module variable into the URL: `/chat/:id`,
-      plus `/chat` meaning "start a new one".
-- [ ] **B4.** History drawer / screen: title, relative timestamp, one-line preview.
-- [ ] **B5.** Auto-generate a conversation title from the first user message
-      (needs a `title` column — the model has none).
-- [ ] **B6.** New Chat button.
-- [ ] **B7.** Search across conversations (required by ~30 conversations, per
-      Android's settings guidance; expected sooner here since they accumulate fast).
+- [x] **B1.** `GET /api/conversations` — list, newest first, per user.
+      Done: `backend/app/api/conversations.py` + `conversation_service.py`.
+- [x] **B2.** `GET /api/conversations/{id}` — full message history, resumable.
+      Done. A conversation owned by another user returns 404, not 403.
+- [x] **B3.** Move the id out of the module variable into the URL: `/chat/:id`,
+      plus `/chat` meaning "start a new one". Done via `adoptConversation()` in
+      the adapter plus a `useConversationRouteId()` hook, so a reopened thread
+      claims its id before the first turn.
+- [x] **B4.** History drawer / screen: title, relative timestamp, one-line
+      preview. Done as a Radix `ChatHistorySheet`, with distinct loading,
+      empty and error states — "no conversations" and "failed to load" do not
+      look the same.
+- [ ] **B5.** Auto-generate a conversation title from the first user message.
+      Still open. The endpoints READ `conversations.title` but nothing writes
+      it, so it is always null. The UI falls back to "Untitled conversation".
+- [x] **B6.** New Chat button. Done, in the history sheet.
+- [ ] **B7.** Search across conversations. Not started.
 - [ ] **B8.** Resume an in-flight turn after reload — snapshot + SSE replay with
-      `Last-Event-ID`, so a dropped stream is not a lost answer.
+      `Last-Event-ID`, so a dropped stream is not a lost answer. Not started.
 
 ### C. Chat experience
 
@@ -103,8 +116,9 @@ and the reference healthcare-agent architecture in
 - [ ] **C3. Retry / regenerate** the last response without retyping.
 - [ ] **C4. Copy message.**
 - [ ] **C5. Timestamps** on messages.
-- [ ] **C6. Suggested prompts / quick replies** on the empty state — today it is
-      prose only, so a new conversation opens on a blank field.
+- [x] **C6. Suggested prompts / quick replies** on the empty state. Done as
+      `chat/sessions/SuggestedPrompts.tsx` — tappable chips that seed the
+      composer.
 - [ ] **C7. Jump-to-latest** button when the user scrolls up (auto-scroll exists,
       the escape hatch does not).
 - [ ] **C8. Feedback** thumbs up/down per assistant message.
@@ -162,19 +176,32 @@ Sources: [ReAct / core concepts](https://cloud.google.com/resources/core-concept
 
 ### E. Settings page
 
-- [ ] **E1. Sign out button.** `AuthContext.tsx:82` exports `logout` and *no
-      component ever calls it* — there is no way to log out of this app.
-- [ ] **E2. Restructure to an overview list.** Label + current value per row,
-      each opening a subscreen, instead of three fully-expanded cards.
-- [ ] **E3. Show live values as subtext** (Android: show status under the title).
-- [ ] **E4. "Restore defaults"** for preferences.
-- [ ] **E5. Destructive section at the bottom**, visually separated: delete
-      account, delete my data.
-- [ ] **E6. Move the dev LLM key card behind "Advanced"** (≥3 items justifies the
+The four groups below — Emergency, Chat & language, Accessibility, Privacy &
+data — already EXIST as rows in the new overview list. They render as static
+text reading "Not built yet", and a test asserts those groups contain zero
+buttons, switches or checkboxes. That is deliberate: a visible
+"not implemented yet" row is honest, a toggle that silently does nothing is a
+bug. They are listed as open because the underlying settings are still missing.
+
+- [x] **E1. Sign out button.** Done 2026-10-16. `AuthContext.logout` is now
+      actually called from `SettingsPage.tsx`, behind `RequireAuth` which then
+      routes to `/login`. Covered by a test asserting it invokes the context
+      `logout` and not `clearToken` directly.
+- [x] **E2. Restructure to an overview list.** Done. Overview rows with live
+      values, each opening a subscreen (`routes/settings/Screens.tsx`), replacing
+      three fully-expanded cards.
+- [x] **E3. Show live values as subtext** (Android: show status under the title).
+- [x] **E4. "Restore defaults"** for preferences. Writes the six documented
+      defaults, including clearing quiet hours.
+- [x] **E5. Destructive section at the bottom**, visually separated. Delete
+      account renders DISABLED with copy saying there is no backend endpoint —
+      deliberately not a fake success path.
+- [x] **E6. Move the dev LLM key card behind "Advanced"** (≥3 items justifies the
       subsection; it should not sit in the consumer list).
-- [ ] **E7. Drop the System/Light/Dark cycle button** from the header. Apple HIG:
-      respect system settings, do not duplicate them in-app. Honour
-      `prefers-color-scheme`.
+- [x] **E7. Drop the System/Light/Dark cycle button** from the header.
+      `theme.css:87-108` already honours `prefers-color-scheme` and nothing
+      writes `data-theme` any more, so the app follows the OS. The dead
+      `ThemeIcon` export is deleted.
 - [ ] **E8. Emergency contact** — the highest-value missing setting for an allergy
       app; every OS ships its own version.
 - [ ] **E9. Privacy & data** — what is stored (location, messages, symptom
@@ -196,6 +223,10 @@ Sources: [ReAct / core concepts](https://cloud.google.com/resources/core-concept
 - [ ] **F5. `prefers-reduced-motion`** guard on the activity pulse
       (`ChatScreen.tsx:42`).
 - [ ] **F6. 44×44px tap targets** on the new controls.
+
+**Progress 2026-10-16.** A1, A2, A4, B1-B4, B6, C6 and E1-E7 are landed and
+the frontend gate is green (tsc 0, 147/147 tests, lint 0). Groups D and F are
+untouched. Next up is **A3**, then **D1-D4**, then the rest of B and C.
 
 **Suggested order.** A1–A4 → B1–B3 → D1–D4 → B4–B8 → C1–C2 → E1–E7. A group A
 is a safety hole in an app whose central claim is that a deterministic engine

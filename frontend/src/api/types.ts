@@ -221,6 +221,46 @@ export interface ChatErrorEvent {
   detail: string;
 }
 
+// ---- Conversations --------------------------------------------------
+
+export type ConversationMessageRole = "user" | "assistant";
+
+/**
+ * One row of `GET /api/conversations`.
+ *
+ * `title` is null until the backend generates one, so every caller needs a
+ * fallback. `last_message` is null for a conversation that exists but has no
+ * message rows yet. `message_count` counts message rows, not turns.
+ */
+export interface ConversationSummary {
+  id: number;
+  title: string | null;
+  created_at: string;
+  updated_at: string;
+  last_message: string | null;
+  message_count: number;
+}
+
+export interface ConversationListResponse {
+  conversations: ConversationSummary[];
+}
+
+export interface ConversationMessage {
+  id: number;
+  role: ConversationMessageRole;
+  content: string;
+  triage_level: TriageLevel | null;
+  triage_reasons: string[];
+  created_at: string;
+}
+
+export interface ConversationDetail {
+  id: number;
+  title: string | null;
+  created_at: string;
+  messages: ConversationMessage[];
+}
+
 // ---- Hospitals -------------------------------------------------------
 
 export type HospitalSpecialty =

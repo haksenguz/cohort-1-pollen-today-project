@@ -15,6 +15,7 @@ import os
 
 import pytest
 
+from app.core.enums import MessageRole
 from app.models import Conversation, Message, SymptomEvent, User
 
 pytestmark = pytest.mark.skipif(
@@ -44,7 +45,10 @@ async def test_wipe_handles_fk_chain_user_conversation_symptomevent_message(sess
     await session.commit()
     await session.refresh(event)
 
-    msg = Message(conversation_id=conv.id, role="user", content="hi")
+    # MessageRole.USER, not "user": the column is CHECK-constrained to the
+    # uppercase values chat.py actually writes, and this test is about wipe
+    # order, not about the casing of a column it has to insert into.
+    msg = Message(conversation_id=conv.id, role=MessageRole.USER, content="hi")
     session.add(msg)
     await session.commit()
 

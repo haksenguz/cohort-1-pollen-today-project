@@ -13,7 +13,9 @@ rule engine directly, not against a hardcoded expectation, so a change to
 import json
 
 from app.agents import symptom_agent
+from app.agents.symptom_agent import ToolCall, ToolDefinition, ToolRegistry
 from app.core.enums import TriageLevel
+from app.core.openai_client import ToolTurn
 from app.services import triage
 
 
@@ -530,3 +532,202 @@ def test_safety_question_turn_makes_no_question_call_and_reports_no_asking() -> 
     assert state["assistant_reply"] == symptom_agent.SAFETY_QUESTION
     assert "asking" not in stages
     assert len(llm.calls) == 1, "the safety turn should cost exactly one model call"
+
+
+# ---------------------------------------------------------------------------
+# Tool calling: opt-in, read-only, and bounded.
+#
+# The ReAct seam lives in `make_tool_node`, reached only when a caller passes a
+# registry. Everything above this line runs the tool-free graph and must keep
+# doing so -- these tests pin that the opt-in is real in both directions: no
+# registry means no tool node at all, and a client that cannot call tools is
+# unaffected even when a registry is handed to it.
+# ---------------------------------------------------------------------------
+
+
+class ToolCallingFakeLLM:
+    """A client that supports the optional `complete_with_tools` capability.
+
+    `tool_turns` is consumed one entry per tool-enabled call. An entry that is
+    a tuple of ToolCalls means "call these tools"; a plain string means "answer
+    now", and stops the loop. `extraction` is returned by plain `complete`, so
+    the graph still finishes the turn after the loop.
+    """
+
+    def __init__(self, tool_turns, extraction=None):
+        self.tool_turns = list(tool_turns)
+        self.extraction = extraction
+        self.tool_calls_made = []
+        self.complete_calls = 0
+
+    def complete_with_tools(self, messages, tools):
+        self.tool_calls_made.append(list(tools))
+        turn = self.tool_turns.pop(0)
+        if isinstance(turn, str):
+            return ToolTurn(content=turn)
+        return ToolTurn(content=None, tool_calls=turn)
+
+    def complete(self, messages):
+        self.complete_calls += 1
+        return self.extraction or _json(symptoms=["sneezing"], severity=2)
+
+
+def _lookup_tool(**overrides):
+    payload = {"name": "Some Clinic", "distance_m": 800}
+    defaults = {
+        "description": "Look up a nearby clinic.",
+        "parameters": {
+            "type": "object",
+            "properties": {"latitude": {"type": "number"}},
+            "required": ["latitude"],
+        },
+        "result_schema": {
+            "type": "object",
+            "properties": {"name": {"type": "string"}, "distance_m": {"type": "integer"}},
+        },
+        "execute": lambda arguments: payload,
+        "wired": True,
+    }
+    defaults.update(overrides)
+    return ToolDefinition(name="lookup_clinic", **defaults)
+
+
+def _tool_call(name="lookup_clinic", arguments=None):
+    return ToolCall(id="call_1", name=name, arguments=arguments or {"latitude": 37.5})
+
+
+def test_graph_without_a_registry_has_no_tool_node():
+    """The default graph is the pre-tools graph, node for node."""
+    graph = symptom_agent.build_graph(FakeLLM([]))
+
+    assert "tools" not in graph.get_graph().nodes
+
+
+def test_graph_with_a_registry_adds_the_tool_node_before_extraction():
+    graph = symptom_agent.build_graph(
+        ToolCallingFakeLLM([]), registry=ToolRegistry([_lookup_tool()])
+    )
+
+    assert "tools" in graph.get_graph().nodes
+
+
+def test_a_registry_does_not_disturb_a_client_that_cannot_call_tools():
+    """`complete(messages)` is the whole contract; tools are opt-in on both sides.
+
+    FakeLLM has no `complete_with_tools`, so a registry is simply ignored and
+    the turn costs the same one call it always did.
+    """
+    llm = FakeLLM([_json(symptoms=["sneezing"], severity=2, ready=False)])
+
+    result = symptom_agent.run_turn(
+        llm,
+        symptom_agent.initial_state(),
+        "I am sneezing",
+        None,
+        ToolRegistry([_lookup_tool()]),
+    )
+
+    assert len(llm.calls) == 1
+    assert result["triage_level"] is None
+    assert result["tool_steps"] == 0
+    assert result["tool_observations"] == []
+
+
+def test_the_tool_loop_observes_a_result_and_then_continues_to_extraction():
+    llm = ToolCallingFakeLLM([(_tool_call(),), "There is a clinic 800 m away."])
+
+    result = symptom_agent.run_turn(
+        llm,
+        symptom_agent.initial_state(),
+        "is there a clinic near me? I am sneezing",
+        None,
+        ToolRegistry([_lookup_tool()]),
+    )
+
+    assert result["tool_steps"] == 2
+    assert result["tool_observations"] == ['{"name": "Some Clinic", "distance_m": 800}']
+    assert llm.complete_calls == 1, "extraction still runs exactly once"
+
+
+def test_the_model_is_offered_the_registry_schemas():
+    llm = ToolCallingFakeLLM(["no lookup needed"])
+
+    symptom_agent.run_turn(
+        llm,
+        symptom_agent.initial_state(),
+        "hello",
+        None,
+        ToolRegistry([_lookup_tool()]),
+    )
+
+    spec = llm.tool_calls_made[0][0]
+    assert spec["type"] == "function"
+    assert spec["function"]["name"] == "lookup_clinic"
+    assert spec["function"]["parameters"]["required"] == ["latitude"]
+
+
+def test_the_tool_loop_is_bounded_by_max_tool_steps():
+    """A model that only ever calls tools still stops."""
+    llm = ToolCallingFakeLLM([(_tool_call(),) for _ in range(20)])
+
+    result = symptom_agent.make_tool_node(llm, ToolRegistry([_lookup_tool()]))(
+        {**symptom_agent.initial_state(), "messages": [{"role": "user", "content": "clinic?"}]}
+    )
+
+    assert result["tool_steps"] == symptom_agent.MAX_TOOL_STEPS
+    assert len(llm.tool_calls_made) == symptom_agent.MAX_TOOL_STEPS
+    assert len(result["tool_observations"]) == symptom_agent.MAX_TOOL_STEPS
+
+
+def test_an_unknown_tool_name_is_observed_as_an_error_not_a_crash():
+    llm = ToolCallingFakeLLM([(_tool_call(name="book_appointment"),), "sorry"])
+
+    result = symptom_agent.make_tool_node(llm, ToolRegistry([_lookup_tool()]))(
+        {**symptom_agent.initial_state(), "messages": [{"role": "user", "content": "book me in?"}]}
+    )
+
+    assert result["tool_observations"] == ["error: there is no tool named 'book_appointment'."]
+
+
+def test_a_tool_that_raises_degrades_to_an_observation():
+    def _boom(arguments):
+        raise RuntimeError("provider down")
+
+    llm = ToolCallingFakeLLM([(_tool_call(),), "sorry"])
+
+    result = symptom_agent.make_tool_node(llm, ToolRegistry([_lookup_tool(execute=_boom)]))(
+        {**symptom_agent.initial_state(), "messages": [{"role": "user", "content": "clinic?"}]}
+    )
+
+    assert result["tool_observations"] == ["error: the lookup_clinic lookup failed."]
+
+
+def test_an_llm_failure_during_the_tool_loop_ends_the_loop_quietly():
+    class BoomToolLLM:
+        def complete_with_tools(self, messages, tools):
+            raise RuntimeError("network is down")
+
+    result = symptom_agent.make_tool_node(BoomToolLLM(), ToolRegistry([_lookup_tool()]))(
+        symptom_agent.initial_state()
+    )
+
+    # The loop gave up after one attempt and observed nothing, so extraction
+    # runs on the conversation alone -- a dead tool layer cannot end a turn.
+    assert result["tool_steps"] == 1
+    assert result["tool_observations"] == []
+
+
+def test_tool_observations_never_become_extracted_fields():
+    """The loop's output is context for the next node, not state to merge."""
+    llm = ToolCallingFakeLLM(
+        [(_tool_call(arguments={"latitude": 37.5, "severity": 9}),), "here you go"],
+        extraction=_json(symptoms=["sneezing"], ready=False),
+    )
+
+    result = symptom_agent.run_turn(
+        llm, symptom_agent.initial_state(), "clinic?", None, ToolRegistry([_lookup_tool()])
+    )
+
+    assert result["severity"] is None
+    assert result["symptoms"] == ["sneezing"]
+    assert "Some Clinic" not in result["triage_reasons"]

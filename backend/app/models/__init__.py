@@ -3,7 +3,7 @@
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import Column, DateTime
+from sqlalchemy import CheckConstraint, Column, DateTime
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlmodel import Field, SQLModel
 
@@ -46,16 +46,54 @@ class Conversation(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     user_id: int = Field(foreign_key="users.id", index=True)
     status: str = Field(default="ACTIVE", max_length=12)
+    # Null until something generates it from the first user message. The API
+    # returns null rather than a placeholder, so a client can tell "no title
+    # yet" apart from "titled empty".
+    title: str | None = Field(default=None, max_length=200)
     created_at: datetime = _ts_field()
     updated_at: datetime = _ts_field()
 
 
 class Message(SQLModel, table=True):
     __tablename__ = "messages"
+    # Declared here, not only in db/init/01_schema.sql, because the test schema
+    # is built from SQLModel metadata and CI never applies db/migrations/*.sql.
+    # A constraint that exists only in the generated SQL file is enforced in
+    # production and absent from every test database - and the tests that guard
+    # it only assert on file text, so nothing would notice it going missing.
+    #
+    # Values are UPPERCASE because that is what app/core/enums.py writes and
+    # what every row in an existing database holds; the API lowercases `role` in
+    # the RESPONSE, and a CHECK written to match the response would reject the
+    # real rows. SYSTEM is excluded on purpose: nothing writes it and the
+    # frontend's closed role union has no "system", so it would render with no
+    # safety banner. Kept identical to docs/erd/gen_dmm.py, which regenerates
+    # 01_schema.sql - tests/test_schema_constraints.py asserts they agree.
+    __table_args__ = (
+        CheckConstraint("role IN ('USER', 'ASSISTANT')", name="messages_role_check"),
+        CheckConstraint(
+            "triage_level IS NULL OR triage_level IN ('LOW', 'MODERATE', 'EMERGENCY')",
+            name="messages_triage_level_check",
+        ),
+    )
     id: int | None = Field(default=None, primary_key=True)
     conversation_id: int = Field(foreign_key="conversations.id", index=True)
     role: str = Field(max_length=10)
     content: str
+    # The deterministic verdict, denormalised onto the assistant message that
+    # it belongs to.
+    #
+    # It is already stored — but only in `triage_results`, reachable by
+    # joining through `symptom_events`. That made a *reloaded* conversation
+    # unable to show its verdict without reconstructing the link, so the chat
+    # screen rendered safety decisions as ordinary body text and lost them
+    # entirely on reload. `triage_reasons` in particular was not persisted
+    # anywhere at all: `triage_results` keeps `rule_version`, not the reasons.
+    #
+    # These are written ONLY by the rule engine's output. No tool may set
+    # them — see the ADR 0001 guard in the tests.
+    triage_level: str | None = Field(default=None, max_length=12)
+    triage_reasons: list[str] = Field(default_factory=list, sa_column=Column(JSONB))
     created_at: datetime = _ts_field()
 
 

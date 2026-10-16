@@ -10,6 +10,9 @@ import type {
   ChatResponse,
   ChatErrorEvent,
   ChatStatusEvent,
+  ConversationDetail,
+  ConversationListResponse,
+  ConversationSummary,
   DevLlmSettingsResponse,
   DevLlmSettingsUpdateRequest,
   EnvironmentResponse,
@@ -211,6 +214,22 @@ export function saveDevLlmSettings(
   body: DevLlmSettingsUpdateRequest,
 ): Promise<DevLlmSettingsResponse> {
   return request<DevLlmSettingsResponse>("/api/dev/llm", { method: "PUT", body });
+}
+
+// ---- Conversations ---------------------------------------------------
+//
+// Both routes are scoped to the caller: the backend answers 404 for a
+// conversation owned by somebody else rather than 403, so a 404 here means
+// "gone or never yours", never "ask again later".
+
+export function listConversations(): Promise<ConversationSummary[]> {
+  return request<ConversationListResponse>("/api/conversations", { auth: true }).then(
+    (response) => response.conversations,
+  );
+}
+
+export function getConversation(conversationId: number): Promise<ConversationDetail> {
+  return request<ConversationDetail>(`/api/conversations/${conversationId}`, { auth: true });
 }
 
 // ---- Chat (SSE) ------------------------------------------------------
