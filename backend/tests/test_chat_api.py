@@ -503,3 +503,74 @@ def test_fragments_concatenate_back_to_the_original(text: str) -> None:
     assert "".join(parts) == text
     assert all(part in text for part in parts)
     assert all(parts), "an empty fragment is noise the client has to filter"
+
+
+# ---------------------------------------------------------------------------
+# ADR 0001: the verdict that gets persisted is re-derived, never copied.
+# ---------------------------------------------------------------------------
+
+
+def test_verdict_ignores_a_tampered_state_dict() -> None:
+    """The whole point of `_verdict`.
+
+    Copying `result["triage_level"]` into the database would let anything that
+    can write the state dict choose a safety verdict. Poison it to LOW while the
+    symptoms say otherwise; what lands must be the engine's answer, not LOW.
+    """
+    state: symptom_agent.AllergyState = {
+        "triage_level": "LOW",
+        "triage_reasons": ["looks fine to me"],
+        "triage_rule_version": "forged-v0",
+        "symptoms": ["itchy eyes"],
+        "severity": 2,
+        "breathing_difficulty": True,
+        "airway_swelling": False,
+    }
+
+    level, reasons, version = chat_api._verdict(state)
+
+    assert level == triage.TriageLevel.EMERGENCY.value
+    assert version == triage.RULE_VERSION
+    assert "forged" not in version
+    assert "looks fine to me" not in reasons
+    assert any("breathing" in r for r in reasons)
+
+
+def test_verdict_does_not_invent_one_for_an_unanswered_turn() -> None:
+    """A turn that only asked a follow-up question has no verdict to store.
+
+    Re-deriving must not hand the engine symptoms the graph never confirmed and
+    stamp a level on a turn where the user has not been told anything yet.
+    """
+    state: symptom_agent.AllergyState = {
+        "triage_level": None,
+        "symptoms": ["itchy eyes"],
+        "severity": 9,
+        "breathing_difficulty": True,
+        "airway_swelling": True,
+    }
+
+    assert chat_api._verdict(state) == (None, [], None)
+
+
+def test_verdict_agrees_with_the_engine_on_a_normal_turn() -> None:
+    """Not every re-derivation is a disagreement.
+
+    A benign turn must round-trip to the same level the graph already reported,
+    otherwise the persistence path has quietly changed every verdict.
+    """
+    state: symptom_agent.AllergyState = {
+        "triage_level": triage.TriageLevel.LOW.value,
+        "symptoms": ["itchy eyes"],
+        "severity": 3,
+        "breathing_difficulty": False,
+        "airway_swelling": False,
+    }
+
+    level, reasons, version = chat_api._verdict(state)
+
+    assert level == triage.TriageLevel.LOW.value
+    assert (
+        reasons == triage.assess(triage.SymptomInput(symptoms=["itchy eyes"], severity=3)).reasons
+    )
+    assert version == triage.RULE_VERSION

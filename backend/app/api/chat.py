@@ -40,6 +40,7 @@ from app.core.enums import ConversationStatus, MessageRole
 from app.core.rate_limit import get_limiter
 from app.core.security import CurrentUser
 from app.models import Conversation, Message, SymptomEvent, TriageResult
+from app.services import triage
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 logger = logging.getLogger(__name__)
@@ -147,6 +148,32 @@ async def _load_state(
     return state
 
 
+def _verdict(result: symptom_agent.AllergyState) -> tuple[str | None, list[str], str | None]:
+    """Re-derive the safety verdict for persistence, straight from the engine.
+
+    `_persist_turn` deliberately does NOT copy `result["triage_level"]`. Nothing
+    upstream — the model, a tool observation, a future node — can put a verdict
+    into the database by writing it into the state dict; it has to survive
+    `triage.assess` on the symptoms actually being stored.
+
+    Returns `(level, reasons, rule_version)`, or `(None, [], None)` when the turn
+    never reached triage (the graph asked a follow-up question instead). We gate
+    on the graph having produced a verdict so that this never *invents* one: an
+    unanswered turn must stay unanswered, not be silently triaged on save.
+    """
+    if result.get("triage_level") is None:
+        return None, [], None
+    outcome = triage.assess(
+        triage.SymptomInput(
+            symptoms=result.get("symptoms") or [],
+            severity=result.get("severity"),
+            breathing_difficulty=bool(result.get("breathing_difficulty")),
+            airway_swelling=bool(result.get("airway_swelling")),
+        )
+    )
+    return outcome.level.value, list(outcome.reasons), outcome.rule_version
+
+
 async def _persist_turn(
     session: AsyncSession,
     conversation: Conversation,
@@ -158,17 +185,18 @@ async def _persist_turn(
     session.add(
         Message(conversation_id=conversation.id, role=MessageRole.USER, content=user_message)
     )
+    verdict_level, verdict_reasons, verdict_version = _verdict(result)
+
     session.add(
         Message(
             conversation_id=conversation.id,
             role=MessageRole.ASSISTANT,
             content=result.get("assistant_reply") or "",
-            # Written from the rule engine's output, never from the model and
-            # never from a tool. Denormalised onto the message so a reloaded
-            # conversation can render its verdict without reconstructing the
-            # symptom_events -> triage_results join.
-            triage_level=result.get("triage_level"),
-            triage_reasons=list(result.get("triage_reasons") or []),
+            # Re-derived by `_verdict`, not copied out of the state dict. Stored
+            # on the message so a reloaded conversation can render its verdict
+            # without reconstructing the symptom_events -> triage_results join.
+            triage_level=verdict_level,
+            triage_reasons=verdict_reasons,
         )
     )
 
@@ -184,20 +212,19 @@ async def _persist_turn(
     )
     session.add(event)
 
-    triage_level = result.get("triage_level")
-    if triage_level is not None:
+    if verdict_level is not None:
         conversation.status = ConversationStatus.COMPLETED
 
     await session.commit()
     await session.refresh(event)
 
-    if triage_level is not None:
+    if verdict_level is not None:
         session.add(
             TriageResult(
                 symptom_event_id=event.id,
-                risk_level=triage_level,
+                risk_level=verdict_level,
                 recommendation=result.get("triage_recommendation"),
-                rule_version=result.get("triage_rule_version"),
+                rule_version=verdict_version,
             )
         )
         await session.commit()
