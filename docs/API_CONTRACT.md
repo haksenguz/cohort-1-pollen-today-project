@@ -40,6 +40,14 @@ with `{"detail": "Could not validate credentials"}`.
 | `POST /api/triage` | **Bearer required** |
 | `POST /api/chat` | Bearer token |
 | `GET /api/hospitals/nearby` | Public |
+| `GET /api/alerts` | **Bearer required** |
+| `PATCH /api/alerts/{alert_id}/read` | **Bearer required** |
+| `GET /api/notifications/preferences` | **Bearer required** |
+| `PUT /api/notifications/preferences` | **Bearer required** |
+
+Plus two dev-only routes mounted by `dev_settings.router` that **404 on every
+request** unless `DEV_SETTINGS_ENABLED` is true in a gitignored local `.env`:
+`GET /api/dev/llm` and `PUT /api/dev/llm`.
 
 **`POST /api/chat` takes its identity from the token.** `ChatRequest.user_id`
 is gone. The route depends on `CurrentUser`, and the conversation is looked up
@@ -419,6 +427,84 @@ than rejected.
 
 ---
 
+## Alerts and notification preferences
+
+Served by `backend/app/api/notifications.py`. Alert *generation* lives in
+`backend/app/services/notification_service.py` (an in-process APScheduler job
+on `CHECK_INTERVAL_MINUTES = 60`, wired into the FastAPI lifespan); this router
+only reads and writes. Every route is scoped to `CurrentUser`.
+
+### `GET /api/alerts`
+
+**Auth:** Bearer required. **Query params:** `unread_only: bool` (default
+`false`).
+
+Returns the caller's alerts, newest first, each scoped by
+`Alert.user_id == current_user.id`.
+
+**200**: `list[AlertResponse]`
+
+```json
+[
+  {
+    "id": 8,
+    "risk_level": "HIGH",
+    "alert_type": "POLLEN",
+    "message": "Tree pollen risk is high in your area today.",
+    "is_read": false,
+    "created_at": "2026-10-14T09:00:00Z"
+  }
+]
+```
+
+`alert_type` is an `AlertType` value. `risk_level` is a `RiskLevel` value.
+
+### `PATCH /api/alerts/{alert_id}/read`
+
+**Auth:** Bearer required. Path param `alert_id: int`.
+
+**200**: `AlertResponse`, same shape as the list item above.
+**404**: `{"detail": "Alert not found"}` if the id doesn't exist or belongs to
+another user — the check is `alert.user_id != current_user.id`, so it hides
+other users' rows rather than returning a separate 403. This route is not
+idempotent: it only ever sets `is_read = True`.
+
+### `GET /api/notifications/preferences`
+
+**Auth:** Bearer required. No params.
+
+**200**: `PreferenceResponse`. The row is created on first read
+(`get_or_create_preferences`), so this never 404s for a user who has none.
+
+```json
+{
+  "alert_pollen": true,
+  "alert_air_quality": true,
+  "alert_weather": false,
+  "min_risk_level": "MODERATE",
+  "quiet_hours_start": null,
+  "quiet_hours_end": null
+}
+```
+
+### `PUT /api/notifications/preferences`
+
+**Auth:** Bearer required. **Body:** `PreferenceUpdateRequest`. Every field is
+optional; only supplied fields change.
+
+| field | type | notes |
+| --- | --- | --- |
+| `alert_pollen` | `bool \| null` | |
+| `alert_air_quality` | `bool \| null` | |
+| `alert_weather` | `bool \| null` | |
+| `min_risk_level` | `RiskLevel \| null` | `LOW` \| `MODERATE` \| `HIGH` \| `EMERGENCY` |
+| `quiet_hours_start` | `int \| null` | 0–23 |
+| `quiet_hours_end` | `int \| null` | 0–23 |
+
+**200**: `PreferenceResponse`, same shape as above.
+
+---
+
 ## Degradation contracts
 
 Two endpoints are designed to **never 500 on a dead upstream**: they return
@@ -442,8 +528,29 @@ Two endpoints are designed to **never 500 on a dead upstream**: they return
 
 Client-facing (sent in a request body): `backend/app/core/enums.py`.
 
-**`Allergen`** (`POST /api/allergies`):
-`TREE_POLLEN`, `GRASS_POLLEN`, `WEED_POLLEN`, `PM25`, `PM10`, `DUST`, `MOLD`, `OTHER`
+**`Allergen`** (`POST /api/allergies`): named species plus legacy coarse
+buckets. The named values are what the app offers; the legacy ones remain
+accepted so existing rows keep working.
+
+- **Tree (8):** `BIRCH`, `OAK`, `ALDER`, `WILLOW`, `POPLAR`, `JAPANESE_CEDAR`,
+  `PEACH`, `OLIVE`
+- **Grass (6):** `TIMOTHY`, `COCKSFOOT`, `ZOYSIA`, `BERMUDA_GRASS`,
+  `SILVER_GRASS`, `WEEPING_GRASS`
+- **Weed (6):** `RAGWEED`, `MUGWORT`, `COCKLEBUR`, `BEGGAR_TICKS`,
+  `LAMB_QUARTERS`, `DOCK`
+- **Mould (2):** `ALTERNARIA`, `CLADOSPORIUM`
+- **Indoor (2):** `HOUSE_DUST_MITE`, `COCKROACH`
+- **Particulates (2):** `PM25`, `PM10`
+- **Legacy coarse (6):** `TREE_POLLEN`, `GRASS_POLLEN`, `WEED_POLLEN`, `DUST`,
+  `MOLD`, `OTHER`
+
+**`AllergenCategory`** is *not* an API enum — it is the internal scoring bucket
+that `allergen_category(value)` derives for any `Allergen`: `TREE`, `GRASS`,
+`WEED`, `MOLD`, `DUST`, `AIR_QUALITY`, `OTHER`. Scoring matches on the category,
+never on the exact species, so `BIRCH` scores identically to `TREE_POLLEN` and
+`PM25` resolves to `AIR_QUALITY`. `resolve_allergen()` raises on an unknown
+string rather than defaulting — a silent fallback would drop a real allergy
+match.
 
 **`AllergySeverity`** (`POST /api/allergies`):
 `MILD`, `MODERATE`, `SEVERE`
@@ -452,12 +559,15 @@ Response-only (a client reads these, never sends them):
 
 **`PollenLevel`** (`environment.pollen.*`): `LOW`, `MODERATE`, `HIGH`
 
-**`RiskLevel`** (`environment.risk`): `LOW`, `MODERATE`, `HIGH`, `EMERGENCY`
+**`RiskLevel`** (`environment.risk`, `alerts[].risk_level`,
+`notifications.min_risk_level`): `LOW`, `MODERATE`, `HIGH`, `EMERGENCY`
 
 **`TriageLevel`** (`triage.level`, `chat.triage_level`): `LOW`, `MODERATE`, `EMERGENCY`
 
-Not exposed by any of the 12 endpoints above (internal only, for reference):
-**`AlertType`** (`POLLEN`, `AIR_QUALITY`, `WEATHER`, `GENERAL`),
+**`AlertType`** (`alerts[].alert_type`): `POLLEN`, `AIR_QUALITY`, `WEATHER`,
+`GENERAL`
+
+Not exposed by any of the 16 endpoints above (internal only, for reference):
 **`MessageRole`** (`USER`, `ASSISTANT`, `SYSTEM`),
 **`ConversationStatus`** (`ACTIVE`, `COMPLETED`, `ABANDONED`).
 

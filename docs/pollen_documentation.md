@@ -411,31 +411,25 @@ Responsible for:
                  User Risk Score
 ```
 
-Example environmental response:
+Example environmental response, matching `EnvironmentResponse`:
 
 ``` json
 {
-  "location": {
-    "lat": 35.856,
-    "lon": 129.224
-  },
-  "pollen": {
-    "tree": "high",
-    "grass": "moderate",
-    "weed": "low"
-  },
-  "air_quality": {
-    "pm25": 42,
-    "pm10": 68
-  },
-  "weather": {
-    "temperature": 25,
-    "humidity": 55,
-    "wind": 4.2
-  },
-  "risk": "HIGH"
+  "latitude": 35.856,
+  "longitude": 129.224,
+  "pollen": { "tree": "HIGH", "grass": "MODERATE", "weed": "LOW" },
+  "air_quality": { "pm25": 42.0, "pm10": 68.0 },
+  "weather": { "temperature": 25.0, "humidity": 55.0, "wind": 4.2 },
+  "points": 7,
+  "risk": "HIGH",
+  "pollen_is_sample": false
 }
 ```
+
+Levels are uppercase enum values, not lowercase strings, and coordinates are
+flat on the response rather than nested under `location`. Each block degrades
+independently: a failed upstream sends that block's fields as `null` while the
+rest of the response still computes.
 
 ------------------------------------------------------------------------
 
@@ -612,13 +606,27 @@ allergy-ai/
 
 # 12. API Design
 
+Status of each route below was checked against `backend/app/main.py` and the
+`@router` decorators in `backend/app/api/*.py`. Where this section and the
+code disagree, the code wins. `docs/API_CONTRACT.md` is the request/response
+source of truth; this section is the shape of the surface.
+
+## Auth
+
+``` http
+POST /api/auth/register
+POST /api/auth/login
+```
+
 ## User
 
 ``` http
-POST /api/users
 GET /api/users/me
 PUT /api/users/me
 ```
+
+`POST /api/users` in the original draft was never built. Registration is
+`POST /api/auth/register`, which returns a Bearer token alongside the user.
 
 ## Allergy Profile
 
@@ -628,13 +636,23 @@ POST /api/allergies
 DELETE /api/allergies/{id}
 ```
 
+The `allergen` value is a member of the `Allergen` enum. Named species
+(`BIRCH`, `OAK`, `RAGWEED`, `JAPANESE_CEDAR`, …) are what the app offers; the
+original coarse buckets (`TREE_POLLEN`, `GRASS_POLLEN`, `WEED_POLLEN`, `DUST`,
+`MOLD`, `OTHER`) are still accepted so rows written before the change keep
+resolving. Both map onto an internal `AllergenCategory`, which is what scoring
+matches on — a named species and its legacy bucket are indistinguishable to the
+risk calculator.
+
 ## Environment
 
 ``` http
 GET /api/environment/current
-GET /api/environment/forecast
-GET /api/environment/risk
 ```
+
+`GET /api/environment/forecast` and `GET /api/environment/risk` in the
+original draft are **not implemented**. Risk is computed and returned as part of
+`/api/environment/current` (`risk`, `points`), not exposed as its own endpoint.
 
 Example:
 
@@ -656,13 +674,26 @@ Request:
 }
 ```
 
-Response:
+The response is **SSE**, not a single JSON object. `POST /api/chat` returns
+`text/event-stream` carrying `status` events (the pipeline stages `starting`,
+`extracting`, `asking`, `assessing`, `saving`), then a `message` event and a
+`done` event, or an `error` event. These are pipeline stages and **not** tool
+calls — the agent has no tools and performs no function-calling.
 
-``` json
-{
-  "message": "When did your symptoms start?",
-  "conversation_id": "abc123"
-}
+A representative stream:
+
+``` text
+event: status
+data: {"stage": "starting"}
+
+event: status
+data: {"stage": "extracting"}
+
+event: message
+data: {"delta": "Are you having any difficulty breathing, or swelling of your lips, tongue, or throat?"}
+
+event: done
+data: {"message": "...", "conversation_id": 42, "symptoms": ["sneezing", "itchy_eyes"], "severity": 4, "duration": "this morning", "possible_trigger": null, "breathing_difficulty": null, "airway_swelling": null, "triage_level": null, "triage_reasons": [], "triage_rule_version": null}
 ```
 
 ## Triage
@@ -670,6 +701,19 @@ Response:
 ``` http
 POST /api/triage
 ```
+
+## Alerts and notification preferences
+
+``` http
+GET   /api/alerts
+PATCH /api/alerts/{id}/read
+GET   /api/notifications/preferences
+PUT   /api/notifications/preferences
+```
+
+These are built and were missing from this section. Alerts are generated
+server-side by an in-process APScheduler job running hourly
+(`CHECK_INTERVAL_MINUTES = 60`).
 
 ## Hospitals
 
@@ -687,31 +731,43 @@ GET /api/hospitals/nearby?lat=35.856&lon=129.224&specialty=ENT
 
 # 13. LangGraph State
 
-The agent can maintain a structured state:
+The shipped state is `AllergyState` in
+`backend/app/agents/symptom_agent.py`. The draft below listed `user_id`,
+`pollen_level`, `air_quality` and `recommended_facilities`; none of those exist.
+Identity comes from the Bearer token on the request, not the graph, and the
+environmental services feed a separate scheduler rather than the chat graph.
 
 ``` python
-class AllergyState(TypedDict):
-    user_id: str
+class AllergyState(TypedDict, total=False):
+    messages: list[ChatMessage]
 
     symptoms: list[str]
     severity: int | None
     duration: str | None
-
-    breathing_difficulty: bool
-    airway_swelling: bool
-
+    breathing_difficulty: bool | None
+    airway_swelling: bool | None
     possible_trigger: str | None
 
-    pollen_level: str | None
-    air_quality: str | None
+    turn_count: int
+    ready: bool
+    extraction_error: bool
+    llm_error_kind: str | None
 
-    triage_result: str | None
+    assistant_reply: str | None
 
-    recommended_facilities: list
+    # Set only by triage_node, only from a TriageOutcome. Never by the LLM.
+    triage_level: str | None
+    triage_recommendation: str | None
+    triage_reasons: list[str]
+    triage_rule_version: str | None
 ```
 
-This prevents the workflow from depending entirely on free-form LLM
-text.
+The separation this state exists to enforce: `triage_level` is written in
+exactly one place, `triage_node`, and only from the value the deterministic
+engine returned. No field above is derived from free-form LLM text except
+`symptoms` / `severity` / `duration` / `possible_trigger` / the two safety
+flags, which are parsed and validated rather than trusted — a field the model
+returns that fails validation is dropped, not coerced.
 
 ------------------------------------------------------------------------
 

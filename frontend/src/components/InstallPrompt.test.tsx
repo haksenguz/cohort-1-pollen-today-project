@@ -10,6 +10,8 @@
  * event fires. Asserting it on an idle render passes against either
  * implementation — the component returns null before it has anything to show,
  * so a revert to the old markup slipped through a suite that looked green.
+ * That duplicate idle assertion existed alongside the real one; it was removed
+ * here because it could never fail, so it only added false confidence.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
@@ -62,11 +64,6 @@ afterEach(() => {
 });
 
 describe("InstallPrompt", () => {
-  it("renders no inline markup of its own", () => {
-    const { container } = renderWithToaster();
-    expect(container.querySelector(".pwa-toast")).toBeNull();
-  });
-
   it("fires a toast with a keyboard-reachable Install action on beforeinstallprompt", async () => {
     const { container } = renderWithToaster();
     fireBeforeInstallPrompt();

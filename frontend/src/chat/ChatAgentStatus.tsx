@@ -53,20 +53,24 @@ export function ChatAgentStatus() {
   if (state === "hidden") return null;
 
   // Built on shadcn primitives, not hand-rolled divs and hand-picked CSS.
-  // The earlier version of this used `.agentbar*` rules with colours chosen by
-  // eye and never contrast-checked in either theme — see bugs.md B-006.
+  // The earlier version of this used `.agentbar*` classes that were never
+  // actually defined in theme.css — dead hooks that looked like styling and
+  // were not, which is how colours "chosen by eye" survived a rebuild. See
+  // bugs.md B-006. Spacing and colour now come from Tailwind utilities and
+  // the theme tokens Alert already binds to, so contrast is guaranteed in
+  // both themes rather than eyeballed once.
   // `variant="warning"` does not exist on Alert, so the missing-key case uses
   // the default variant plus an explicit icon, which keeps the colour token
-  // (and therefore its contrast) coming from the theme rather than from me.
+  // (and therefore its contrast) coming from the theme.
   if (state === "missing") {
     return (
-      <div className="agentbar">
+      <div className="mb-1.5">
         <Alert role="status">
           <TriangleAlert aria-hidden="true" />
           <AlertTitle>No chat agent key is set</AlertTitle>
           <AlertDescription>
             Replies will fail until one is saved.{" "}
-            <Link className="agentbar-link" to="/settings">
+            <Link className="font-medium underline underline-offset-4" to="/settings">
               Add your API key
             </Link>
           </AlertDescription>
@@ -76,12 +80,12 @@ export function ChatAgentStatus() {
   }
 
   return (
-    <div className="agentbar">
+    <div className="mb-1.5">
       <Alert role="status">
         <CircleCheck aria-hidden="true" />
         <AlertDescription>
           Chat agent ready
-          <span className="agentbar-dim"> · {model}</span>
+          <span className="text-muted-foreground"> · {model}</span>
         </AlertDescription>
       </Alert>
     </div>

@@ -3,7 +3,69 @@
 UI/UX and behaviour issues, newest first. Each entry records what was observed
 and where, so a fix can be verified against the same surface.
 
-Status: `open` · `fixed` · `wontfix`
+Status: `open` · `in progress` · `fixed` · `wontfix`
+
+---
+
+## B-013 — `App.tsx` still documented a demo session that no longer exists
+
+- **Reported:** 2026-10-16 (self-identified, while reconciling this file after the rebuild)
+- **Surface:** `frontend/src/App.tsx`, `frontend/src/auth/AuthContext.tsx`
+- **Status:** open — stale comment only, no runtime effect
+
+**Observed.** `App.tsx` routes still carry the demo-mode comment:
+
+> *"AuthProvider boots straight into the demo session so RequireAuth always
+> passes."*
+
+That stopped being true in `9ed4012`. `AuthContext.tsx` now documents the
+opposite in a docstring of its own — *"No demo session"* — and no longer boots
+to a hardcoded `DEMO_USER`. With no token it sets `status: "unauthenticated"`
+and `RequireAuth` redirects to `/login`.
+
+**Why it matters.** The comment is the only surviving statement in the frontend
+that the fake session is still a supported mode. Someone reading `App.tsx`
+would conclude a fresh install authenticates itself, which is precisely the
+belief that produced `9ed4012`. The behaviour is correct today; only the
+description is wrong.
+
+**Fix.** Delete the comment. `/login` and `/register` are still routable for
+manual testing, and the `/profile` → `/settings` redirect below it is accurate,
+so nothing else in that block needs to change.
+
+---
+
+## B-012 — A commit shipped tests for code it did not ship
+
+- **Reported:** 2026-10-15 (found by a clean checkout of `feat/ismoiljon`)
+- **Surface:** `frontend/src/components/InstallPrompt.test.tsx`, `AppShell.tsx`
+- **Status:** fixed
+
+**Observed.** `92a4934` is titled *"settings screen, sonner toasts and
+screen-space fixes"* and ships `sonner.tsx` plus `InstallPrompt.test.tsx` — but
+not the code that test asserts on. At that commit `AppShell` mounts no
+`<Toaster />`, `InstallPrompt` still rendered `div.pwa-toast` twice, and the new
+test asserted `querySelector(".pwa-toast") is null`. **A clean checkout of the
+branch could not pass its own frontend suite.** The work had been committed from
+a dirty working tree, and only the files that happened to be staged went with it.
+
+**Why the suite looked green.** The assertion was written so it could pass
+against either implementation: it queried for `.pwa-toast` on a render where no
+install prompt was visible, so it passed whether or not the fix had landed. A
+test that cannot fail is worse than no test — it converted a half-landed commit
+into a passing build.
+
+**Fix.** `b28a3a6` lands what was left in the working tree: `AppShell` mounts
+the single `<Toaster />`, `InstallPrompt` / `UpdatePrompt` / `OfflineBanner` fire
+toasts and return `null`, and `.pwa-toast` / `.pwa-offline` are deleted from
+`theme.css`. The test now fires the event *first* and asserts after, so it
+actually exercises the behaviour it describes.
+
+**Lesson, recorded because the rebuild will produce this again.** The lesson is
+not "add more tests" — `InstallPrompt.test.tsx` already existed. It is that a
+commit message must describe what the commit contains, and the suite must be
+verified from a clean checkout rather than from a working tree that holds the
+missing files.
 
 ---
 
@@ -74,7 +136,8 @@ for an allergy app a neighbouring region's pollen is worse than an empty row.
 
 - **Reported:** 2026-10-13 (self-identified)
 - **Surface:** `/chat`
-- **Status:** fixed
+- **Status:** fixed locally, but reproduces on a clean checkout — the
+  `.env.example` half never landed
 
 **Observed.** Every turn replied *"Are you having any difficulty breathing, or
 swelling of your lips, tongue, or throat?"* — that string is `SAFETY_QUESTION`,
@@ -92,15 +155,31 @@ to `SAFETY_QUESTION` whenever `breathing_difficulty`/`airway_swelling` are
 unanswered, and the first turn always leaves both `None`. The app degraded to
 canned text and looked alive.
 
-**Fix.** Point `OPENAI_BASE_URL` at the issuing provider
-(`https://api.minimax.io/v1`), and document the pairing in `.env.example`.
-Verified: a 3-turn conversation now extracts `["itchy_eyes", "sneezing"]`,
-replies in free text, and the deterministic engine returns
-`LOW — severity 3 < 7, no red flags`.
+**Fix.** `OPENAI_BASE_URL` was repointed at the issuing provider
+(`https://api.minimax.io/v1`). Verified: a 3-turn conversation now extracts
+`["itchy_eyes", "sneezing"]`, replies in free text, and the deterministic engine
+returns `LOW — severity 3 < 7, no red flags`.
+
+**Partially landed — the documented half never made it in.** This entry
+previously claimed the pairing was documented in `.env.example`. It is not.
+`.env.example` lists `OPENAI_API_KEY=` (line 7) and nothing else for the LLM:
+no `OPENAI_BASE_URL`, no `OPENAI_MODEL`, and no note that a key is only valid
+against the host that issued it — which is the entire root cause of this bug.
+
+The live environment is correct because the fix went into the gitignored local
+`.env`, where it works and where nothing preserves it. A fresh clone has
+`OPENAI_API_KEY` and an unset base URL, which defaults to the OpenAI host, and
+a non-OpenAI key 401s against it. **This bug reproduces on a clean checkout.**
+
+Fix is one comment and one line in `.env.example`, ideally:
+`OPENAI_BASE_URL=https://api.minimax.io/v1` with a comment stating it must match
+the provider that issued `OPENAI_API_KEY`.
 
 **Why this was hard to see.** `_classify` maps `AuthenticationError` to
-`"unavailable"`, the same bucket as a genuine outage. A wrong host and a dead
-provider are indistinguishable in the logs.
+`"unavailable"`, the same bucket as a genuine outage — verified in
+`openai_client.py`, where a rejected key, a wrong host, and a network blip all
+return `unavailable`. A wrong host and a dead provider are indistinguishable in
+the logs.
 
 ---
 
@@ -152,10 +231,20 @@ UI/UX pass.
 **Observed.** Every card carried a description paragraph plus large internal
 padding; `Location` took ~300px for two inputs and a button.
 
-**Fix.** `.stage` padding reduced to 12px, Settings-scoped card gap to 10px
-(`--card-spacing: 0.75rem`), and the manual coordinate entry is now behind a
-closed `<details>` disclosure (see B-004), which removes most of the height the
-complaint was about.
+**Fix.** The page wrapper is now `<div className="stage flex flex-col gap-4">`
+with each card's body at `flex flex-col gap-3`/`gap-4`. But the bulk of the
+reclaimed height came from one change, not from padding: the manual coordinate
+entry moved behind a closed `<details>` disclosure, so `Location` shows a single
+"Use my current location" button instead of two inputs and a Save button by
+default. That is what actually removed the ~300px.
+
+**Corrected against the shipped CSS.** An earlier version of this entry claimed
+`.stage` padding was reduced to `12px` and that Settings used
+`--card-spacing: 0.75rem`. Neither is true of the current code. `.stage` in
+`theme.css` is `padding: 16px`, unchanged, and `--card-spacing` is the shadcn
+`Card` component's own default (`--spacing(4)`) from `components/ui/card.tsx` —
+there is no Settings-scoped override of it. The fix is the disclosure, not the
+spacing.
 
 ---
 
@@ -194,13 +283,20 @@ regression tests cover it.
 person with hay fever can say they are allergic to.
 
 **Fix.** 26 named allergens across Tree / Grass / Weed / Mould / indoor plus
-PM2.5 and PM10 (birch, oak, alder, willow, poplar, Japanese cedar, peach,
-olive, timothy, cocksfoot, zoysia, Bermuda grass, ragweed, mugwort,
-cocklebur, beggar ticks, lamb's quarters, dock, alternaria, cladosporium,
-house dust mite, cockroach). Legacy coarse values stay valid and are resolved by
-category, so `risk.py` scores BIRCH the same as TREE_POLLEN and existing rows
-keep working. `user_allergies.allergen` is a bare `VARCHAR(30)` with no CHECK
-constraint, so this is **no DDL and no alembic revision**.
+PM2.5 and PM10 (8 tree — birch, oak, alder, willow, poplar, Japanese cedar,
+peach, olive; 6 grass — timothy, cocksfoot, zoysia, Bermuda grass, silver grass,
+weeping grass; 6 weed — ragweed, mugwort, cocklebur, beggar ticks, lamb's
+quarters, dock; 2 mould — alternaria, cladosporium; 2 indoor — house dust mite,
+cockroach; 2 particulates — PM2.5, PM10). Legacy coarse values stay valid and
+are resolved by category, so `risk.py` scores BIRCH the same as TREE_POLLEN and
+existing rows keep working. `user_allergies.allergen` is a bare `VARCHAR(30)`
+with no CHECK constraint, so this is **no DDL and no alembic revision**.
+
+**Corrected against `enums.py`.** The original text named 22 of the 26 and
+omitted silver grass and weeping grass. It also described PM2.5 and PM10 as
+sitting alongside the mould/indoor group; in `ALLERGEN_CATEGORY` they resolve to
+their own `AIR_QUALITY` category, not to either. Scoring matches on
+`AllergenCategory`, never on the exact species.
 
 *Still open:* the species list came from established clinical classification,
 not from a confirmed Korean source — KDCA / JASA / AAAAI-Korea were all
@@ -222,7 +318,21 @@ colours picked by eye and never contrast-checked.
 **Fix.** Rebuilt on shadcn `Alert` / `AlertTitle` / `AlertDescription` with
 `TriangleAlert` / `CircleCheck` icons, so colour comes from theme tokens per
 ADR 0004. `.agentbar-warn` and the guessed `--warn-soft` / `--text` values are
-gone; `.agentbar` is layout-only.
+gone.
+
+**Corrected against `theme.css`.** This entry previously claimed "`.agentbar` is
+layout-only". It is not — there is **no `.agentbar` rule in `theme.css` at all**.
+`ChatAgentStatus.tsx` still emits three class names that match nothing:
+`agentbar` (the wrapper `<div>`, twice), `agentbar-link` (the "Add your API
+key" link), and `agentbar-dim` (the model name in the ready state). They render
+as unstyled elements, which happens to look acceptable today because the
+`Alert` inside supplies all the visible styling.
+
+The one place it shows: `agentbar-dim` is named for the dimmed `--ink-soft` the
+model name is supposed to use, and with no rule it inherits full `--ink` — the
+ready line reads at the same weight as the status text beside it. Either add the
+two rules or drop the class names; do not leave a class that promises a colour
+it does not deliver.
 
 ---
 
@@ -231,23 +341,35 @@ gone; `.agentbar` is layout-only.
 - **Reported:** 2026-10-14 (self-identified, while answering "how do
   notifications work?")
 - **Surface:** `/alerts`
-- **Status:** open
+- **Status:** in progress — fix under active development
 
-**Observed.** The alert pipeline works but has no delivery mechanism. There is:
+**Observed.** The alert pipeline works but has no delivery mechanism. As of
+this entry, the codebase still contains:
 
 - **No web push.** No `PushManager`, no `pywebpush`, no service-worker push
-  handler anywhere in the codebase.
-- **No polling.** `AlertsPage.tsx` calls `listAlerts()` once on mount. Nothing
-  re-fetches while the app sits open in the background.
+  handler anywhere in the frontend or backend.
+- **No polling.** `AlertsPage.tsx` calls `listAlerts()` once in a `useEffect`
+  keyed on `[unreadOnly]`. There is no interval, no visibility listener, and no
+  refetch on focus — nothing re-fetches while the app sits open in the
+  background. The only way to move the list is to toggle the "Unread only"
+  filter or leave and re-enter the route.
 
 So a high-pollen alert is generated server-side but reaches nobody until the
 user happens to tap the Alerts tab.
 
+**What does exist today.** Generation is real and server-side:
+`notification_service.py` exposes `start_scheduler()`, an in-process APScheduler
+`AsyncIOScheduler` wired into the FastAPI lifespan in `main.py`, running
+`run_environmental_checks` for every user with a stored location on
+`CHECK_INTERVAL_MINUTES = 60`. Alerts persist to the `alerts` table and are
+readable at `GET /api/alerts`. The break is strictly in the last mile —
+server produces, client never asks again.
+
 **Why it matters here.** This is an allergy app. The entire value of an alert
-is that it arrives *when the risk changes* — an hour-long APScheduler tick
-(`CHECK_INTERVAL_MINUTES = 60`) that nobody is listening to is not an alert.
-The conditions it fires on (pollen spike, air quality) are exactly the ones
-where a user is outdoors and not looking at the app.
+is that it arrives *when the risk changes* — an hour-long scheduler tick that
+nobody is listening to is not an alert. The conditions it fires on (pollen
+spike, air quality) are exactly the ones where a user is outdoors and not
+looking at the app.
 
 **Options, cheapest first.** (a) poll `/api/alerts` every few minutes while the
 app is open — a few lines, no new permissions, no service worker. (b) Web Push
@@ -255,7 +377,9 @@ with a service worker — real background delivery, needs VAPID keys and an
 opt-in prompt. (c) Email. (a) is a stopgap that still only works with the app
 open; (b) is the actual fix.
 
-Not built yet — it changes the permission story and needs a decision.
+**Not built yet — it changes the permission story and needs a decision.** A fix
+is in flight; this entry stays open until it lands and the behaviour above is
+no longer true.
 
 ---
 
@@ -303,11 +427,38 @@ reverted `ChatScreen.tsx` and silently orphaned it.
 
 - **Reported:** 2026-10-13 (self-identified)
 - **Surface:** `/settings` → bottom nav
-- **Status:** open — awaiting a decision
+- **Status:** fixed — the original measurement was wrong, and the number never
+  described the shipped CSS
 
-**Observed.** "Settings" renders at 10.5px in a 25%-width tab. At 375px viewport
-that is roughly 24px of usable text width and the label reads cramped next to
-the shorter "Chat" / "Today" / "Alerts".
+**Originally observed.** "Settings" was reported as cramped in its tab, at
+"roughly 24px of usable text width" on a 375px phone. That figure does not
+correspond to any layout the app has ever shipped, so the entry is corrected
+below against the real CSS.
 
-**Options.** (a) drop to 10px, (b) rename to "More", (c) leave it. Cosmetic
-only — no functional impact.
+**Re-measured.** `.nav a` in `theme.css` is `flex: 1` with `padding: 9px 0
+11px` — **zero horizontal padding** — at `font-size: 10.5px`,
+`font-weight: 600`. `BottomNav.tsx` renders four tabs (`Chat`, `Today`,
+`Alerts`, `Settings`), so `flex: 1` splits the row evenly:
+
+| viewport | shell width | tab width | "Settings" at 10.5px/600 | headroom |
+| --- | --- | --- | --- | --- |
+| 375px | 375px | 93.75px | ~38–40px | ~2.3× |
+| 412px (`max-width`) | 412px | 103px | ~38–40px | ~2.6× |
+
+"Settings" is eight characters at 10.5px semi-bold in Hanken Grotesk, which is
+roughly 3.6em of advance width — about 38px against 93.75px of content box. The
+label occupies under half the tab. There is no wrap, no clip, and no
+collision with the icon above it, and `.nav a` sets no `max-width` that could
+cause either.
+
+**What actually changed.** Settings became a bottom-nav tab rather than a
+header gear, so the row went from three tabs to four. That is the real change
+here, and it is the one worth keeping an eye on: each tab lost a quarter of its
+width, from 125px to 93.75px at a 375px viewport. "Settings" survives that
+comfortably because it is the longest label *and* the available space is more
+than double it.
+
+**If it ever does get tight**, the real levers are the label and the font size,
+in that order — a 7-character "Settings" at 10.5px is not the binding
+constraint, and neither is the tab width. Renaming to "More" would cost
+clarity to solve a problem that is not currently occurring.

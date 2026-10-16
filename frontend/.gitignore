@@ -22,3 +22,10 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Scratch output from ad-hoc test/lint runs. These keep reappearing because
+# this checkout lives under OneDrive, where Files On-Demand blocks the
+# recoverable-delete API, so they cannot be trashed and have to be ignored.
+lint_baseline.txt
+test_out.txt
+test_verbose.txt
