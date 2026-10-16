@@ -96,6 +96,9 @@ and the reference healthcare-agent architecture in
       no location is set. Duplicating that list inside a chat bubble would have
       meant rebuilding all four states for nothing. Today owns the location
       question, so the route has no dead end.
+      Known cost of the hand-off: **the route is the thing, not the results.**
+      The user leaves the chat to see care options, and the verdict card is no
+      longer in view. Do not read A3 as "chat can show clinics".
 - [x] **A4. Never let a tool change a safety verdict.** Handed to the backend
       lane as `backend/tests/test_tool_registry.py`, landed alongside the tool
       skeleton rather than after it.
