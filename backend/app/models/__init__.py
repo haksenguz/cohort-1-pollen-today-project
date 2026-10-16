@@ -3,7 +3,7 @@
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import Column, DateTime
+from sqlalchemy import CheckConstraint, Column, DateTime
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlmodel import Field, SQLModel
 
@@ -56,6 +56,26 @@ class Conversation(SQLModel, table=True):
 
 class Message(SQLModel, table=True):
     __tablename__ = "messages"
+    # Declared here, not only in db/init/01_schema.sql, because the test schema
+    # is built from SQLModel metadata and CI never applies db/migrations/*.sql.
+    # A constraint that exists only in the generated SQL file is enforced in
+    # production and absent from every test database - and the tests that guard
+    # it only assert on file text, so nothing would notice it going missing.
+    #
+    # Values are UPPERCASE because that is what app/core/enums.py writes and
+    # what every row in an existing database holds; the API lowercases `role` in
+    # the RESPONSE, and a CHECK written to match the response would reject the
+    # real rows. SYSTEM is excluded on purpose: nothing writes it and the
+    # frontend's closed role union has no "system", so it would render with no
+    # safety banner. Kept identical to docs/erd/gen_dmm.py, which regenerates
+    # 01_schema.sql - tests/test_schema_constraints.py asserts they agree.
+    __table_args__ = (
+        CheckConstraint("role IN ('USER', 'ASSISTANT')", name="messages_role_check"),
+        CheckConstraint(
+            "triage_level IS NULL OR triage_level IN ('LOW', 'MODERATE', 'EMERGENCY')",
+            name="messages_triage_level_check",
+        ),
+    )
     id: int | None = Field(default=None, primary_key=True)
     conversation_id: int = Field(foreign_key="conversations.id", index=True)
     role: str = Field(max_length=10)

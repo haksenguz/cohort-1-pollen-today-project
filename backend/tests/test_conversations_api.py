@@ -164,8 +164,15 @@ async def test_list_returns_the_callers_conversations(
         conversation_session, user_id, title="chest tightness after running", created_at=T0
     )
     await _conversation(conversation_session, other_id, title="someone else", created_at=T0)
+    # Uppercase, matching MessageRole and the column's CHECK. chat.py only
+    # ever writes uppercase; the API lowercases on the way out.
     for i in range(1, 4):
-        await _message(conversation_session, mine.id, "user" if i % 2 else "assistant", f"m{i}")
+        await _message(
+            conversation_session,
+            mine.id,
+            "USER" if i % 2 else "ASSISTANT",
+            f"m{i}",
+        )
 
     res = await conversation_client.get("/api/conversations", headers=_auth(token))
 
