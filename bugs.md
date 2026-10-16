@@ -7,6 +7,204 @@ Status: `open` · `in progress` · `fixed` · `wontfix`
 
 ---
 
+## B-014 — The agent is a chatbot, and the chat screen discards what the engine already decided
+
+- **Reported:** 2026-10-16 (user-reported: *"it's not an agent but it's just a chatbot"*)
+- **Surface:** `backend/app/agents/symptom_agent.py`, `backend/app/api/chat.py`,
+  `backend/app/api/hospitals.py`, `frontend/src/chat/allergyChatAdapter.ts`,
+  `frontend/src/routes/SettingsPage.tsx`
+- **Status:** open — master backlog. Group A is the blocking work; the rest is
+  ordered by what unblocks it.
+
+**Observed, part one: it is not an agent.** `LLMClient` is a single
+`complete(messages) -> str` (`chat.py:288`). One call in, one string out, no
+tools, no loop, no plan, no observation step. A turn is a fixed pipeline —
+extract, decide whether more questions are needed, call the rule engine — and
+the model never chooses its own next action. That is the definition of a
+chatbot. The stage labels the UI shows ("extracting", "assessing") are pipeline
+stages this codebase emits, not actions the model decided to take, and B-009
+already pinned that distinction with a test.
+
+**Observed, part two: the nearest-hospital capability is unreachable.** The
+backend *already* answers "what medical facilities are near me" — `GET
+/api/hospitals/nearby` (`hospitals.py:59`) ranks Naver Local Search results by
+Haversine distance and returns name, address, distance, specialty, phone. The
+agent cannot call it, because it has no tools. There is no schedule or
+availability data anywhere in the codebase, and no booking of any kind. The
+endpoint also cannot answer "who is open now" — Naver Local Search returns no
+opening hours, and `hospitals.py:99-102` documents that the old `open_now` filter
+was *removed, not faked*. Capping at 5 results with no pagination is the other
+inherited limit.
+
+**Observed, part three: the safety verdict is computed, sent, and thrown away.**
+`chat.py:231` puts `triage_level` and `triage_reasons` in the `done` event.
+`types.ts:215-217` types them. `allergyChatAdapter.ts:128` then keeps only
+`conversation_id` and discards the rest. A frontend-wide grep for `triage`
+returns the types, the client, and a test fixture — **no component reads it.** The
+deterministic verdict that ADR 0001 makes the app's central safety property
+renders as ordinary body text in a chat bubble, with no card, no styling, and no
+one-tap `tel:119`.
+
+**Observed, part four: there is no session.** `allergyChatAdapter.ts:30` holds
+the conversation id in a module-level `let`. Refresh the page or reopen the
+installed PWA and it is `null` — the next message silently starts a new
+conversation. Meanwhile `conversations` and `messages` (`models/__init__.py:44`,
+`:53`) persist every turn, and no endpoint in `backend/app/api/` can list or
+load them.
+
+**The constraint that outranks all of it.** ADR 0001: the LLM does conversation
+and extraction; `services/triage.py` owns every safety decision. Giving the model
+tools does not move that line. A `find_hospital` tool is an *action*; an
+`assess_urgency` tool must never exist. Every tool below is lookup or booking.
+The booking confirm step is a hard human gate — the model may propose a slot, the
+patient must accept it before any write. Booking without a confirmed slot is not
+a booking, and a failed or timed-out write is not a booking.
+
+Standards for each item are cited in the original review; the agent-loop and
+healthcare-scheduling items follow the ReAct pattern (reason → act → observe)
+and the reference healthcare-agent architecture in
+[group D](#d-agent-harness--the-actual-fix).
+
+### A. Safety-critical — do these before anything else
+
+- [ ] **A1. Render the triage verdict.** Attach `triage_level` + `triage_reasons`
+      to the assistant message (assistant-ui data parts) and render a verdict
+      card. EMERGENCY gets a persistent, high-contrast banner.
+- [ ] **A2. One-tap `tel:119`** on the EMERGENCY card. The disclaimer at
+      `ChatScreen.tsx:109` is static footer text; the call button must be
+      attached to the verdict, at the moment the verdict exists.
+- [ ] **A3. Surface the post-triage next action.** `hospitals.py` exists and the
+      chat never calls it. A verdict should lead to "find care near you".
+- [ ] **A4. Never let a tool change a safety verdict.** Pin with a test that no
+      tool schema can return a `triage_level`, so ADR 0001 cannot be eroded
+      quietly by a future tool.
+
+### B. Chat sessions — nothing survives a reload
+
+- [ ] **B1.** `GET /api/conversations` — list, newest first, per user.
+- [ ] **B2.** `GET /api/conversations/{id}` — full message history, resumable.
+- [ ] **B3.** Move the id out of the module variable into the URL: `/chat/:id`,
+      plus `/chat` meaning "start a new one".
+- [ ] **B4.** History drawer / screen: title, relative timestamp, one-line preview.
+- [ ] **B5.** Auto-generate a conversation title from the first user message
+      (needs a `title` column — the model has none).
+- [ ] **B6.** New Chat button.
+- [ ] **B7.** Search across conversations (required by ~30 conversations, per
+      Android's settings guidance; expected sooner here since they accumulate fast).
+- [ ] **B8.** Resume an in-flight turn after reload — snapshot + SSE replay with
+      `Last-Event-ID`, so a dropped stream is not a lost answer.
+
+### C. Chat experience
+
+- [ ] **C1. Real token streaming.** `chat.py:220` sends the whole reply in one
+      `message` event. Stream deltas; target first token under ~800ms.
+- [ ] **C2. Markdown rendering** to semantic HTML — the model already emits
+      `**bold**` and lists, currently rendered literally.
+- [ ] **C3. Retry / regenerate** the last response without retyping.
+- [ ] **C4. Copy message.**
+- [ ] **C5. Timestamps** on messages.
+- [ ] **C6. Suggested prompts / quick replies** on the empty state — today it is
+      prose only, so a new conversation opens on a blank field.
+- [ ] **C7. Jump-to-latest** button when the user scrolls up (auto-scroll exists,
+      the escape hatch does not).
+- [ ] **C8. Feedback** thumbs up/down per assistant message.
+- [ ] **C9. Voice input** — the user is short of breath or on the bus; typing is
+      the wrong input for this app.
+- [ ] **C10. Offline state for chat** — queued send / clear "you're offline"
+      inside the chat screen, not just the global banner.
+- [ ] **C11. Citations / confidence** so the output feels reviewable.
+
+### D. Agent harness — the actual fix
+
+Sources: [ReAct / core concepts](https://cloud.google.com/resources/core-concepts-ai-agents) ·
+[agent vs chatbot](https://redis.io/blog/ai-agent-vs-chatbot/) ·
+[5-layer agent stack](https://www.taskade.com/blog/ai-agent-stack) ·
+[JetBrains agent guide](https://www.jetbrains.com/pages/ai-agents/what-are-ai-agents/) ·
+[healthcare agent architecture](https://www.appther.com/blogs/build-healthcare-ai-agent) ·
+[scheduling workflow stages](https://thoughtly.com/blog/ai-agents-healthcare-appointment-scheduling-intake)
+
+- [ ] **D1. Tool-calling loop.** The model receives typed tool schemas and
+      chooses which to call, with what arguments, in what order. `LLMClient`
+      grows a `bind_tools` / function-call path instead of returning a bare string.
+- [ ] **D2. ReAct loop.** Reason → act → observe → repeat, with a hard step and
+      cost cap. Bounded and observable, never an open-ended while-loop.
+- [ ] **D3. `search_nearby_care`** tool → wraps `find_nearby_hospitals`. First
+      argument: the user's stored location, not a re-typed coordinate.
+- [ ] **D4. `check_availability`** tool. **Blocked upstream:** Naver Local Search
+      returns no hours. Resolve a real source (hospital booking APIs / 지역 health
+      centre data) before writing this tool. Do not let the model infer or guess
+      availability from static text — an invented clinic hour is exactly the kind
+      of confident wrong answer that makes this dangerous.
+- [ ] **D5. `book_appointment`** — writes only after explicit patient
+      confirmation, atomically, so two users cannot take the same slot.
+- [ ] **D6. `reschedule` / `cancel`** the same slot.
+- [ ] **D7. Multi-step without a flowchart.** "Soonest opening across 5 doctors"
+      should make the agent call availability five times and compare, with nobody
+      coding that branch. This is the acceptance test that it is genuinely agentic.
+- [ ] **D8. Working memory** across a turn — tool results feed the next reason
+      step. Today there is no place to put them.
+- [ ] **D9. Long-term memory** across sessions: known allergies, severity, past
+      episodes, preferred hospital, language.
+- [ ] **D10. Grounding / RAG layer** over approved content — self-care guidance,
+      what the triage levels mean, what to do before an appointment.
+- [ ] **D11. Human escalation path** — hand off to a person when the request
+      leaves the approved workflow.
+- [ ] **D12. Audit log of every tool call**, for a medical app that books
+      appointments.
+- [ ] **D13. Explicit autonomy level per tool** — read-only tools vs
+      write-actions requiring confirmation. Every failure and every exception must
+      land in an owned state, not a dead end.
+- [ ] **D14. Timeouts and retries per tool**, with honest failure copy. A
+      scheduling API that is slow must degrade to a list, never to silence.
+- [ ] **D15. Appointment model + tables** — provider, location, service type,
+      duration, slot, booking, status. None of this exists in the ERD yet.
+- [ ] **D16. Confirmation + reminder** delivery (ties into B-010).
+
+### E. Settings page
+
+- [ ] **E1. Sign out button.** `AuthContext.tsx:82` exports `logout` and *no
+      component ever calls it* — there is no way to log out of this app.
+- [ ] **E2. Restructure to an overview list.** Label + current value per row,
+      each opening a subscreen, instead of three fully-expanded cards.
+- [ ] **E3. Show live values as subtext** (Android: show status under the title).
+- [ ] **E4. "Restore defaults"** for preferences.
+- [ ] **E5. Destructive section at the bottom**, visually separated: delete
+      account, delete my data.
+- [ ] **E6. Move the dev LLM key card behind "Advanced"** (≥3 items justifies the
+      subsection; it should not sit in the consumer list).
+- [ ] **E7. Drop the System/Light/Dark cycle button** from the header. Apple HIG:
+      respect system settings, do not duplicate them in-app. Honour
+      `prefers-color-scheme`.
+- [ ] **E8. Emergency contact** — the highest-value missing setting for an allergy
+      app; every OS ships its own version.
+- [ ] **E9. Privacy & data** — what is stored (location, messages, symptom
+      events), export, delete. None of it is currently viewable.
+- [ ] **E10. Language** — the composer says "any language"; the UI is
+      English-only.
+- [ ] **E11. Units** — °C/°F, pollen concentration. Absent from the API too.
+- [ ] **E12. Chat preferences** — agent language, voice on/off, keep-history.
+      Depends on group B.
+- [ ] **E13. Notification quiet hours + a link to the OS permission state.**
+
+### F. Accessibility
+
+- [ ] **F1. `role="log"` + `aria-atomic="false"` + `aria-busy` on the transcript.**
+- [ ] **F2. Announce the finished message once**, never every token.
+- [ ] **F3. Keyboard contract** — Enter sends, Shift+Enter newline, Escape
+      cancels, ↑↓ recalls history.
+- [ ] **F4. Text size control**, 200% without loss of content (WCAG 2.2).
+- [ ] **F5. `prefers-reduced-motion`** guard on the activity pulse
+      (`ChatScreen.tsx:42`).
+- [ ] **F6. 44×44px tap targets** on the new controls.
+
+**Suggested order.** A1–A4 → B1–B3 → D1–D4 → B4–B8 → C1–C2 → E1–E7. A group A
+is a safety hole in an app whose central claim is that a deterministic engine
+decides urgency, and it is a small diff. Group D is the difference between a
+chatbot and an agent, and D4 is blocked on a data source rather than on code —
+worth starting that search now, in parallel with A.
+
+---
+
 ## B-013 — `App.tsx` still documented a demo session that no longer exists
 
 - **Reported:** 2026-10-16 (self-identified, while reconciling this file after the rebuild)
