@@ -7,7 +7,8 @@
  * reassuring default.
  */
 import { useAuiState } from "@assistant-ui/react";
-import { CircleCheck, Info, Phone, TriangleAlert } from "lucide-react";
+import { CircleCheck, Info, MapPin, Phone, TriangleAlert } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -136,6 +137,7 @@ export function TriageVerdict({ data }: { data: unknown }) {
   const kind = verdictKind(level);
   const Icon = ICON[kind];
   const copy = COPY[kind];
+  const navigate = useNavigate();
 
   return (
     <Alert
@@ -170,6 +172,26 @@ export function TriageVerdict({ data }: { data: unknown }) {
               <Phone aria-hidden="true" />
               Call {EMERGENCY_NUMBER}
             </a>
+          </Button>
+        ) : null}
+        {/* A verdict that says "get help" has to lead somewhere. /today already
+            renders the ranked nearby-clinic list from the stored location, and
+            already tells the user plainly when there is no location yet, so this
+            hands off rather than duplicating that list inside a chat bubble. */}
+        {kind === "emergency" || kind === "moderate" ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="lg"
+            className={cn(
+              "w-full",
+              kind === "emergency" &&
+                "border-primary-foreground/60 bg-transparent text-primary-foreground hover:bg-primary-foreground/10 hover:text-primary-foreground",
+            )}
+            onClick={() => navigate("/today")}
+          >
+            <MapPin aria-hidden="true" />
+            Find a clinic near you
           </Button>
         ) : null}
         <ReasonList reasons={reasons} className={cn("text-xs", REASONS_CLASS[kind])} />

@@ -19,7 +19,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
 
 vi.mock("../api/client", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../api/client")>();
@@ -155,5 +155,44 @@ describe("ChatScreen", () => {
     expect(await screen.findByText("Safety check could not be read")).toBeTruthy();
     expect(screen.queryByText("Safety check: low")).toBeNull();
     expect(screen.queryByRole("link", { name: /Call the emergency number/ })).toBeNull();
+  });
+
+  it("routes an emergency verdict to nearby care and lands on Today", async () => {
+    mockTurn(doneEvent("EMERGENCY", ["airway_swelling"]));
+    render(
+      <MemoryRouter initialEntries={["/chat"]}>
+        <Routes>
+          <Route path="/chat" element={<ChatScreen />} />
+          <Route path="/today" element={<p>Today care screen</p>} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await sendATurn();
+    await userEvent.click(
+      await screen.findByRole("button", { name: /Find a clinic near you/ }),
+    );
+
+    expect(await screen.findByText("Today care screen")).toBeTruthy();
+  });
+
+  it("offers nearby care on a moderate verdict but never on a low one", async () => {
+    mockTurn(doneEvent("MODERATE", ["severity_5"]));
+    renderScreen();
+
+    await sendATurn();
+
+    expect(await screen.findByText("Safety check: moderate")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Find a clinic near you/ })).toBeTruthy();
+  });
+
+  it("does not offer nearby care on a low verdict", async () => {
+    mockTurn(doneEvent("LOW"));
+    renderScreen();
+
+    await sendATurn();
+
+    expect(await screen.findByText("Safety check: low")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Find a clinic near you/ })).toBeNull();
   });
 });
