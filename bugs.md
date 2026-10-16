@@ -49,8 +49,14 @@ one-tap `tel:119`.
 the conversation id in a module-level `let`. Refresh the page or reopen the
 installed PWA and it is `null` — the next message silently starts a new
 conversation. Meanwhile `conversations` and `messages` (`models/__init__.py:44`,
-`:53`) persist every turn, and no endpoint in `backend/app/api/` can list or
-load them.
+`:53`) persist every turn with no way to read them back.
+
+> **Resolved as of 2026-10-17, and this paragraph is kept for the record.** The
+> read side now exists — see B1/B2 below — and the module-level `let` is gone.
+> What remains open is not "no session" but two narrower problems, both tracked:
+> the `conversations.updated_at` column is still never written (**B-015**), and
+> nothing generates a title (**B5**). Do not read the original wording below as
+> current state; read the checkbox list.
 
 **The constraint that outranks all of it.** ADR 0001: the LLM does conversation
 and extraction; `services/triage.py` owns every safety decision. Giving the model
@@ -109,8 +115,11 @@ and the reference healthcare-agent architecture in
       empty and error states — "no conversations" and "failed to load" do not
       look the same.
 - [ ] **B5.** Auto-generate a conversation title from the first user message.
-      Still open. The endpoints READ `conversations.title` but nothing writes
-      it, so it is always null. The UI falls back to "Untitled conversation".
+      Still open, and **re-verified against live Postgres on 2026-10-17** rather
+      than assumed: `conversations.title` is still NULL on every row. The
+      endpoints READ it, nothing writes it. The UI falls back to "Untitled
+      conversation". The column and the migration exist, so this is purely the
+      missing write.
 - [x] **B6.** New Chat button. Done, in the history sheet.
 - [ ] **B7.** Search across conversations. Not started.
 - [ ] **B8.** Resume an in-flight turn after reload — snapshot + SSE replay with
@@ -118,8 +127,16 @@ and the reference healthcare-agent architecture in
 
 ### C. Chat experience
 
-- [ ] **C1. Real token streaming.** `chat.py:220` sends the whole reply in one
-      `message` event. Stream deltas; target first token under ~800ms.
+- [ ] **C1. Real token streaming.** **Partially delivered — read this before
+      claiming it is done.** The whole-reply-in-one-event behaviour described in
+      the original report is gone: the stream now emits incremental `message`
+      deltas, concatenating exactly to the final reply (word-start offsets, empty
+      input yields zero deltas, whitespace-only is delivered verbatim). But that
+      is **incremental delivery of an already-complete string, not
+      provider-side token streaming** — the model has finished before the first
+      delta is produced, so the <800ms first-token target is still unmet and
+      nothing here improves time-to-first-byte. Still open: get deltas from the
+      provider as they are generated.
 - [ ] **C2. Markdown rendering** to semantic HTML — the model already emits
       `**bold**` and lists, currently rendered literally.
 - [ ] **C3. Retry / regenerate** the last response without retyping.
@@ -146,9 +163,16 @@ Sources: [ReAct / core concepts](https://cloud.google.com/resources/core-concept
 [healthcare agent architecture](https://www.appther.com/blogs/build-healthcare-ai-agent) ·
 [scheduling workflow stages](https://thoughtly.com/blog/ai-agents-healthcare-appointment-scheduling-intake)
 
-- [ ] **D1. Tool-calling loop.** The model receives typed tool schemas and
-      chooses which to call, with what arguments, in what order. `LLMClient`
-      grows a `bind_tools` / function-call path instead of returning a bare string.
+- [ ] **D1. Tool-calling loop.** **Skeleton only — this is NOT a working agent
+      loop, and the distinction is the whole point of B-014.** What landed:
+      `ToolDefinition` / `ToolRegistry`, an optional `complete_with_tools` path,
+      a hard `MAX_TOOL_STEPS=3` cap, one **marked stub** (`find_nearby_hospitals`,
+      which returns nothing rather than fabricating results), and the A4 guard
+      that walks schemas recursively and rejects urgency intent by name and
+      description. `LLMClient` is **untouched** — still a single
+      `complete(messages) -> str`. Nothing in that skeleton lets the model choose
+      a tool, an argument, or an order. Treat D1 as barely started: the
+      scaffolding and its safety guard are real, the loop is not.
 - [ ] **D2. ReAct loop.** Reason → act → observe → repeat, with a hard step and
       cost cap. Bounded and observable, never an open-ended while-loop.
 - [ ] **D3. `search_nearby_care`** tool → wraps `find_nearby_hospitals`. First
@@ -244,6 +268,165 @@ Group F is untouched.
 order: **D1–D4** → C1–C2 → B5, B7, B8 → group F. D1–D3 are code; **D4 is
 blocked on a data source rather than on code**, so that search is worth
 starting in parallel instead of after.
+
+---
+
+## B-015 — The history list was ordered and dated by creation time, not activity
+
+- **Reported:** 2026-10-17 (backend lane, while reconciling B-014 group B)
+- **Surface:** `backend/app/services/conversation_service.py`,
+  `backend/app/api/chat.py`, `frontend/src/components/ChatHistoryList.tsx`
+- **Status:** **partially fixed** — `23c309e`. Read the open half.
+
+**Observed.** `list_conversations` ordered by `conversations.updated_at`. Nothing
+ever writes that column: `_persist_turn` returns an existing conversation
+untouched, so it stayed frozen at whatever INSERT put there. The list was
+therefore really ordering by creation time and rendering a conversation's age as
+its last activity. It looked correct only because a conversation is normally
+messaged seconds after it is opened — a bug waiting for a user who comes back
+the next day.
+
+Live evidence before the fix: 44 conversations had a frozen `updated_at` older
+than their own last message. Conversation 46 sat 35 microseconds after its own
+`created_at` while its final message arrived 50 seconds later.
+
+**Fixed:** ordering and the reported value are both derived from
+`coalesce(max(messages.created_at), created_at)`. Returning the derived value in
+the *existing* `updated_at` field matters as much as the ordering, because
+`ChatHistoryList.tsx:112` renders `formatRelativeTime(conversation.updated_at)` —
+fixing only the order would sort correctly and then display "3 months ago" on a
+thread from yesterday.
+
+**The `coalesce` is load-bearing, not cosmetic.** Without it an empty
+conversation yields `updated_at: None`, which fails `ConversationSummaryResponse`
+validation and turns `GET /api/conversations` into a **500 for that user**.
+
+**Deliberately derived, not maintained by a trigger.** Tests build their schema
+from SQLModel metadata, not from `db/init/01_schema.sql`, so a `BEFORE UPDATE`
+trigger would exist in production and not in any test database — a test
+asserting the ordering would pass in CI and fail live. That is B-011's exact
+shape.
+
+- [ ] **B-015a. `conversations.updated_at` is still never written.** The fix is at
+      the query level only. Nothing in the app reads the column any more, so
+      nothing depends on it — but anyone reading it directly gets a plausible
+      wrong answer with no error, which is the same failure class as the
+      unrecognised `role` value and the `?? "low"` fallback. Either write it in
+      `_persist_turn`, or drop the column. Leaving it is the indefensible middle.
+
+---
+
+## B-016 — `messages.role` was free text, so a bad value silently deleted the safety banner
+
+- **Reported:** 2026-10-17 (backend lane; raised by the frontend lane, which owns
+  the rendering that breaks)
+- **Surface:** `backend/app/models/__init__.py`, `backend/app/api/conversations.py`,
+  `backend/db/migrations/`, `docs/erd/gen_dmm.py`,
+  `frontend/src/api/types.ts`, `frontend/src/chat/sessions/conversationSession.ts`
+- **Status:** fixed — `354f51b`, `91362e5`
+
+**Observed.** `role VARCHAR(10)` and `triage_level VARCHAR(12)` had no CHECK
+constraint. `role` is the dangerous one: the frontend's
+`ConversationMessageRole` is a **closed** union (`"user" | "assistant"`) and
+`conversationSession.ts` passes it into assistant-ui with no normalisation;
+assistant-ui picks the message component **by role**, and `TriageVerdict` renders
+inside `AssistantMessage` only. A role it does not recognise means the triage
+banner does not render — silently, no error, no console output, just a missing
+EMERGENCY card on a message that had one when it was live.
+
+Live data made this concrete rather than theoretical: **every row in the database
+stores UPPERCASE** `'USER'` / `'ASSISTANT'`, because that is what
+`MessageRole` produces. Only the API response is lowercased. So the column and
+the contract genuinely disagreed, and the disagreement was invisible until you
+read the rows.
+
+**The trap that makes this worth writing down.** The obvious constraint, written
+to match the documented lowercase API contract, **aborts against a live
+database**: Postgres validates existing rows when `ADD CONSTRAINT` runs. It has
+to be the column's casing. This only ever appears against real data, never in a
+fresh test database.
+
+**`SYSTEM` is excluded on purpose.** `MessageRole.SYSTEM` exists as a third enum
+member, nothing writes it, and the frontend union has no `"system"`. Allowing it
+would let through a row that renders with no safety banner. Failing at the
+constraint is the correct outcome; `gen_dmm.py` previously documented SYSTEM as
+legal and is corrected.
+
+---
+
+## B-017 — The constraints were enforced in production and in no test database at all
+
+- **Reported:** 2026-10-17 (frontend lane, while checking how far B-016's guard
+  actually reached)
+- **Surface:** `backend/tests/conftest.py`, `.github/workflows/ci.yml`,
+  `backend/app/models/__init__.py`
+- **Status:** fixed — `91362e5`
+
+**Observed.** B-016's constraints existed in exactly two places —
+`docs/erd/gen_dmm.py` (which regenerates `01_schema.sql`) and
+`db/migrations/03`. **The test suite applies neither.** Tests build their schema
+from SQLModel metadata, and CI never runs `db/migrations/*.sql`. So every test
+database — including the Postgres 17 service the workflow spins up *specifically
+to catch dialect-specific bugs* — had a `messages` table with no constraint at
+all. Worse, the two tests guarding those constraints only asserted on
+`path.read_text()` of the SQL *files*, so the suite passed green while the safety
+constraint was enforced nowhere it was actually exercised.
+
+**This is the one that makes B-016 worth trusting.** A constraint that exists
+only in a generated file is enforced where it costs the most and verified
+nowhere.
+
+**Fixed:** `Message` declares both constraints in `__table_args__`, so
+`create_all` emits them on every engine. Behavioural tests now write `user`,
+`User`, `SYSTEM` and `assistant` and expect each rejected, alongside the values
+`chat.py` actually writes being accepted — 14 pass on SQLite, 14 on Postgres.
+
+Adding it immediately caught two existing tests that had been relying on the
+constraint not existing: `test_conftest_wipe_order.py` and
+`test_conversations_api.py` both inserted lowercase `"user"`, a value `chat.py`
+never writes. Both now use the `MessageRole` spelling. Neither test was about
+casing, so nothing they assert changed.
+
+---
+
+## B-018 — `gen_dmm.py` and the live database disagreed on defaults, and one half of the fix is a trap
+
+- **Reported:** 2026-10-17 (backend lane, surfaced while probing B-016's casing)
+- **Surface:** `docs/erd/gen_dmm.py`, `backend/db/init/01_schema.sql`,
+  `backend/db/migrations/`
+- **Status:** **partially fixed** — `87c112a`. Read the open half.
+
+**Observed.** `01_schema.sql` is *generated* from `gen_dmm.py` and is rewritten
+wholesale every run. It declared `DEFAULT now()` on every `created_at`, and the
+live database had none of them. Production and a fresh install were different
+shapes. The app never noticed, because SQLModel sets these Python-side on every
+insert — but any raw SQL `INSERT` had to supply the timestamp by hand or fail on
+NOT NULL. That is how it was found: two probe runs failed for this reason.
+
+**Fixed:** migration `04` sets the default on all ten `created_at` columns.
+Idempotent by construction — it only touches columns that currently have none.
+Metadata-only on PostgreSQL 11+, so no table rewrite and no lock.
+
+- [ ] **B-018a. `updated_at` defaults are still missing, and adding them would be
+      worse than leaving them.** `gen_dmm.py` declares `DEFAULT now()` for
+      `updated_at` too, and the live columns have none. Do **not** close that gap
+      the obvious way. A default on `updated_at` is written at INSERT and never
+      moves, because there is no trigger — so after any UPDATE the row carries a
+      stale timestamp that is still `NOT NULL`, still plausible, and passes every
+      check that exists. Nothing errors; the column looks maintained and is not.
+      Interacts with **B-015a**: the same column is the one the history list
+      used to trust. Either add a real `BEFORE UPDATE` trigger, or keep the value
+      explicit and correct `gen_dmm.py` so the file stops lying.
+
+- [ ] **B-018b. Five product defaults remain unapplied.** `conversations.status`
+      `'ACTIVE'`, `notification_preferences.alert_pollen` /
+      `alert_air_quality` / `alert_weather` all `true`, and `min_risk_level`
+      `'MODERATE'`. These are **product decisions, not schema cleanup** — they
+      decide what a brand-new account looks like before the user touches
+      anything, and they are exactly the settings someone notices on day one.
+      The other four drifted defaults (`alerts.is_read`, both
+      `symptom_events` booleans, `environment_snapshots.captured_at`) are
+      mechanical insert-time constants and can be closed without a decision.
 
 ---
 
