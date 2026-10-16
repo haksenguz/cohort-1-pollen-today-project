@@ -15,6 +15,13 @@ export function AlertsPage() {
   const [unreadOnly, setUnreadOnly] = useState(false);
   const [pendingId, setPendingId] = useState<number | null>(null);
 
+  // No poll here. Background delivery (B-010) is mounted once in AppShell, above
+  // the router, because the whole point of an alert is to reach you while you
+  // are on Chat or Today — polling from this screen would only ever notify you
+  // when you were already looking at the alerts. This page's own list, its
+  // filter and markAlertRead stay local, and the hook holds no alert state, so
+  // a tick cannot clobber `alerts` or race markAlertRead below.
+
   useEffect(() => {
     let cancelled = false;
     // oxlint-disable-next-line react/set-state-in-effect -- reset-before-refetch on filter change
