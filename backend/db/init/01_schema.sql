@@ -39,7 +39,9 @@ CREATE TABLE messages (
     triage_level VARCHAR(12),
     triage_reasons JSONB NOT NULL DEFAULT '[]'::jsonb,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
+    FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE,
+    CONSTRAINT messages_role_check CHECK (role IN ('USER','ASSISTANT')),
+    CONSTRAINT messages_triage_level_check CHECK (triage_level IS NULL OR triage_level IN ('LOW','MODERATE','EMERGENCY'))
 );
 
 CREATE TABLE symptom_events (

@@ -10,9 +10,9 @@ SCHEMA_OUT = REPO_ROOT / "backend" / "db" / "init" / "01_schema.sql"
 def uid(): return str(uuid.uuid4())
 
 # ---- declarative schema -------------------------------------------------
-# col: (name, datatype, param, nn, extra)  extra dict: pk, fk_to=(table,onDelete), default, comment
-def C(name, dt, param="", nn=True, pk=False, fk=None, default="", comment=""):
-    return dict(name=name, dt=dt, param=param, nn=nn, pk=pk, fk=fk, default=default, comment=comment)
+# col: (name, datatype, param, nn, extra)  extra dict: pk, fk_to=(table,onDelete), default, comment, check
+def C(name, dt, param="", nn=True, pk=False, fk=None, default="", comment="", check=""):
+    return dict(name=name, dt=dt, param=param, nn=nn, pk=pk, fk=fk, default=default, comment=comment, check=check)
 
 TS = ("timestamp with time zone", "", True)
 def pk_id(): return C("id", "serial", nn=True, pk=True)
@@ -47,7 +47,15 @@ SCHEMA = {
  "messages": [
     pk_id(),
     C("conversation_id", "integer", fk=("conversations", "Cascade")),
-    C("role", "character varying", "10", comment="USER|ASSISTANT|SYSTEM"),
+    # Uppercase because that is what app/core/enums.py writes and what every row
+    # in an existing database contains. The API lowercases `role` in the
+    # RESPONSE; the column is not lowercase, and a CHECK written to match the
+    # response would abort on the first real row.
+    # SYSTEM is deliberately excluded: nothing writes it and the frontend's
+    # closed role union has no "system", so it would render with no safety banner.
+    C("role", "character varying", "10",
+      check="role IN ('USER','ASSISTANT')",
+      comment="USER|ASSISTANT, CHECK-constrained"),
     C("content", "text"),
     # Deterministic verdict, denormalised onto the assistant message. It was
     # already stored in triage_results, but only reachable by joining through
@@ -55,7 +63,9 @@ SCHEMA = {
     # triage_reasons was not persisted anywhere at all - triage_results keeps
     # rule_version instead. Written ONLY by the rule engine: never the model,
     # never a tool.
-    C("triage_level", "character varying", "12", nn=False, comment="LOW|MODERATE|EMERGENCY, from triage.py"),
+    C("triage_level", "character varying", "12", nn=False,
+      check="triage_level IS NULL OR triage_level IN ('LOW','MODERATE','EMERGENCY')",
+      comment="LOW|MODERATE|EMERGENCY, from triage.py"),
     C("triage_reasons", "jsonb", default="'[]'::jsonb", comment="list[str], rule engine rationale"),
     created(),
  ],
@@ -289,7 +299,7 @@ lines = ["-- Allergy AI Companion — PostgreSQL schema (generated from docs/erd
          "-- Source of truth for the ERD is docs/erd/allergy_ai.dmm (open in Luna Modeler).", ""]
 for tname, cols in SCHEMA.items():
     lines.append(f"CREATE TABLE {tname} (")
-    body, fks = [], []
+    body, fks, checks = [], [], []
     for c in cols:
         seg = f"    {c['name']} {sql_type(c)}"
         if c["pk"]: seg += " PRIMARY KEY"
@@ -299,11 +309,15 @@ for tname, cols in SCHEMA.items():
         if c["fk"]:
             pn, od = c["fk"]
             fks.append(f"    FOREIGN KEY ({c['name']}) REFERENCES {pn}(id) ON DELETE {od.upper().replace('NO ACTION','NO ACTION')}")
+        if c["check"]:
+            # Named so migrations/03 can create the identical constraint and so a
+            # failure names the column rather than an anonymous expression.
+            checks.append(f"    CONSTRAINT {tname}_{c['name']}_check CHECK ({c['check']})")
     if tname == "users":
         body.append("    UNIQUE (email)")
     if tname == "notification_preferences":
         body.append("    UNIQUE (user_id)")
-    lines.append(",\n".join(body + fks))
+    lines.append(",\n".join(body + fks + checks))
     lines.append(");\n")
 with open(SCHEMA_OUT, "w", encoding="utf-8") as f:
     f.write("\n".join(lines))
