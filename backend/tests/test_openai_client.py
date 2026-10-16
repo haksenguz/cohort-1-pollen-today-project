@@ -18,6 +18,7 @@ from app.core.openai_client import (
     OpenAIChatClient,
     _build_openai_client,
     _classify,
+    function_tool_spec,
     get_openai_client_from_settings,
 )
 
@@ -326,3 +327,184 @@ def test_get_client_raises_when_api_key_missing(fake_settings):
     fake_settings(api_key="")
     with pytest.raises(RuntimeError, match="openai_api_key is not configured"):
         get_openai_client_from_settings()
+
+
+# ---------------------------------------------------------------------------
+# Optional tool calling.
+#
+# `complete` is still the whole required contract and still sends no tools;
+# `complete_with_tools` is a separate capability so no existing fake or call
+# site had to change to get it.
+# ---------------------------------------------------------------------------
+
+
+def _fake_sdk_with_tool_calls(monkeypatch, captured: dict, content, tool_calls):
+    class FakeCompletions:
+        def create(self, **kwargs):
+            captured["create"] = kwargs
+            message = type("M", (), {"content": content, "tool_calls": tool_calls})()
+            return type("R", (), {"choices": [type("C", (), {"message": message})()]})()
+
+    class FakeOpenAI:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+            self.chat = type("Chat", (), {"completions": FakeCompletions()})()
+
+    monkeypatch.setattr("app.core.openai_client._import_openai_sdk", lambda: FakeOpenAI)
+
+
+def _tool_call_stub(call_id="call_1", name="lookup_clinic", arguments='{"latitude": 37.5}'):
+    function = type("F", (), {"name": name, "arguments": arguments})()
+    return type("TC", (), {"id": call_id, "function": function})()
+
+
+def test_complete_still_sends_no_tools(monkeypatch):
+    """The regression that matters: adding tools must not touch `complete`."""
+    captured: dict = {}
+    _fake_sdk(monkeypatch, captured)
+
+    OpenAIChatClient(api_key="sk-test").complete([{"role": "user", "content": "hi"}])
+
+    assert "tools" not in captured["create"]
+    assert "tool_choice" not in captured["create"]
+
+
+def test_complete_with_tools_sends_the_offered_schemas(monkeypatch):
+    captured: dict = {}
+    _fake_sdk_with_tool_calls(monkeypatch, captured, content="no lookup needed", tool_calls=None)
+    spec = function_tool_spec("lookup_clinic", "Look up a clinic.", {"type": "object"})
+
+    turn = OpenAIChatClient(api_key="sk-test").complete_with_tools(
+        [{"role": "user", "content": "clinic near me?"}], [spec]
+    )
+
+    assert captured["create"]["tools"] == [spec]
+    assert "tool_choice" not in captured["create"], "no model may be forced to call a tool"
+    assert turn.content == "no lookup needed"
+    assert turn.tool_calls == ()
+
+
+def test_complete_with_tools_normalizes_a_tool_call(monkeypatch):
+    captured: dict = {}
+    _fake_sdk_with_tool_calls(
+        monkeypatch,
+        captured,
+        content=None,
+        tool_calls=[_tool_call_stub(arguments='{"latitude": 37.5}')],
+    )
+    spec = function_tool_spec("lookup_clinic", "Look up a clinic.", {"type": "object"})
+
+    turn = OpenAIChatClient(api_key="sk-test").complete_with_tools(
+        [{"role": "user", "content": "clinic near me?"}], [spec]
+    )
+
+    assert len(turn.tool_calls) == 1
+    call = turn.tool_calls[0]
+    assert call.id == "call_1"
+    assert call.name == "lookup_clinic"
+    assert call.arguments == {"latitude": 37.5}
+    assert turn.content is None
+
+
+@pytest.mark.parametrize("raw", ["{not json", "", "   ", "[1, 2]", None])
+def test_unparseable_tool_arguments_degrade_to_empty(monkeypatch, raw):
+    """A model that emitted broken JSON has not earned a crashed turn."""
+    captured: dict = {}
+    _fake_sdk_with_tool_calls(
+        monkeypatch, captured, content=None, tool_calls=[_tool_call_stub(arguments=raw)]
+    )
+    spec = function_tool_spec("lookup_clinic", "Look up a clinic.", {"type": "object"})
+
+    turn = OpenAIChatClient(api_key="sk-test").complete_with_tools(
+        [{"role": "user", "content": "clinic?"}], [spec]
+    )
+
+    assert turn.tool_calls[0].arguments == {}
+
+
+def test_none_content_with_no_tool_call_is_malformed(monkeypatch):
+    """Same rule as `complete`: silence is a failure, not an empty answer."""
+    captured: dict = {}
+    _fake_sdk_with_tool_calls(monkeypatch, captured, content=None, tool_calls=[])
+    spec = function_tool_spec("lookup_clinic", "Look up a clinic.", {"type": "object"})
+
+    with pytest.raises(LLMCallError) as excinfo:
+        OpenAIChatClient(api_key="sk-test").complete_with_tools(
+            [{"role": "user", "content": "hi"}], [spec]
+        )
+
+    assert excinfo.value.kind == "malformed"
+
+
+def test_tool_enabled_calls_are_classified_like_any_other(monkeypatch):
+    raised = type("RateLimitError", (Exception,), {})("429")
+
+    class FakeCompletions:
+        def create(self, **kwargs):
+            raise raised
+
+    class FakeOpenAI:
+        def __init__(self, **kwargs):
+            self.chat = type("Chat", (), {"completions": FakeCompletions()})()
+
+    monkeypatch.setattr("app.core.openai_client._import_openai_sdk", lambda: FakeOpenAI)
+    spec = function_tool_spec("lookup_clinic", "Look up a clinic.", {"type": "object"})
+
+    with pytest.raises(LLMCallError) as excinfo:
+        OpenAIChatClient(api_key="sk-test").complete_with_tools(
+            [{"role": "user", "content": "hi"}], [spec]
+        )
+
+    assert excinfo.value.kind == "rate_limit"
+
+
+def test_tool_result_messages_carry_their_tool_call_id(monkeypatch):
+    """A tool observation is a `role: tool` turn that must name its call."""
+    captured: dict = {}
+    _fake_sdk_with_tool_calls(monkeypatch, captured, content="done", tool_calls=None)
+    spec = function_tool_spec("lookup_clinic", "Look up a clinic.", {"type": "object"})
+
+    OpenAIChatClient(api_key="sk-test").complete_with_tools(
+        [
+            {"role": "user", "content": "clinic?"},
+            {
+                "role": "tool",
+                "tool_call_id": "call_1",
+                "name": "lookup_clinic",
+                "content": '{"name": "Some Clinic"}',
+            },
+        ],
+        [spec],
+    )
+
+    assert captured["create"]["messages"][1] == {
+        "role": "tool",
+        "content": '{"name": "Some Clinic"}',
+        "tool_call_id": "call_1",
+        "name": "lookup_clinic",
+    }
+
+
+def test_ordinary_messages_are_still_exactly_role_and_content(monkeypatch):
+    """The optional payload keys must not leak into an ordinary turn."""
+    captured: dict = {}
+    _fake_sdk_with_tool_calls(monkeypatch, captured, content="done", tool_calls=None)
+    spec = function_tool_spec("lookup_clinic", "Look up a clinic.", {"type": "object"})
+
+    OpenAIChatClient(api_key="sk-test").complete_with_tools(
+        [{"role": "system", "content": "be brief"}, {"role": "user", "content": "hi"}], [spec]
+    )
+
+    assert captured["create"]["messages"] == [
+        {"role": "system", "content": "be brief"},
+        {"role": "user", "content": "hi"},
+    ]
+
+
+def test_the_real_client_satisfies_both_protocols(monkeypatch):
+    """`ToolCallingLLMClient` extends `LLMClient`; it never replaces it."""
+    _fake_sdk(monkeypatch, {})
+    client = OpenAIChatClient(api_key="sk-test", model="gpt-4o-mini", base_url=None)
+
+    assert callable(client.complete)
+    assert callable(client.complete_with_tools)

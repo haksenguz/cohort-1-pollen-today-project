@@ -1,10 +1,15 @@
 """Chat endpoint for the symptom agent (documentation §12, ADR 0002).
 
 The frontend PWA streams chat over SSE (ADR 0002), so this endpoint responds
-with `text/event-stream`: a `message` event per assistant turn, and a
-`done` event carrying the same fields as documentation §12's example
-response plus the structured extraction and, once the rule engine has run,
-its triage verdict.
+with `text/event-stream`: several `message` events carrying incremental
+fragments of the assistant reply, and a `done` event carrying the complete
+authoritative reply plus the same fields as documentation §12's example
+response, the structured extraction and, once the rule engine has run, its
+triage verdict.
+
+The split is additive, never corrective: a client appends each `delta` and
+then reconciles against `done`, which is always sufficient on its own to
+render the turn.
 
 Safety boundary (ADR 0001): this module never decides urgency itself. It
 loads/saves conversation state and calls `app.agents.symptom_agent.run_turn`,
@@ -17,6 +22,7 @@ import asyncio
 import json
 import logging
 import queue
+import re
 from collections.abc import AsyncIterator
 from typing import Annotated
 from weakref import WeakSet
@@ -60,6 +66,38 @@ class ChatResponse(BaseModel):
 
 def _sse(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(data)}\n\n"
+
+
+# Words per `message` event. Small enough that a client repaints several times
+# across one reply, large enough not to turn a short answer into dozens of SSE
+# frames.
+_FRAGMENT_WORDS = 6
+
+
+def _fragments(text: str, *, words_per_fragment: int = _FRAGMENT_WORDS) -> list[str]:
+    """Cut `text` into fragments that concatenate back to it exactly.
+
+    The cut points are word-start offsets read off `text` itself, so every
+    character lands in exactly one fragment: nothing is dropped, nothing is
+    duplicated, and no whitespace is inserted at a boundary. A fragment may end
+    mid-space-run only where the original already had one.
+
+    An empty string yields no fragments. The `done` event still carries
+    `message: ""`, which is everything a client needs to render the turn, so an
+    empty delta would be pure noise. Whitespace-only text is *not* empty and is
+    returned whole, because its whitespace is content the client must not lose.
+    """
+    if not text:
+        return []
+
+    cuts = [match.start() for match in re.finditer(r"\S+", text)][::words_per_fragment]
+    parts: list[str] = []
+    start = 0
+    for cut in cuts[1:]:
+        parts.append(text[start:cut])
+        start = cut
+    parts.append(text[start:])
+    return parts
 
 
 async def _get_or_create_conversation(
@@ -224,7 +262,21 @@ async def _run_chat(
     )
 
     reply = result.get("assistant_reply") or ""
-    yield _sse("message", {"delta": reply})
+
+    # Incremental delivery of an already-complete string, not provider-side
+    # token streaming: `run_turn` is a blocking call that returns the whole
+    # reply at once, so nothing can be emitted before it returns. What this buys
+    # is that the client receives the text as separate `message` events it can
+    # append to, instead of a single payload it can only paint at the end.
+    #
+    # Each fragment is its own SSE frame, and the loop yields control between
+    # them so each frame is written before the next one is produced instead of
+    # the server coalescing them back into one. No artificial delay is added —
+    # a fake typewriter would make every real turn slower for nothing.
+    for index, fragment in enumerate(_fragments(reply)):
+        if index:
+            await asyncio.sleep(0)
+        yield _sse("message", {"delta": fragment})
 
     payload = ChatResponse(
         message=reply,

@@ -21,9 +21,11 @@ vocabulary (J4):
 
 from __future__ import annotations
 
+import json
 import logging
-from collections.abc import Sequence
-from typing import Literal, Protocol
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field
+from typing import Any, Literal, Protocol
 
 from app.core.config import get_settings
 
@@ -72,9 +74,97 @@ class LLMClient(Protocol):
 
     A real implementation talks to OpenAI (or an OpenAI-compatible proxy via
     OPENAI_BASE_URL); tests supply a scripted fake.
+
+    `complete` is the whole contract. Tool calling is an *optional* extra
+    capability with its own protocol (`ToolCallingLLMClient`) so a client that
+    has never heard of tools still satisfies `LLMClient` unchanged.
     """
 
     def complete(self, messages: Sequence[ChatMessageLike]) -> str: ...
+
+
+@dataclass(frozen=True)
+class ToolCall:
+    """One tool invocation the model asked for.
+
+    `arguments` is the provider's JSON argument object, parsed defensively: a
+    malformed body yields `{}` rather than raising, because a model that
+    emitted broken JSON has not earned a crashed turn.
+    """
+
+    id: str
+    name: str
+    arguments: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class ToolTurn:
+    """What one tool-enabled model call returned.
+
+    `content` is None on a turn that is purely a tool request. `tool_calls` is
+    empty on an ordinary answer — the caller decides whether a step is a "reason"
+    (answer) or an "act" (tool request), not this object.
+    """
+
+    content: str | None = None
+    tool_calls: tuple[ToolCall, ...] = ()
+
+
+# An OpenAI-shaped function-tool declaration, built by the registry.
+ToolSpec = dict[str, Any]
+
+
+class ToolCallingLLMClient(Protocol):
+    """OPTIONAL capability: a client that can be offered tools.
+
+    Deliberately separate from `LLMClient`. Callers duck-type for
+    `complete_with_tools` and fall back to the plain path when it is absent, so
+    adding tool calling did not widen the one method every existing fake and
+    every existing call site has to satisfy.
+    """
+
+    def complete_with_tools(
+        self, messages: Sequence[ChatMessageLike], tools: Sequence[ToolSpec]
+    ) -> ToolTurn: ...
+
+
+def function_tool_spec(name: str, description: str, parameters: Mapping[str, Any]) -> ToolSpec:
+    """Build one OpenAI `tools` entry from a JSON-schema parameter block."""
+    return {
+        "type": "function",
+        "function": {
+            "name": name,
+            "description": description,
+            "parameters": dict(parameters),
+        },
+    }
+
+
+def _parse_arguments(raw: Any) -> dict[str, Any]:
+    """Provider arguments arrive as a JSON string; parse or degrade to {}."""
+    if isinstance(raw, Mapping):
+        return dict(raw)
+    if not isinstance(raw, str) or not raw.strip():
+        return {}
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        logger.warning("openai_client: tool arguments were not valid JSON")
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _message_payload(message: ChatMessageLike) -> dict[str, Any]:
+    """Rebuild one turn as a plain dict for the SDK.
+
+    `tool_call_id` / `name` are carried only when the caller supplied them, i.e.
+    for a tool-result message. An ordinary turn stays exactly role + content.
+    """
+    payload: dict[str, Any] = {"role": message["role"], "content": message["content"]}
+    for key in ("tool_call_id", "name"):
+        if key in message:
+            payload[key] = message[key]
+    return payload
 
 
 def _import_openai_sdk():
@@ -143,28 +233,57 @@ class OpenAIChatClient:
         self._max_tokens = max_tokens
 
     def complete(self, messages: Sequence[ChatMessageLike]) -> str:
+        content = self._create(messages).choices[0].message.content
+        # A 200 with an empty body (some proxies do this on overload) is a
+        # failure, not an empty answer — the agent must treat it as one.
+        if content is None:
+            raise LLMCallError("malformed", "model returned no content")
+        return content
+
+    def complete_with_tools(
+        self, messages: Sequence[ChatMessageLike], tools: Sequence[ToolSpec]
+    ) -> ToolTurn:
+        """Offer `tools` and return either an answer or a set of tool calls.
+
+        Never sends `tool_choice`, so a provider that dislikes the parameter is
+        never handed it, and no model is *forced* to call anything.
+        """
+        message = self._create(messages, tools=tools).choices[0].message
+        raw_calls = getattr(message, "tool_calls", None) or []
+        tool_calls = tuple(
+            ToolCall(
+                id=getattr(call, "id", "") or "",
+                name=getattr(getattr(call, "function", None), "name", "") or "",
+                arguments=_parse_arguments(
+                    getattr(getattr(call, "function", None), "arguments", None)
+                ),
+            )
+            for call in raw_calls
+        )
+        content = message.content
+        if content is None and not tool_calls:
+            raise LLMCallError("malformed", "model returned no content")
+        return ToolTurn(content=content, tool_calls=tool_calls)
+
+    def _create(self, messages: Sequence[ChatMessageLike], tools: Sequence[ToolSpec] | None = None):
         # Rebuild each turn as a fresh dict. `symptom_agent` passes TypedDicts,
         # so touching `m.role` here would raise AttributeError on the real chat
         # path. Copying also stops a caller mutating our payload after the call.
-        payload = [{"role": m["role"], "content": m["content"]} for m in messages]
+        payload = [_message_payload(m) for m in messages]
+        kwargs: dict[str, Any] = {
+            "model": self._model,
+            "messages": payload,
+            "temperature": 0,
+            "max_tokens": self._max_tokens,
+        }
+        if tools:
+            kwargs["tools"] = list(tools)
         try:
-            response = self._client.chat.completions.create(
-                model=self._model,
-                messages=payload,
-                temperature=0,
-                max_tokens=self._max_tokens,
-            )
+            return self._client.chat.completions.create(**kwargs)
         except Exception as exc:  # noqa: BLE001 — normalized immediately below
             err = _classify(exc)
             logger.warning("openai_client: %s", err.detail)
             raise err from exc
-
-        # A 200 with an empty body (some proxies do this on overload) is a
-        # failure, not an empty answer — the agent must treat it as one.
-        content = response.choices[0].message.content
-        if content is None:
-            raise LLMCallError("malformed", "model returned no content")
-        return content
 
 
 def _build_openai_client(

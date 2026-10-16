@@ -2,12 +2,18 @@
 
 ADR 0001 draws a hard line: the LLM converses and extracts structured data,
 nothing more. Every node in this graph either (a) talks to the model to move
-the conversation forward and pull fields out of it, or (b) is the plain,
+the conversation forward and pull fields out of it, (b) offers the model a set
+of read-only lookup tools and records what they returned, or (c) is the plain,
 deterministic `triage_node`, which is the *only* node allowed to call
 `app.services.triage.assess` and therefore the only place a LOW / MODERATE /
 EMERGENCY level is ever produced. No node here computes a level itself, and
-no LLM output is ever written into `triage_level` — that field is only ever
-set from a `TriageOutcome` returned by the rule engine.
+no LLM output — nor any tool result — is ever written into `triage_level`:
+that field is only ever set from a `TriageOutcome` returned by the rule engine.
+`tests/test_tool_registry.py` is the standing guard that makes that true of the
+tool registry, not just of the nodes.
+
+Tool calling is opt-in and off by default: with no registry passed in, this
+graph is exactly the extract -> ask -> triage graph it has always been.
 
 Malformed or missing model output never crashes the graph and never invents a
 fact: a field that can't be parsed is simply left unset, the turn is counted
@@ -20,12 +26,18 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Callable, Sequence
-from typing import Protocol, TypedDict
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass
+from typing import Any, Protocol, TypedDict
 
 from langgraph.graph import END, StateGraph
 
-from app.core.openai_client import LLMCallError
+from app.core.openai_client import (
+    LLMCallError,
+    ToolCall,
+    ToolSpec,
+    function_tool_spec,
+)
 from app.services import triage
 
 logger = logging.getLogger(__name__)
@@ -33,6 +45,13 @@ logger = logging.getLogger(__name__)
 # Safety net: stop asking and hand off to the rule engine with whatever we
 # have rather than looping forever on a confused model or a silent user.
 MAX_QUESTIONS = 4
+
+# Hard ceiling on the reason -> act -> observe loop. Each step is one model call
+# that may or may not request a tool, so a turn costs at most MAX_TOOL_STEPS
+# extra calls and the loop always terminates, whether the model keeps asking for
+# tools or not. This is the only thing standing between "tool calling" and an
+# unbounded spend, so it is a module constant, not a tunable.
+MAX_TOOL_STEPS = 3
 
 SAFETY_QUESTION = (
     "Are you having any difficulty breathing, or swelling of your lips, tongue, or throat?"
@@ -62,6 +81,17 @@ Ask exactly ONE short, plain-language follow-up question to learn more about the
 their severity, duration, or likely trigger. Do not diagnose, do not suggest treatment, do not say
 how serious or urgent anything is. Reply with the question only, no extra text."""
 
+TOOL_SYSTEM_PROMPT = """You are the symptom-intake assistant for an allergy companion app.
+
+You may look things up with the read-only tools offered to you before you answer. Lookups only
+return factual directory data; they never judge the user's condition, and a tool that cannot be
+reached says so plainly — say that to the user instead of guessing.
+
+You never diagnose, never recommend medication, and never state how urgent or serious anything is.
+A separate rule-based system owns that decision. Reply with the answer only, no extra text."""
+
+_OBSERVE_PROMPT = "Use the lookup results above if they help, then answer the user in one line."
+
 
 class ChatMessage(TypedDict):
     role: str  # "user" | "assistant"
@@ -84,6 +114,13 @@ class AllergyState(TypedDict, total=False):
     turn_count: int
     ready: bool
     extraction_error: bool
+
+    # Tool-loop bookkeeping, written only by `make_tool_node`. `tool_observations`
+    # holds what the tools actually returned, verbatim. Neither field is ever
+    # merged into the extraction fields below, and neither can reach a triage
+    # verdict: the node has no path to write `triage_level` or `triage_reasons`.
+    tool_steps: int
+    tool_observations: list[str]
 
     # J4: the `kind` of the last model-call failure ("timeout", "rate_limit",
     # "unavailable", "malformed"), or None. Set only from an `LLMCallError` —
@@ -109,9 +146,143 @@ class LLMClient(Protocol):
     A real implementation talks to OpenAI; tests supply a scripted fake. The
     graph's control flow, and in particular which node gets to decide safety,
     never depends on which implementation is wired in.
+
+    `complete` is the entire required contract. Tool calling is a separate,
+    optional capability (`ToolCallingLLMClient.complete_with_tools` in
+    `app.core.openai_client`); the tool node duck-types for it and is skipped
+    entirely when a client does not offer it, so every existing fake is still
+    a valid `LLMClient`.
     """
 
     def complete(self, messages: Sequence[ChatMessage]) -> str: ...
+
+
+class ToolNotWiredError(RuntimeError):
+    """A registered tool has no real executor behind it yet.
+
+    Raised instead of returning a placeholder payload. A lookup tool that
+    invents a plausible-looking result is worse than no tool at all: the model
+    would quote fabricated places or numbers to the user as if they came from
+    the provider.
+    """
+
+
+@dataclass(frozen=True)
+class ToolDefinition:
+    """One named read-only tool.
+
+    `parameters` is the JSON Schema handed to the model, `result_schema` is the
+    shape this tool promises to return. Both are walked by
+    `tests/test_tool_registry.py`, which enforces the ADR 0001 boundary: no
+    tool may take a safety field as input or hand one back.
+    """
+
+    name: str
+    description: str
+    parameters: dict[str, Any]
+    result_schema: dict[str, Any]
+    execute: Callable[[Mapping[str, Any]], Any]
+    wired: bool = True
+
+    def as_provider_spec(self) -> ToolSpec:
+        return function_tool_spec(self.name, self.description, self.parameters)
+
+
+class ToolRegistry:
+    """A named collection of tool definitions.
+
+    Deliberately dumb: it stores what it is given and hands it back. Every
+    policy question about *which* tools may exist (no urgency assessment, no
+    writes, no safety field in or out) is enforced by the guard test in
+    `tests/test_tool_registry.py`, not by clever registration logic here — a
+    registry that silently refused a bad tool would leave the boundary
+    untested, and an untested boundary is not a boundary.
+    """
+
+    def __init__(self, tools: Sequence[ToolDefinition] = ()) -> None:
+        self._tools: dict[str, ToolDefinition] = {}
+        for tool in tools:
+            self.register(tool)
+
+    def register(self, tool: ToolDefinition) -> ToolDefinition:
+        if tool.name in self._tools:
+            raise ValueError(f"tool {tool.name!r} is already registered")
+        self._tools[tool.name] = tool
+        return tool
+
+    def get(self, name: str) -> ToolDefinition | None:
+        return self._tools.get(name)
+
+    def definitions(self) -> tuple[ToolDefinition, ...]:
+        return tuple(self._tools.values())
+
+    def names(self) -> tuple[str, ...]:
+        return tuple(self._tools)
+
+    def __len__(self) -> int:
+        return len(self._tools)
+
+    def provider_specs(self) -> list[ToolSpec]:
+        return [tool.as_provider_spec() for tool in self._tools.values()]
+
+
+def _not_wired_executor(tool_name: str):
+    def _execute(arguments: Mapping[str, Any]) -> Any:
+        raise ToolNotWiredError(f"{tool_name} has no executor wired up yet")
+
+    return _execute
+
+
+# Read-only lookup: reuses what `GET /api/hospitals/nearby` already does —
+# Naver Local Search, ranked by haversine distance. The executor is a marked
+# stub on purpose. Wiring it means calling the async
+# `app.services.hospital_service.find_nearby_hospitals` from inside the
+# synchronous turn, which needs an httpx client and Naver credentials chosen by
+# whoever owns the request path; inventing the data here would be worse than
+# the stub, so the stub stands until that wiring exists.
+FIND_NEARBY_HOSPITALS = ToolDefinition(
+    name="find_nearby_hospitals",
+    description=(
+        "Look up nearby medical facilities for a coordinate or a place name, "
+        "optionally filtered by speciality. Read-only: it looks places up and "
+        "changes nothing."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "latitude": {"type": "number", "description": "Origin latitude in degrees."},
+            "longitude": {"type": "number", "description": "Origin longitude in degrees."},
+            "location_query": {
+                "type": "string",
+                "description": "Place or district name used to bias the keyword, e.g. a city.",
+            },
+            "speciality": {
+                "type": "string",
+                "description": "Optional speciality label, e.g. ENT, ALLERGY, GENERAL.",
+            },
+        },
+        "required": ["latitude", "longitude"],
+    },
+    result_schema={
+        "type": "object",
+        "properties": {
+            "name": {"type": "string"},
+            "address": {"type": "string"},
+            "distance_m": {"type": "integer"},
+            "speciality": {"type": "string"},
+            "category": {"type": "string"},
+            "phone": {"type": "string"},
+            "rank": {"type": "integer"},
+        },
+    },
+    execute=_not_wired_executor("find_nearby_hospitals"),
+    wired=False,
+)
+
+
+def default_tool_registry() -> ToolRegistry:
+    """The registry the app ships with: read-only lookups only."""
+    return ToolRegistry([FIND_NEARBY_HOSPITALS])
 
 
 # Reports what the agent is doing, stage by stage, so `app.api.chat` can tell
@@ -119,9 +290,11 @@ class LLMClient(Protocol):
 # rule engine — several seconds with nothing on screen otherwise, which reads
 # as "broken" rather than "working".
 #
-# These are progress labels, NOT tool calls: this graph has no tools and no
-# function-calling. The stage names describe internal steps, so they must never
-# be phrased as if the model were calling something.
+# These are progress labels, NOT tool calls: a stage describes an internal
+# step of a model call, so it must never be phrased as if the model were
+# invoking something. The tool node emits no stage of its own for the same
+# reason — a "calling_tool" label would read as the model acting on the app,
+# which is precisely the boundary `tests/test_tool_registry.py` guards.
 ProgressCallback = Callable[[str], None]
 
 
@@ -138,6 +311,8 @@ def initial_state(history: Sequence[ChatMessage] | None = None) -> AllergyState:
         turn_count=0,
         ready=False,
         extraction_error=False,
+        tool_steps=0,
+        tool_observations=[],
         llm_error_kind=None,
         assistant_reply=None,
         triage_level=None,
@@ -342,6 +517,104 @@ def make_ask_question_node(
     return _ask_question
 
 
+def _observe(registry: ToolRegistry, call: ToolCall) -> str:
+    """Run one tool and render its outcome as a string for the model.
+
+    Never raises. An unknown name, an unwired executor, a malformed argument
+    body, or an executor blowing up all come back as a short sentence the model
+    can read and pass on — a tool problem is never allowed to take down a turn,
+    and least of all an emergency one.
+
+    The return value is deliberately a *string*. Whatever a tool returns is
+    observed text, never state: there is no code path from here to
+    `triage_level`, `triage_reasons`, or any extracted field, which is exactly
+    what the ADR 0001 guard test pins down.
+    """
+    tool = registry.get(call.name)
+    if tool is None:
+        return f"error: there is no tool named {call.name!r}."
+    if not tool.wired:
+        return f"error: the {tool.name} lookup is not available right now."
+    try:
+        result = tool.execute(call.arguments)
+    except ToolNotWiredError:
+        return f"error: the {tool.name} lookup is not available right now."
+    except Exception as exc:  # noqa: BLE001 — a tool must not break the turn
+        logger.warning("symptom_agent: tool %s failed (%s)", tool.name, exc)
+        return f"error: the {tool.name} lookup failed."
+    return json.dumps(result, ensure_ascii=False, default=str)
+
+
+def make_tool_node(
+    llm: LLMClient,
+    registry: ToolRegistry | None,
+) -> Callable[[AllergyState], AllergyState]:
+    """reason -> act -> observe, hard-bounded at MAX_TOOL_STEPS.
+
+    Skipped entirely when there is no registry, or when the client offers no
+    `complete_with_tools` — a plain `complete(messages)` client keeps working
+    unchanged, which is what every existing fake does.
+
+    Emits no progress stage on purpose. The stage vocabulary rendered by
+    `app.api.chat` describes internal steps of a model call, and a stage that
+    reads like "calling a tool" would be a lie about the boundary; the node is
+    fast and bounded, and the observations land in state where they can be
+    logged or asserted.
+    """
+
+    def _tools(state: AllergyState) -> AllergyState:
+        if registry is None or not registry.definitions():
+            return state
+        if not hasattr(llm, "complete_with_tools"):
+            return state
+
+        specs = registry.provider_specs()
+        transcript: list[dict[str, Any]] = [
+            {"role": "system", "content": TOOL_SYSTEM_PROMPT},
+            *state.get("messages", []),
+        ]
+        observations: list[str] = []
+        steps = 0
+
+        for _ in range(MAX_TOOL_STEPS):
+            steps += 1
+            if steps > 1 and observations:
+                # Only re-offer tools once there is something new to observe;
+                # a model that has just seen a result answers instead of
+                # re-asking, which is what keeps the loop short in practice.
+                transcript = [*transcript, {"role": "user", "content": _OBSERVE_PROMPT}]
+            try:
+                turn = llm.complete_with_tools(transcript, specs)  # type: ignore[attr-defined]
+            except LLMCallError as exc:
+                logger.warning("symptom_agent: tool-enabled call failed (%s)", exc.kind)
+                break
+            except Exception:
+                logger.warning("symptom_agent: tool-enabled call failed", exc_info=True)
+                break
+
+            if not turn.tool_calls:
+                break
+
+            for call in turn.tool_calls:
+                observation = _observe(registry, call)
+                observations.append(observation)
+                transcript = [
+                    *transcript,
+                    {
+                        "role": "tool",
+                        "tool_call_id": call.id,
+                        "name": call.name,
+                        "content": observation,
+                    },
+                ]
+
+        state["tool_steps"] = steps
+        state["tool_observations"] = observations
+        return state
+
+    return _tools
+
+
 def triage_node(state: AllergyState) -> AllergyState:
     """The only node that decides urgency, and it does so by calling the
     deterministic rule engine — never the LLM. Unresolved safety flags (the
@@ -397,13 +670,32 @@ def make_triage_node(
     return _triage
 
 
-def build_graph(llm: LLMClient, progress: ProgressCallback | None = None):
+def build_graph(
+    llm: LLMClient,
+    progress: ProgressCallback | None = None,
+    registry: ToolRegistry | None = None,
+):
+    """Compile the graph.
+
+    With no `registry` — the default, and what every production call site and
+    every existing test uses — this is exactly the graph it was before tools
+    existed: extract -> (ask_question | triage), two model calls at most. The
+    tool node is added to the front of the graph only when a caller explicitly
+    opts in, so offering tools can never change how a turn that uses none
+    behaves.
+    """
     graph = StateGraph(AllergyState)
     graph.add_node("extract", make_extract_node(llm, progress))
     graph.add_node("ask_question", make_ask_question_node(llm, progress))
     graph.add_node("triage", make_triage_node(progress))
 
-    graph.set_entry_point("extract")
+    if registry is not None and registry.definitions():
+        graph.add_node("tools", make_tool_node(llm, registry))
+        graph.set_entry_point("tools")
+        graph.add_edge("tools", "extract")
+    else:
+        graph.set_entry_point("extract")
+
     graph.add_conditional_edges(
         "extract",
         _route_after_extract,
@@ -419,16 +711,20 @@ def run_turn(
     state: AllergyState,
     user_message: str,
     progress: ProgressCallback | None = None,
+    registry: ToolRegistry | None = None,
 ) -> AllergyState:
     """Append the user's message and run one pass of the graph: either a
     follow-up question comes back, or a rule-engine triage result does.
+
+    `registry` is optional and defaults to None, meaning no tools are offered
+    and the pass costs exactly the two model calls it always did.
     """
     next_state: AllergyState = dict(state)  # type: ignore[assignment]
     next_state["messages"] = [
         *next_state.get("messages", []),
         {"role": "user", "content": user_message},
     ]
-    graph = build_graph(llm, progress)
+    graph = build_graph(llm, progress, registry)
     return graph.invoke(next_state)
 
 

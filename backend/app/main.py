@@ -12,6 +12,7 @@ from app.api import (
     allergies,
     auth,
     chat,
+    conversations,
     dev_settings,
     environment,
     health,
@@ -113,6 +114,7 @@ app.include_router(auth.router)
 app.include_router(users.router)
 app.include_router(allergies.router)
 app.include_router(chat.router)
+app.include_router(conversations.router)
 app.include_router(hospitals.router)
 app.include_router(notifications.router)
 
