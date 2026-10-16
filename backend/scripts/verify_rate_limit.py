@@ -62,7 +62,10 @@ async def main() -> int:
                     "too quickly" in str(body.get("detail", "")),
                     str(body.get("detail")),
                 )
-                check("the 429 is JSON, not an SSE event", "text/event-stream" not in r.headers.get("content-type", ""))
+                check(
+                    "the 429 is JSON, not an SSE event",
+                    "text/event-stream" not in r.headers.get("content-type", ""),
+                )
 
         print(f"  codes: {codes}")
         check("some early requests passed the limiter", 404 in codes, str(codes))
@@ -72,7 +75,11 @@ async def main() -> int:
             codes.count(404) >= 2,
             f"expected at least 2 admitted before refusal, got {codes.count(404)}",
         )
-        check("Retry-After is present and numeric", bool(retry_after) and retry_after.isdigit(), str(retry_after))
+        check(
+            "Retry-After is present and numeric",
+            bool(retry_after) and retry_after.isdigit(),
+            str(retry_after),
+        )
         check("X-RateLimit-Limit is present", limit_header == "3", str(limit_header))
 
         # A second user must be unaffected.
