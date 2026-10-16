@@ -19,3 +19,17 @@ if (!("ResizeObserver" in globalThis)) {
   }
   globalThis.ResizeObserver = ResizeObserverStub as unknown as typeof ResizeObserver;
 }
+
+/**
+ * jsdom implements neither Element.scrollTo nor scrollIntoView, and
+ * assistant-ui calls both from the thread viewport and the composer input.
+ * Left unstubbed these surface as unhandled rejections rather than test
+ * failures, so a fully passing suite still exits 1. Inert on purpose, for the
+ * same reason as the observer above.
+ */
+if (typeof Element.prototype.scrollTo !== "function") {
+  Element.prototype.scrollTo = function scrollTo() {};
+}
+if (typeof Element.prototype.scrollIntoView !== "function") {
+  Element.prototype.scrollIntoView = function scrollIntoView() {};
+}

@@ -1,20 +1,22 @@
 /**
- * SettingsPage tests. Three sections, three independent fetches:
- * getCurrentUser, listAllergies, readPreferences.
+ * SettingsPage tests. Three fetches, all from the page: getCurrentUser,
+ * listAllergies, readPreferences.
  *
- * These cover the parts that can be wrong without a browser: that each
- * section renders from its own endpoint, that a save sends the typed
- * request the API contract expects, that a rejected fetch surfaces the
- * server's message instead of a blank card, and that an out-of-range
- * coordinate is rejected before it reaches the network.
+ * The overview only shows values, so most assertions open a row first and then
+ * drive the screen behind it. The cases worth keeping are the ones that can be
+ * wrong without a browser: that a save sends the typed request the API
+ * contract expects, that a rejected fetch surfaces the server's message instead
+ * of a blank card, that an out-of-range coordinate never reaches the network,
+ * and that an area with nothing behind it says so instead of offering a
+ * control that does nothing.
  *
- * The Location section also drives the browser Geolocation API, which jsdom
- * does not implement at all. That absence is load-bearing here: with no
- * stub installed navigator.geolocation is undefined, so the section takes
- * its "this browser cannot find your location" branch for free.
+ * The Location screen drives the browser Geolocation API, which jsdom does not
+ * implement at all. That absence is load-bearing here: with no stub installed
+ * navigator.geolocation is undefined, so the screen takes its "this browser
+ * cannot find your location" branch for free.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 
 import type {
@@ -37,8 +39,22 @@ vi.mock("../api/client", async (importOriginal) => {
   };
 });
 
+const auth = vi.hoisted(() => ({ logout: vi.fn() }));
+
+vi.mock("../auth/AuthContext", () => ({
+  useAuth: () => ({
+    user: null,
+    status: "authenticated",
+    login: vi.fn(),
+    register: vi.fn(),
+    logout: auth.logout,
+    updateUser: vi.fn(),
+  }),
+}));
+
 import {
   createAllergy,
+  deleteAllergy,
   getCurrentUser,
   listAllergies,
   readPreferences,
@@ -75,6 +91,9 @@ const prefs = (overrides: Partial<PreferenceResponse> = {}): PreferenceResponse 
   ...overrides,
 });
 
+/** The defaults backend/app/models/__init__.py gives a fresh account. */
+const serverDefaults = prefs({ alert_weather: true });
+
 const renderPage = () =>
   render(
     <MemoryRouter>
@@ -82,9 +101,17 @@ const renderPage = () =>
     </MemoryRouter>,
   );
 
+const openRow = async (name: RegExp) => {
+  fireEvent.click(await screen.findByRole("button", { name }));
+};
+
+const openHealth = () => openRow(/^Allergies/);
+const openLocation = () => openRow(/^Location/);
+const openNotifications = () => openRow(/^Categories/);
+
 // GeolocationPosition / GeolocationPositionError carry toJSON() and the
 // PERMISSION_DENIED constants, which a hand-built fixture does not need.
-// The section only reads coords.latitude, coords.longitude and code.
+// The screen only reads coords.latitude, coords.longitude and code.
 function position(lat: number, lon: number): GeolocationPosition {
   return {
     coords: {
@@ -135,28 +162,129 @@ beforeEach(() => {
   vi.mocked(listAllergies).mockResolvedValue([allergy()]);
   vi.mocked(readPreferences).mockResolvedValue(prefs());
   vi.mocked(updateCurrentUser).mockResolvedValue(user());
-  vi.mocked(createAllergy).mockResolvedValue(allergy({ id: 2 }));
+  vi.mocked(createAllergy).mockResolvedValue(allergy({ id: 2, allergen: "BIRCH" }));
+  vi.mocked(deleteAllergy).mockResolvedValue(undefined);
   vi.mocked(updatePreferences).mockResolvedValue(prefs());
-  vi.mocked(createAllergy).mockResolvedValue(allergy({ id: 2 }));
 });
 
 afterEach(() => {
   vi.restoreAllMocks();
+  auth.logout.mockClear();
   Reflect.deleteProperty(navigator, "geolocation");
 });
 
-describe("SettingsPage", () => {
-  it("renders the account email and all three section titles", async () => {
+describe("SettingsPage overview", () => {
+  it("lists every area in order, most important first", async () => {
     renderPage();
 
-    expect(await screen.findByText("someone@example.com")).toBeTruthy();
-    expect(await screen.findByText("Location")).toBeTruthy();
-    expect(await screen.findByText("Allergies")).toBeTruthy();
-    expect(await screen.findByText("Notifications")).toBeTruthy();
+    await screen.findByText("someone@example.com");
+    const headings = screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent);
+
+    expect(headings).toEqual([
+      "Health",
+      "Emergency",
+      "Notifications",
+      "Chat and language",
+      "Accessibility",
+      "Privacy and data",
+      "Advanced",
+      "Danger zone",
+    ]);
+  });
+
+  it("shows the live value on each row, not a static hint", async () => {
+    renderPage();
+
+    expect(await screen.findByRole("button", { name: /^Profile/ })).toHaveTextContent(
+      "someone@example.com",
+    );
+    expect(screen.getByRole("button", { name: /^Allergies/ })).toHaveTextContent("1 saved");
+    expect(screen.getByRole("button", { name: /^Location/ })).toHaveTextContent(
+      "37.5665, 126.9780",
+    );
+    expect(screen.getByRole("button", { name: /^Categories/ })).toHaveTextContent("2 of 3 on");
+    expect(screen.getByRole("button", { name: /^Minimum risk/ })).toHaveTextContent("Moderate");
+  });
+
+  it("says a row has nothing saved when the list is empty", async () => {
+    vi.mocked(listAllergies).mockResolvedValue([]);
+    renderPage();
+
+    expect(await screen.findByRole("button", { name: /^Allergies/ })).toHaveTextContent(
+      "Nothing saved yet",
+    );
+  });
+
+  it("signs out through the auth context", async () => {
+    renderPage();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Sign out" }));
+
+    expect(auth.logout).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the destructive control switched off instead of faking a delete", async () => {
+    renderPage();
+
+    const deleteButton = await screen.findByRole("button", { name: "Delete account" });
+    expect(deleteButton).toBeDisabled();
+    expect(deleteButton.closest("section")).toHaveTextContent("The server has no delete endpoint");
+    expect(deleteAllergy).not.toHaveBeenCalled();
+    expect(createAllergy).not.toHaveBeenCalled();
+  });
+
+  it("keeps Advanced closed until it is opened", async () => {
+    renderPage();
+
+    const toggle = await screen.findByRole("button", { name: /Developer tools/ });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByText("Diagnostics")).toBeNull();
+
+    fireEvent.click(toggle);
+
+    expect(await screen.findByText("Diagnostics")).toBeTruthy();
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+  });
+});
+
+describe("SettingsPage areas with nothing behind them yet", () => {
+  it("labels each row not built yet and offers no control", async () => {
+    renderPage();
+
+    await screen.findByText("someone@example.com");
+
+    for (const name of ["Emergency", "Chat and language", "Accessibility", "Privacy and data"]) {
+      const group = screen.getByRole("region", { name });
+      expect(within(group).getAllByText("Not built yet").length).toBeGreaterThan(0);
+      expect(within(group).queryAllByRole("button")).toHaveLength(0);
+      expect(within(group).queryAllByRole("switch")).toHaveLength(0);
+      expect(within(group).queryAllByRole("checkbox")).toHaveLength(0);
+    }
+  });
+
+  it("keeps Quiet hours and the permission link inert inside Notifications", async () => {
+    renderPage();
+
+    const group = await screen.findByRole("region", { name: "Notifications" });
+    expect(within(group).getByText("Quiet hours")).toBeTruthy();
+    expect(within(group).getByText("Notification permission")).toBeTruthy();
+    expect(within(group).getAllByText("Not built yet")).toHaveLength(2);
+  });
+});
+
+describe("SettingsPage profile and health screens", () => {
+  it("shows the account email and says name is not built yet", async () => {
+    renderPage();
+
+    await openRow(/^Profile/);
+
+    expect(await screen.findByLabelText("Email")).toHaveValue("someone@example.com");
+    expect(screen.getByText("Name").nextElementSibling).toHaveTextContent("Not built yet");
   });
 
   it("shows a saved allergy with its human label and severity", async () => {
     renderPage();
+    await openHealth();
 
     // Anchor on the Remove button, which only exists in a saved-allergy
     // row. The allergen label on its own also appears in the add picker,
@@ -171,14 +299,105 @@ describe("SettingsPage", () => {
   it("says so when there are no allergies instead of rendering a blank card", async () => {
     vi.mocked(listAllergies).mockResolvedValue([]);
     renderPage();
+    await openHealth();
 
     expect(
       await screen.findByText("Nothing saved yet. Add what you react to below."),
     ).toBeTruthy();
   });
 
+  it("adds an allergy and shows it on the row behind", async () => {
+    renderPage();
+    await openHealth();
+    await screen.findByText("Birch");
+
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+
+    await waitFor(() => {
+      expect(createAllergy).toHaveBeenCalledWith({ allergen: "BIRCH", severity: "MILD" });
+    });
+    expect(await screen.findByRole("button", { name: "Remove Birch" })).toBeTruthy();
+  });
+
+  it("removes an allergy through deleteAllergy", async () => {
+    renderPage();
+    await openHealth();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Remove Tree pollen" }));
+
+    await waitFor(() => expect(deleteAllergy).toHaveBeenCalledWith(1));
+  });
+
+  it("offers a retry when the allergy list cannot load", async () => {
+    vi.mocked(listAllergies).mockRejectedValueOnce(new Error("Could not reach server"));
+    renderPage();
+    await openHealth();
+
+    expect(await screen.findByText("Could not reach server")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(await screen.findByRole("button", { name: "Remove Tree pollen" })).toBeTruthy();
+  });
+
+  it("shows an error card when the profile itself cannot load", async () => {
+    vi.mocked(getCurrentUser).mockRejectedValue(new Error("Token expired"));
+    renderPage();
+
+    expect(await screen.findByText("Token expired")).toBeTruthy();
+    expect(screen.getByText("Back to today")).toBeTruthy();
+  });
+});
+
+describe("SettingsPage notifications screen", () => {
+  it("toggling a preference sends only that field", async () => {
+    renderPage();
+    await openNotifications();
+
+    const pollenSwitch = await screen.findByLabelText("Pollen alerts");
+    expect(pollenSwitch.getAttribute("data-state")).toBe("checked");
+
+    fireEvent.click(pollenSwitch);
+
+    await waitFor(() => {
+      expect(updatePreferences).toHaveBeenCalledWith({ alert_pollen: false });
+    });
+  });
+
+  it("restores the documented defaults", async () => {
+    vi.mocked(updatePreferences).mockResolvedValue(serverDefaults);
+    renderPage();
+    await openNotifications();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Restore defaults" }));
+
+    await waitFor(() => {
+      expect(updatePreferences).toHaveBeenCalledWith({
+        alert_pollen: true,
+        alert_air_quality: true,
+        alert_weather: true,
+        min_risk_level: "MODERATE",
+        quiet_hours_start: null,
+        quiet_hours_end: null,
+      });
+    });
+    expect(await screen.findByLabelText("Weather alerts")).toHaveAttribute("data-state", "checked");
+  });
+
+  it("offers a retry when the preferences cannot load", async () => {
+    vi.mocked(readPreferences).mockRejectedValueOnce(new Error("Preferences unavailable"));
+    renderPage();
+    await openNotifications();
+
+    expect(await screen.findByText("Preferences unavailable")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+
+    expect(await screen.findByLabelText("Pollen alerts")).toBeTruthy();
+  });
+});
+
+describe("SettingsPage location screen", () => {
   it("saves typed coordinates through updateCurrentUser", async () => {
     renderPage();
+    await openLocation();
 
     const lat = await screen.findByLabelText("Latitude");
     fireEvent.change(lat, { target: { value: "35.1796" } });
@@ -194,20 +413,20 @@ describe("SettingsPage", () => {
 
   it("rejects an out-of-range latitude without calling the API", async () => {
     renderPage();
+    await openLocation();
 
     const lat = await screen.findByLabelText("Latitude");
     fireEvent.change(lat, { target: { value: "999" } });
     fireEvent.click(screen.getByRole("button", { name: "Save location" }));
 
-    expect(
-      await screen.findByText(/Latitude must be -90 to 90/),
-    ).toBeTruthy();
+    expect(await screen.findByText(/Latitude must be -90 to 90/)).toBeTruthy();
     expect(updateCurrentUser).not.toHaveBeenCalled();
   });
 
   it("surfaces the server message when a save fails", async () => {
     vi.mocked(updateCurrentUser).mockRejectedValue(new Error("Could not reach server"));
     renderPage();
+    await openLocation();
 
     const lat = await screen.findByLabelText("Latitude");
     fireEvent.change(lat, { target: { value: "35.1796" } });
@@ -217,8 +436,8 @@ describe("SettingsPage", () => {
   });
 
   it("clears the location when both fields are emptied", async () => {
-    vi.mocked(getCurrentUser).mockResolvedValue(user({ latitude: 37.5665, longitude: 126.978 }));
     renderPage();
+    await openLocation();
 
     const lat = await screen.findByLabelText("Latitude");
     fireEvent.change(lat, { target: { value: "" } });
@@ -235,9 +454,9 @@ describe("SettingsPage", () => {
     // Regression: the clear branch used to call updateCurrentUser outside any
     // try/catch and never raised `saving`, so a rejected clear produced an
     // unhandled rejection, no message on screen, and a live Save button.
-    vi.mocked(getCurrentUser).mockResolvedValue(user({ latitude: 37.5665, longitude: 126.978 }));
     vi.mocked(updateCurrentUser).mockRejectedValue(new Error("Could not clear location"));
     renderPage();
+    await openLocation();
 
     const lat = await screen.findByLabelText("Latitude");
     fireEvent.change(lat, { target: { value: "" } });
@@ -248,41 +467,13 @@ describe("SettingsPage", () => {
     expect(screen.getByRole("button", { name: "Save location" })).not.toBeDisabled();
   });
 
-  it("adds an allergy with the chosen allergen and severity", async () => {
+  it("goes back to the overview from a screen", async () => {
     renderPage();
+    await openLocation();
 
-    // Named allergens, not the old "Tree pollen" bucket — see bugs.md B-005.
-    // BIRCH is the picker's default, so Add submits it untouched.
-    await screen.findByText("Birch");
-    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Back" }));
 
-    await waitFor(() => {
-      expect(createAllergy).toHaveBeenCalledWith({
-        allergen: "BIRCH",
-        severity: "MILD",
-      });
-    });
-  });
-
-  it("toggling a preference sends only that field", async () => {
-    renderPage();
-
-    const pollenSwitch = await screen.findByLabelText("Pollen alerts");
-    expect(pollenSwitch.getAttribute("data-state")).toBe("checked");
-
-    fireEvent.click(pollenSwitch);
-
-    await waitFor(() => {
-      expect(updatePreferences).toHaveBeenCalledWith({ alert_pollen: false });
-    });
-  });
-
-  it("shows an error card when the profile itself cannot load", async () => {
-    vi.mocked(getCurrentUser).mockRejectedValue(new Error("Token expired"));
-    renderPage();
-
-    expect(await screen.findByText("Token expired")).toBeTruthy();
-    expect(screen.getByText("Back to today")).toBeTruthy();
+    expect(await screen.findByRole("button", { name: /^Location/ })).toBeTruthy();
   });
 });
 
@@ -291,6 +482,7 @@ describe("SettingsPage location from geolocation", () => {
 
   it("keeps manual coordinate entry behind a closed disclosure", async () => {
     renderPage();
+    await openLocation();
 
     const summary = await screen.findByText("Enter coordinates manually");
     expect(summary.closest("details")?.open).toBe(false);
@@ -299,6 +491,7 @@ describe("SettingsPage location from geolocation", () => {
   it("saves a GPS fix through updateCurrentUser and fills the manual fields", async () => {
     const geo = stubGeolocation();
     renderPage();
+    await openLocation();
 
     fireEvent.click(await useLocation());
     await geo.resolve(35.1796, 129.0756);
@@ -310,15 +503,14 @@ describe("SettingsPage location from geolocation", () => {
         longitude: 129.0756,
       });
     });
-    expect((await screen.findByLabelText("Latitude")) as HTMLInputElement).toHaveValue(
-      "35.1796",
-    );
+    expect((await screen.findByLabelText("Latitude")) as HTMLInputElement).toHaveValue("35.1796");
     expect(await screen.findByText("Saved.")).toBeTruthy();
   });
 
   it("disables the button and shows progress while the fix is pending", async () => {
     stubGeolocation();
     renderPage();
+    await openLocation();
 
     fireEvent.click(await useLocation());
 
@@ -330,6 +522,7 @@ describe("SettingsPage location from geolocation", () => {
   it("names a denied permission, saves nothing and opens the manual entry", async () => {
     const geo = stubGeolocation();
     renderPage();
+    await openLocation();
 
     fireEvent.click(await useLocation());
     await geo.reject(1);
@@ -345,6 +538,7 @@ describe("SettingsPage location from geolocation", () => {
   it("names an unavailable position instead of failing silently", async () => {
     const geo = stubGeolocation();
     renderPage();
+    await openLocation();
 
     fireEvent.click(await useLocation());
     await geo.reject(2);
@@ -358,6 +552,7 @@ describe("SettingsPage location from geolocation", () => {
   it("names a timeout instead of failing silently", async () => {
     const geo = stubGeolocation();
     renderPage();
+    await openLocation();
 
     fireEvent.click(await useLocation());
     await geo.reject(3);
@@ -372,6 +567,7 @@ describe("SettingsPage location from geolocation", () => {
     // Deliberately unstubbed: jsdom has no navigator.geolocation, which is
     // the same shape as a non-secure context or an older browser.
     renderPage();
+    await openLocation();
 
     fireEvent.click(await useLocation());
 

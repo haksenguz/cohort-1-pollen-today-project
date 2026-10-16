@@ -1,46 +1,24 @@
 /**
- * Settings screen: location, allergies, notification preferences, and (on a local
- * dev box) the chat agent's API key.
+ * Settings overview.
  *
- * Composed from the shadcn components in src/components/ui rather than
- * hand-rolled form markup, per ADR 0004. Every endpoint it needs already
- * exists and is typed in the API client, so there is no backend work here
- * and no new dependency.
+ * One row per area, each showing the value you would see if you opened it, and
+ * a screen behind the ones that have real behaviour today. Areas with nothing
+ * behind them yet say so instead of showing a control that does nothing.
  *
- * Each section loads and saves independently. That is deliberate: a user
- * who only wants to silence weather alerts should not have to wait on, or
- * risk losing, their allergy edits.
+ * The user, allergy and preference fetches all run here rather than inside the
+ * screens, because an overview row has to show a real value before you open
+ * anything.
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { ChevronRight } from "lucide-react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardAction,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Card, CardAction, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Switch } from "@/components/ui/switch";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 
 import {
   ApiError,
@@ -49,28 +27,41 @@ import {
   getCurrentUser,
   listAllergies,
   readPreferences,
-  updateCurrentUser,
   updatePreferences,
 } from "../api/client";
 import type {
-  Allergen,
+  AllergyCreateRequest,
   AllergyResponse,
-  AllergySeverity,
   PreferenceResponse,
-  RiskLevel,
+  PreferenceUpdateRequest,
   UserResponse,
 } from "../api/types";
+import { useAuth } from "../auth/AuthContext";
 import { clearToken } from "../auth/token";
-import {
-  ALLERGEN_OPTIONS,
-  ALLERGY_SEVERITIES,
-  formatAllergyLabel,
-  formatRisk,
-  formatSeverityLabel,
-} from "../utils/format";
+import { formatRisk } from "../utils/format";
 import { DevLlmSettingsCard } from "./DevLlmSettingsCard";
+import {
+  ComingSoonGroup,
+  ComingSoonRow,
+  SettingsCard,
+  SettingsGroup,
+  SettingsRow,
+  type SettingsScreenId,
+} from "./settings/SettingsRows";
+import {
+  HealthScreen,
+  LocationScreen,
+  NotificationsScreen,
+  ProfileScreen,
+  SettingsSubScreen,
+} from "./settings/Screens";
 
-const RISK_OPTIONS: readonly RiskLevel[] = ["LOW", "MODERATE", "HIGH", "EMERGENCY"];
+const SCREEN_TITLE: Record<SettingsScreenId, string> = {
+  profile: "Profile",
+  health: "Health",
+  location: "Location",
+  notifications: "Notifications",
+};
 
 function errorText(error: unknown, fallback: string): string {
   return error instanceof Error && error.message ? error.message : fallback;
@@ -81,497 +72,61 @@ function initialsFor(email: string): string {
   return (local.slice(0, 2) || "AC").toUpperCase();
 }
 
-// ---- Location ---------------------------------------------------------
-
-// The spec's numeric GeolocationPositionError codes. They are spelled out
-// here instead of read off `GeolocationPositionError.PERMISSION_DENIED`
-// because that constant is missing in some older browsers, and so a failure
-// has to be explained in words rather than left to a silent catch.
-const GEO_PERMISSION_DENIED = 1;
-const GEO_POSITION_UNAVAILABLE = 2;
-const GEO_TIMEOUT = 3;
-
-function geolocationErrorText(error: GeolocationPositionError): string {
-  switch (error.code) {
-    case GEO_PERMISSION_DENIED:
-      return "Location permission denied. Allow location for this site in your browser settings, or enter coordinates manually below.";
-    case GEO_POSITION_UNAVAILABLE:
-      return "Your device could not work out a position. Move somewhere with a better signal, or enter coordinates manually below.";
-    case GEO_TIMEOUT:
-      return "Finding your location took too long. Try again, or enter coordinates manually below.";
-    default:
-      return "Could not read your location. Enter coordinates manually below.";
-  }
+function locationValue(user: UserResponse): string {
+  if (user.latitude === null || user.longitude === null) return "Not set";
+  return `${user.latitude.toFixed(4)}, ${user.longitude.toFixed(4)}`;
 }
 
-function LocationSection({ user }: { user: UserResponse }) {
-  const [latitude, setLatitude] = useState(
-    user.latitude === null ? "" : String(user.latitude),
-  );
-  const [longitude, setLongitude] = useState(
-    user.longitude === null ? "" : String(user.longitude),
-  );
-  const [saving, setSaving] = useState(false);
-  const [locating, setLocating] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [saved, setSaved] = useState(false);
-  const manualRef = useRef<HTMLDetailsElement>(null);
-
-  // The single save path for this section. The manual form and the
-  // "Use my current location" button both land here, so the validation and
-  // the updateCurrentUser call exist exactly once and a fix from GPS is
-  // persisted the same way a typed one is.
-  async function persist(latText: string, lonText: string) {
-    setError(null);
-    setSaved(false);
-
-    const lat = latText.trim();
-    const lon = lonText.trim();
-
-    // Validation runs before the saving flag is raised, so a rejected value
-    // leaves the form responsive instead of showing a spinner that cannot end.
-    let payload: { latitude: number | null; longitude: number | null };
-    if (lat === "" && lon === "") {
-      payload = { latitude: null, longitude: null };
-    } else {
-      const latNum = Number(lat);
-      const lonNum = Number(lon);
-      if (
-        !Number.isFinite(latNum) ||
-        !Number.isFinite(lonNum) ||
-        latNum < -90 ||
-        latNum > 90 ||
-        lonNum < -180 ||
-        lonNum > 180
-      ) {
-        setError(
-          "Latitude must be -90 to 90 and longitude -180 to 180. Leave both blank to clear.",
-        );
-        return;
-      }
-      payload = { latitude: latNum, longitude: lonNum };
-    }
-
-    // One guarded write for every path, including clearing the location. The
-    // clear branch used to call `updateCurrentUser` unguarded: a rejected
-    // request became an unhandled rejection with nothing shown on screen, and
-    // the Save button stayed enabled because `saving` was never raised.
-    setSaving(true);
-    try {
-      await updateCurrentUser(payload);
-      setSaved(true);
-    } catch (e) {
-      setError(errorText(e, "Could not save your location."));
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  function revealManualEntry() {
-    // Every failure below tells the reader to type coordinates instead. Open
-    // the disclosure so that instruction points at something on screen.
-    if (manualRef.current) manualRef.current.open = true;
-  }
-
-  function locate() {
-    // A non-secure context (plain http on a LAN address) and older browsers
-    // expose no geolocation at all, so there is no error event to read.
-    if (typeof navigator === "undefined" || !navigator.geolocation) {
-      setError(
-        "This browser cannot find your location. Open the app over HTTPS, or enter coordinates manually below.",
-      );
-      revealManualEntry();
-      return;
-    }
-
-    setError(null);
-    setSaved(false);
-    setLocating(true);
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        setLocating(false);
-        const latText = String(position.coords.latitude);
-        const lonText = String(position.coords.longitude);
-        setLatitude(latText);
-        setLongitude(lonText);
-        void persist(latText, lonText);
-      },
-      (geoError) => {
-        setLocating(false);
-        setError(geolocationErrorText(geoError));
-        revealManualEntry();
-      },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 },
-    );
-  }
-
-  function save() {
-    void persist(latitude, longitude);
-  }
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Location</CardTitle>
-        <CardDescription>
-          Used to look up pollen, air quality and nearby hospitals. Nothing
-          is sent anywhere else.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <FieldGroup>
-          <div className="flex flex-col gap-2">
-            <Button onClick={locate} disabled={locating} aria-busy={locating}>
-              {locating ? "Locating…" : "Use my current location"}
-            </Button>
-            <p className="text-xs text-muted-foreground">
-              Asks your device for a GPS fix. Your browser will ask permission
-              first.
-            </p>
-          </div>
-
-          {error ? (
-            <Alert variant="destructive">
-              <AlertTitle>Location not updated</AlertTitle>
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
-          ) : null}
-          {saved ? (
-            <p role="status" className="text-xs text-muted-foreground">
-              Saved.
-            </p>
-          ) : null}
-
-          <details ref={manualRef} className="flex flex-col gap-4 rounded-lg border p-3">
-            <summary className="cursor-pointer text-sm font-medium">
-              Enter coordinates manually
-            </summary>
-            <FieldGroup>
-              <Field>
-                <FieldLabel htmlFor="profile-lat">Latitude</FieldLabel>
-                <Input
-                  id="profile-lat"
-                  inputMode="decimal"
-                  placeholder="37.5665"
-                  value={latitude}
-                  onChange={(e) => setLatitude(e.target.value)}
-                />
-              </Field>
-              <Field>
-                <FieldLabel htmlFor="profile-lon">Longitude</FieldLabel>
-                <Input
-                  id="profile-lon"
-                  inputMode="decimal"
-                  placeholder="126.9780"
-                  value={longitude}
-                  onChange={(e) => setLongitude(e.target.value)}
-                />
-              </Field>
-              <div>
-                <Button onClick={save} disabled={saving}>
-                  {saving ? "Saving" : "Save location"}
-                </Button>
-              </div>
-            </FieldGroup>
-          </details>
-        </FieldGroup>
-      </CardContent>
-    </Card>
-  );
+function allergyValue(allergies: AllergyResponse[] | null, failed: boolean): string {
+  if (allergies === null) return failed ? "Could not load" : "Loading…";
+  if (allergies.length === 0) return "Nothing saved yet";
+  return allergies.length === 1 ? "1 saved" : `${allergies.length} saved`;
 }
 
-// ---- Allergies --------------------------------------------------------
-
-function AllergiesSection() {
-  const [allergies, setAllergies] = useState<AllergyResponse[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  // Default to a real named allergen. "TREE_POLLEN" is a legacy coarse value
-// kept for existing rows and still a valid enum member, but it is no longer
-// in ALLERGEN_OPTIONS — so it left the picker trigger rendering blank.
-const [allergen, setAllergen] = useState<Allergen>("BIRCH");
-  const [severity, setSeverity] = useState<AllergySeverity>("MILD");
-  const [adding, setAdding] = useState(false);
-
-  const load = useCallback(async () => {
-    setError(null);
-    try {
-      setAllergies(await listAllergies());
-    } catch (e) {
-      setError(errorText(e, "Could not load your allergies."));
-      setAllergies([]);
-    }
-  }, []);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
-
-  async function add() {
-    setAdding(true);
-    setError(null);
-    try {
-      await createAllergy({ allergen, severity });
-      await load();
-    } catch (e) {
-      setError(errorText(e, "Could not add that allergy."));
-    } finally {
-      setAdding(false);
-    }
-  }
-
-  async function remove(id: number) {
-    setError(null);
-    try {
-      await deleteAllergy(id);
-      await load();
-    } catch (e) {
-      setError(errorText(e, "Could not remove that allergy."));
-    }
-  }
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Allergies</CardTitle>
-        <CardDescription>
-          These adjust your risk score. They are not a diagnosis.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-4">
-        {allergies === null ? (
-          <div className="flex flex-col gap-2" aria-hidden="true">
-            <Skeleton className="h-6 w-32" />
-            <Skeleton className="h-6 w-40" />
-          </div>
-        ) : allergies.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            Nothing saved yet. Add what you react to below.
-          </p>
-        ) : (
-          <ul className="flex flex-col gap-2">
-            {allergies.map((a) => (
-              <li key={a.id} className="flex items-center gap-2">
-                <Badge variant="secondary">{formatAllergyLabel(a.allergen)}</Badge>
-                <span className="text-sm text-muted-foreground">
-                  {formatSeverityLabel(a.severity)}
-                </span>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="ml-auto"
-                  onClick={() => void remove(a.id)}
-                  aria-label={`Remove ${formatAllergyLabel(a.allergen)}`}
-                >
-                  Remove
-                </Button>
-              </li>
-            ))}
-          </ul>
-        )}
-
-        <Separator />
-
-        <FieldGroup>
-          <Field>
-            <FieldLabel htmlFor="profile-allergen">Add an allergy</FieldLabel>
-            <Select
-              value={allergen}
-              onValueChange={(v) => setAllergen(v as Allergen)}
-            >
-              <SelectTrigger id="profile-allergen">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectGroup>
-                  {ALLERGEN_OPTIONS.map((option) => (
-                    <SelectItem key={option} value={option}>
-                      {formatAllergyLabel(option)}
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-          </Field>
-          <Field>
-            <FieldLabel htmlFor="profile-severity">How strong is it</FieldLabel>
-            <ToggleGroup
-              id="profile-severity"
-              type="single"
-              variant="outline"
-              value={severity}
-              onValueChange={(v) => {
-                if (v) setSeverity(v as AllergySeverity);
-              }}
-            >
-              {ALLERGY_SEVERITIES.map((option) => (
-                <ToggleGroupItem key={option} value={option}>
-                  {formatSeverityLabel(option)}
-                </ToggleGroupItem>
-              ))}
-            </ToggleGroup>
-          </Field>
-          <div>
-            <Button onClick={add} disabled={adding}>
-              {adding ? "Adding" : "Add"}
-            </Button>
-          </div>
-        </FieldGroup>
-
-        {error ? (
-          <Alert variant="destructive">
-            <AlertTitle>Something went wrong</AlertTitle>
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        ) : null}
-      </CardContent>
-    </Card>
-  );
+function categoriesOn(prefs: PreferenceResponse): string {
+  const on = [prefs.alert_pollen, prefs.alert_air_quality, prefs.alert_weather].filter(Boolean)
+    .length;
+  return on === 0 ? "All categories off" : `${on} of 3 on`;
 }
 
-// ---- Notification preferences -----------------------------------------
-
-const PREF_SWITCHES: readonly {
-  key: "alert_pollen" | "alert_air_quality" | "alert_weather";
-  label: string;
-  hint: string;
-}[] = [
-  { key: "alert_pollen", label: "Pollen alerts", hint: "When pollen is high in your area." },
-  { key: "alert_air_quality", label: "Air quality alerts", hint: "When PM2.5 or PM10 cross your threshold." },
-  { key: "alert_weather", label: "Weather alerts", hint: "When conditions likely make symptoms worse." },
-];
-
-function PreferencesSection() {
-  const [prefs, setPrefs] = useState<PreferenceResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    readPreferences()
-      .then((p) => {
-        if (!cancelled) setPrefs(p);
-      })
-      .catch((e) => {
-        if (!cancelled) {
-          setError(errorText(e, "Could not load your preferences."));
-          setPrefs(null);
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  async function patch(body: Parameters<typeof updatePreferences>[0]) {
-    setError(null);
-    setSaving(true);
-    try {
-      setPrefs(await updatePreferences(body));
-    } catch (e) {
-      setError(errorText(e, "Could not save that preference."));
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  if (prefs === null && error === null) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Notifications</CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-3" aria-hidden="true">
-          <Skeleton className="h-6 w-full" />
-          <Skeleton className="h-6 w-5/6" />
-          <Skeleton className="h-6 w-4/6" />
-        </CardContent>
-      </Card>
-    );
-  }
-
-  if (prefs === null) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Notifications</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <Alert variant="destructive">
-            <AlertTitle>Could not load preferences</AlertTitle>
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Notifications</CardTitle>
-        <CardDescription>
-          Alerts are generated and stored on the server. Nothing is sent by
-          this build.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-4">
-        {PREF_SWITCHES.map(({ key, label, hint }) => (
-          <div key={key} className="flex items-start gap-3">
-            <Switch
-              id={key}
-              checked={prefs[key]}
-              disabled={saving}
-              onCheckedChange={(checked) => void patch({ [key]: checked })}
-            />
-            <div className="flex flex-col gap-0.5">
-              <Label htmlFor={key}>{label}</Label>
-              <p className="text-xs text-muted-foreground">{hint}</p>
-            </div>
-          </div>
-        ))}
-
-        <Separator />
-
-        <Field>
-          <FieldLabel htmlFor="pref-min-risk">
-            Minimum risk before I get alerted
-          </FieldLabel>
-          <Select
-            value={prefs.min_risk_level}
-            onValueChange={(v) => void patch({ min_risk_level: v as RiskLevel })}
-          >
-            <SelectTrigger id="pref-min-risk">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectGroup>
-                {RISK_OPTIONS.map((option) => (
-                  <SelectItem key={option} value={option}>
-                    {formatRisk(option)}
-                  </SelectItem>
-                ))}
-              </SelectGroup>
-            </SelectContent>
-          </Select>
-        </Field>
-
-        {error ? (
-          <Alert variant="destructive">
-            <AlertTitle>Not saved</AlertTitle>
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        ) : null}
-      </CardContent>
-    </Card>
-  );
+function prefValue(
+  prefs: PreferenceResponse | null,
+  failed: boolean,
+  live: (prefs: PreferenceResponse) => string,
+): string {
+  if (prefs !== null) return live(prefs);
+  return failed ? "Could not load" : "Loading…";
 }
-
-// ---- Page -------------------------------------------------------------
 
 export function SettingsPage() {
   const navigate = useNavigate();
+  const { logout } = useAuth();
   const [user, setUser] = useState<UserResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [allergies, setAllergies] = useState<AllergyResponse[] | null>(null);
+  const [allergyLoadError, setAllergyLoadError] = useState<string | null>(null);
+  const [prefs, setPrefs] = useState<PreferenceResponse | null>(null);
+  const [prefsLoadError, setPrefsLoadError] = useState<string | null>(null);
+  const [screen, setScreen] = useState<SettingsScreenId | null>(null);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+
+  const loadAllergies = useCallback(async () => {
+    setAllergyLoadError(null);
+    try {
+      setAllergies(await listAllergies());
+    } catch (e) {
+      setAllergyLoadError(errorText(e, "Could not load your allergies."));
+    }
+  }, []);
+
+  const loadPrefs = useCallback(async () => {
+    setPrefsLoadError(null);
+    try {
+      setPrefs(await readPreferences());
+    } catch (e) {
+      setPrefsLoadError(errorText(e, "Could not load your notification preferences."));
+    }
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -583,27 +138,72 @@ export function SettingsPage() {
         if (cancelled) return;
         // An expired or rejected token must not strand the user on a wall with
         // only "Back to today". The token is dead, so drop it and send them to
-        // sign in again — otherwise logging out is a manual, undiscoverable
-        // action and the only other page (the dev key card) sits behind this
-        // very gate.
+        // sign in again.
         if (e instanceof ApiError && (e.status === 401 || e.status === 403)) {
           clearToken();
           navigate("/login", { replace: true });
           return;
         }
-        setError(errorText(e, "Could not load your settings."));
+        setLoadError(errorText(e, "Could not load your settings."));
       });
     return () => {
       cancelled = true;
     };
   }, [navigate]);
 
-  if (error) {
+  useEffect(() => {
+    void loadAllergies();
+    void loadPrefs();
+  }, [loadAllergies, loadPrefs]);
+
+  async function addAllergy(body: AllergyCreateRequest) {
+    const created = await createAllergy(body);
+    setAllergies((prev) => (prev ? [...prev, created] : prev));
+  }
+
+  async function removeAllergy(id: number) {
+    await deleteAllergy(id);
+    setAllergies((prev) => (prev ? prev.filter((a) => a.id !== id) : prev));
+  }
+
+  async function changePrefs(body: PreferenceUpdateRequest) {
+    setPrefs(await updatePreferences(body));
+  }
+
+  function renderScreen(id: SettingsScreenId, user: UserResponse) {
+    switch (id) {
+      case "profile":
+        return <ProfileScreen user={user} />;
+      case "health":
+        return (
+          <HealthScreen
+            allergies={allergies}
+            loadError={allergyLoadError}
+            onRetry={() => void loadAllergies()}
+            onAdd={addAllergy}
+            onRemove={removeAllergy}
+          />
+        );
+      case "location":
+        return <LocationScreen user={user} onSaved={setUser} />;
+      case "notifications":
+        return (
+          <NotificationsScreen
+            prefs={prefs}
+            loadError={prefsLoadError}
+            onRetry={() => void loadPrefs()}
+            onChange={changePrefs}
+          />
+        );
+    }
+  }
+
+  if (loadError) {
     return (
       <div className="stage flex flex-col gap-4">
         <Alert variant="destructive">
           <AlertTitle>Could not load your settings</AlertTitle>
-          <AlertDescription>{error}</AlertDescription>
+          <AlertDescription>{loadError}</AlertDescription>
         </Alert>
         <div className="flex gap-2">
           <Button variant="outline" onClick={() => navigate("/today")}>
@@ -627,6 +227,16 @@ export function SettingsPage() {
     );
   }
 
+  if (screen !== null) {
+    return (
+      <div className="stage flex flex-col gap-4">
+        <SettingsSubScreen title={SCREEN_TITLE[screen]} onBack={() => setScreen(null)}>
+          {renderScreen(screen, user)}
+        </SettingsSubScreen>
+      </div>
+    );
+  }
+
   return (
     <div className="stage flex flex-col gap-4">
       <Card>
@@ -635,24 +245,133 @@ export function SettingsPage() {
             <Avatar>
               <AvatarFallback>{initialsFor(user.email)}</AvatarFallback>
             </Avatar>
-            <div className="flex flex-col">
-              <CardTitle>Settings</CardTitle>
-              <CardDescription>{user.email}</CardDescription>
-            </div>
+            <CardTitle>Settings</CardTitle>
           </div>
           <CardAction>
-            <Button variant="ghost" size="sm" onClick={() => navigate("/today")}>
+            <Button variant="ghost" onClick={() => navigate("/today")}>
               Done
             </Button>
           </CardAction>
         </CardHeader>
       </Card>
 
-      <LocationSection user={user} />
-      <AllergiesSection />
-      <PreferencesSection />
-      {/* Renders nothing unless the backend has DEV_SETTINGS_ENABLED=true. */}
-      <DevLlmSettingsCard />
+      <SettingsCard>
+        <SettingsRow label="Profile" value={user.email} onSelect={() => setScreen("profile")} />
+      </SettingsCard>
+
+      <SettingsGroup title="Health">
+        <SettingsRow
+          label="Allergies"
+          value={allergyValue(allergies, allergyLoadError !== null)}
+          onSelect={() => setScreen("health")}
+        />
+        <ComingSoonRow label="Medications" />
+      </SettingsGroup>
+
+      <ComingSoonGroup title="Emergency" rows={["Emergency contact", "Medical card"]} />
+
+      <SettingsCard>
+        <SettingsRow
+          label="Location"
+          value={locationValue(user)}
+          onSelect={() => setScreen("location")}
+        />
+      </SettingsCard>
+
+      <SettingsGroup title="Notifications">
+        <SettingsRow
+          label="Categories"
+          value={prefValue(prefs, prefsLoadError !== null, categoriesOn)}
+          onSelect={() => setScreen("notifications")}
+        />
+        <SettingsRow
+          label="Minimum risk"
+          value={prefValue(prefs, prefsLoadError !== null, (p) => formatRisk(p.min_risk_level))}
+          onSelect={() => setScreen("notifications")}
+        />
+        <ComingSoonRow label="Quiet hours" />
+        <ComingSoonRow label="Notification permission" />
+      </SettingsGroup>
+
+      <ComingSoonGroup
+        title="Chat and language"
+        rows={["Agent language", "Voice input", "Keep chat history"]}
+      />
+
+      <ComingSoonGroup
+        title="Accessibility"
+        rows={["Text size", "Reduce motion", "High contrast"]}
+      />
+
+      <ComingSoonGroup
+        title="Privacy and data"
+        rows={["What is stored", "Export my data", "Delete my data"]}
+      />
+
+      <section aria-label="Advanced" className="flex flex-col gap-2">
+        <h2 className="text-xs font-bold tracking-[0.12em] text-muted-foreground uppercase">
+          Advanced
+        </h2>
+        <div className="overflow-hidden rounded-xl bg-card ring-1 ring-foreground/10">
+          <button
+            type="button"
+            aria-expanded={advancedOpen}
+            aria-controls="settings-advanced"
+            onClick={() => setAdvancedOpen((open) => !open)}
+            className="flex min-h-11 w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
+          >
+            <span className="flex min-w-0 flex-col">
+              <span className="text-sm font-medium">Developer tools</span>
+              <span className="text-xs text-muted-foreground">
+                Local development only
+              </span>
+            </span>
+            <ChevronRight
+              aria-hidden
+              className={`ml-auto size-4 shrink-0 text-muted-foreground ${advancedOpen ? "rotate-90" : ""}`}
+            />
+          </button>
+          {advancedOpen ? (
+            <div id="settings-advanced" className="flex flex-col gap-3 border-t border-border p-3">
+              <div className="flex flex-col gap-0.5">
+                <p className="text-sm font-medium">Diagnostics</p>
+                <p className="text-xs text-muted-foreground">Not built yet.</p>
+              </div>
+              {/* Renders nothing unless the backend has DEV_SETTINGS_ENABLED=true. */}
+              <DevLlmSettingsCard />
+            </div>
+          ) : null}
+        </div>
+      </section>
+
+      <Separator />
+
+      <div className="flex flex-col gap-2">
+        <Button variant="destructive" className="min-h-11" onClick={logout}>
+          Sign out
+        </Button>
+        <p className="text-xs text-muted-foreground">
+          You need your email and password to sign back in.
+        </p>
+      </div>
+
+      <Separator />
+
+      <section aria-label="Danger zone" className="flex flex-col gap-2">
+        <h2 className="text-xs font-bold tracking-[0.12em] text-muted-foreground uppercase">
+          Danger zone
+        </h2>
+        <div className="flex flex-col gap-2 rounded-xl bg-card px-4 py-3 ring-1 ring-foreground/10">
+          <p className="text-sm font-medium">Delete account</p>
+          <p className="text-xs text-muted-foreground">
+            Not built yet. The server has no delete endpoint, so this button is
+            turned off rather than pretending to work.
+          </p>
+          <Button variant="destructive" className="min-h-11" disabled>
+            Delete account
+          </Button>
+        </div>
+      </section>
     </div>
   );
 }

@@ -19,6 +19,7 @@ import type {
 import { ApiError } from "../api/client";
 import { clearToken } from "../auth/token";
 import {
+  TRIAGE_PART_NAME,
   allergyChatAdapter,
   currentConversationId,
   resetConversation,
@@ -97,7 +98,64 @@ describe("allergyChatAdapter", () => {
 
     const result = await runAdapter(runOptions("내 눈이 가려요"));
 
-    expect(result.content).toEqual([{ type: "text", text: "I can help." }]);
+    expect(result.content?.[0]).toEqual({ type: "text", text: "I can help." });
+  });
+
+  it("carries the triage verdict on the assistant message as a data part", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValue(
+          okResponse(
+            sseBody("Get help now.", 7, {
+              triage_level: "EMERGENCY",
+              triage_reasons: ["airway_swelling"],
+            }),
+          ),
+        ),
+    );
+
+    const result = await runAdapter(runOptions("my throat is closing"));
+
+    expect(result.content?.[1]).toEqual({
+      type: "data",
+      name: TRIAGE_PART_NAME,
+      data: { level: "EMERGENCY", reasons: ["airway_swelling"] },
+    });
+  });
+
+  it("emits no verdict part when the backend sent no triage level", async () => {
+    // An absent verdict is not a LOW verdict, so the part is left off
+    // entirely rather than filled in with a reassuring default.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(okResponse(sseBody("ok", 7, { triage_level: null }))),
+    );
+
+    const result = await runAdapter(runOptions("hi"));
+
+    expect(result.content).toHaveLength(1);
+  });
+
+  it("survives a triage_reasons value that is not a list of strings", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValue(
+          okResponse(
+            sseBody("ok", 7, {
+              triage_level: "MODERATE",
+              triage_reasons: "not-a-list" as unknown as string[],
+            }),
+          ),
+        ),
+    );
+
+    const result = await runAdapter(runOptions("hi"));
+
+    expect(result.content?.[1]).toMatchObject({ data: { reasons: [] } });
   });
 
   it("sends the newest user text and a null id on the first turn", async () => {

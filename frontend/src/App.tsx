@@ -29,6 +29,12 @@ function App() {
             }
           >
             <Route path="/chat" element={<ChatScreen />} />
+            {/* `/chat/:conversationId` reopens a stored conversation. The
+                screen reads the param itself (useConversationRouteId), so
+                this route needs no wrapper component and the chat screen
+                stays identical for both cases. A refresh on /chat/42 now
+                resumes that thread instead of silently starting a new one. */}
+            <Route path="/chat/:conversationId" element={<ChatScreen />} />
             <Route path="/today" element={<TodayPage />} />
             <Route path="/alerts" element={<AlertsPage />} />
             <Route path="/settings" element={<SettingsPage />} />

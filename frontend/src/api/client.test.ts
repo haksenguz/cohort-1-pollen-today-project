@@ -18,8 +18,10 @@ import { getToken } from "../auth/token";
 import {
   API_BASE_URL,
   ApiError,
+  getConversation,
   getNearbyHospitals,
   listAlerts,
+  listConversations,
   markAlertRead,
   readPreferences,
   updatePreferences,
@@ -209,5 +211,138 @@ describe("getNearbyHospitals", () => {
     expect(String(url)).toContain("lon=127");
     expect(String(url)).toContain("specialty=ENT");
     expect(String(url)).toContain("radius_m=3000");
+  });
+});
+
+describe("listConversations", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("GETs /api/conversations with the bearer token and unwraps the list", async () => {
+    vi.mocked(getToken).mockReturnValue("tkn-abc");
+    const fetchSpy = mockFetch({
+      conversations: [
+        {
+          id: 42,
+          title: "chest tightness after running",
+          created_at: "2026-10-16T08:12:00Z",
+          updated_at: "2026-10-16T08:14:31Z",
+          last_message: "it started about 10 minutes ago",
+          message_count: 6,
+        },
+      ],
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const conversations = await listConversations();
+
+    expect(conversations).toHaveLength(1);
+    expect(conversations[0].id).toBe(42);
+    const [url, init] = fetchSpy.mock.calls[0];
+    expect(url).toBe(`${API_BASE_URL}/api/conversations`);
+    expect(init.method).toBe("GET");
+    expect(init.headers.Authorization).toBe("Bearer tkn-abc");
+  });
+
+  it("keeps a null title and a null last_message as null rather than coercing them", async () => {
+    vi.mocked(getToken).mockReturnValue("tkn-abc");
+    const fetchSpy = mockFetch({
+      conversations: [
+        {
+          id: 7,
+          title: null,
+          created_at: "2026-10-16T08:12:00Z",
+          updated_at: "2026-10-16T08:12:00Z",
+          last_message: null,
+          message_count: 0,
+        },
+      ],
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const [conversation] = await listConversations();
+
+    expect(conversation.title).toBeNull();
+    expect(conversation.last_message).toBeNull();
+  });
+});
+
+describe("getConversation", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("GETs /api/conversations/{id} with the bearer token", async () => {
+    vi.mocked(getToken).mockReturnValue("tkn-abc");
+    const fetchSpy = mockFetch({
+      id: 42,
+      title: "chest tightness after running",
+      created_at: "2026-10-16T08:12:00Z",
+      messages: [
+        {
+          id: 9001,
+          role: "user",
+          content: "my chest feels tight",
+          triage_level: null,
+          triage_reasons: [],
+          created_at: "2026-10-16T08:12:00Z",
+        },
+        {
+          id: 9002,
+          role: "assistant",
+          content: "Thanks. How long has it been going on?",
+          triage_level: "MODERATE",
+          triage_reasons: ["severity 6 >= 5"],
+          created_at: "2026-10-16T08:14:31Z",
+        },
+      ],
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const conversation = await getConversation(42);
+
+    expect(conversation.messages).toHaveLength(2);
+    expect(conversation.messages[1].triage_reasons).toEqual(["severity 6 >= 5"]);
+    const [url, init] = fetchSpy.mock.calls[0];
+    expect(url).toBe(`${API_BASE_URL}/api/conversations/42`);
+    expect(init.method).toBe("GET");
+    expect(init.headers.Authorization).toBe("Bearer tkn-abc");
+  });
+
+  // The backend answers 404 for a conversation owned by somebody else, so a
+  // 404 has to stay distinguishable from a transport failure: the first is
+  // permanent and retrying it is pointless, the second is worth retrying.
+  it("surfaces a foreign or missing conversation as ApiError 404", async () => {
+    vi.mocked(getToken).mockReturnValue("tkn-abc");
+    const fetchSpy = mockFetch({ detail: "Conversation not found" }, { status: 404, ok: false });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    await expect(getConversation(999)).rejects.toMatchObject({
+      name: "ApiError",
+      status: 404,
+      detail: "Conversation not found",
+    } satisfies Partial<ApiError>);
+  });
+
+  it("rejects a network failure as a plain TypeError, not an ApiError", async () => {
+    vi.mocked(getToken).mockReturnValue("tkn-abc");
+    const fetchSpy = vi.fn().mockRejectedValue(new TypeError("Failed to fetch"));
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const error = await getConversation(42).catch((err: unknown) => err);
+
+    expect(error).toBeInstanceOf(TypeError);
+    expect(error).not.toBeInstanceOf(ApiError);
+  });
+
+  it("surfaces an expired token as ApiError 401", async () => {
+    vi.mocked(getToken).mockReturnValue("tkn-stale");
+    const fetchSpy = mockFetch({ detail: "Not authenticated" }, { status: 401, ok: false });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    await expect(getConversation(42)).rejects.toMatchObject({
+      status: 401,
+    } satisfies Partial<ApiError>);
   });
 });
