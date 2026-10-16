@@ -46,6 +46,10 @@ class Conversation(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     user_id: int = Field(foreign_key="users.id", index=True)
     status: str = Field(default="ACTIVE", max_length=12)
+    # Null until something generates it from the first user message. The API
+    # returns null rather than a placeholder, so a client can tell "no title
+    # yet" apart from "titled empty".
+    title: str | None = Field(default=None, max_length=200)
     created_at: datetime = _ts_field()
     updated_at: datetime = _ts_field()
 
@@ -56,6 +60,20 @@ class Message(SQLModel, table=True):
     conversation_id: int = Field(foreign_key="conversations.id", index=True)
     role: str = Field(max_length=10)
     content: str
+    # The deterministic verdict, denormalised onto the assistant message that
+    # it belongs to.
+    #
+    # It is already stored — but only in `triage_results`, reachable by
+    # joining through `symptom_events`. That made a *reloaded* conversation
+    # unable to show its verdict without reconstructing the link, so the chat
+    # screen rendered safety decisions as ordinary body text and lost them
+    # entirely on reload. `triage_reasons` in particular was not persisted
+    # anywhere at all: `triage_results` keeps `rule_version`, not the reasons.
+    #
+    # These are written ONLY by the rule engine's output. No tool may set
+    # them — see the ADR 0001 guard in the tests.
+    triage_level: str | None = Field(default=None, max_length=12)
+    triage_reasons: list[str] = Field(default_factory=list, sa_column=Column(JSONB))
     created_at: datetime = _ts_field()
 
 

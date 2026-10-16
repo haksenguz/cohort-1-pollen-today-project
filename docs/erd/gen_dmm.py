@@ -39,6 +39,9 @@ SCHEMA = {
     pk_id(),
     C("user_id", "integer", fk=("users", "Cascade")),
     C("status", "character varying", "12", default="'ACTIVE'", comment="ACTIVE|COMPLETED|ABANDONED"),
+    # Null until generated from the first user message; the API returns null
+    # rather than a placeholder.
+    C("title", "character varying", "200", nn=False, comment="null until generated"),
     created(), updated(),
  ],
  "messages": [
@@ -46,6 +49,14 @@ SCHEMA = {
     C("conversation_id", "integer", fk=("conversations", "Cascade")),
     C("role", "character varying", "10", comment="USER|ASSISTANT|SYSTEM"),
     C("content", "text"),
+    # Deterministic verdict, denormalised onto the assistant message. It was
+    # already stored in triage_results, but only reachable by joining through
+    # symptom_events, so a reloaded conversation could not show it.
+    # triage_reasons was not persisted anywhere at all - triage_results keeps
+    # rule_version instead. Written ONLY by the rule engine: never the model,
+    # never a tool.
+    C("triage_level", "character varying", "12", nn=False, comment="LOW|MODERATE|EMERGENCY, from triage.py"),
+    C("triage_reasons", "jsonb", default="'[]'::jsonb", comment="list[str], rule engine rationale"),
     created(),
  ],
  "symptom_events": [

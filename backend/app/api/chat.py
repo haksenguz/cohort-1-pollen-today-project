@@ -125,6 +125,12 @@ async def _persist_turn(
             conversation_id=conversation.id,
             role=MessageRole.ASSISTANT,
             content=result.get("assistant_reply") or "",
+            # Written from the rule engine's output, never from the model and
+            # never from a tool. Denormalised onto the message so a reloaded
+            # conversation can render its verdict without reconstructing the
+            # symptom_events -> triage_results join.
+            triage_level=result.get("triage_level"),
+            triage_reasons=list(result.get("triage_reasons") or []),
         )
     )
 
