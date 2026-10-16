@@ -78,9 +78,18 @@ and the reference healthcare-agent architecture in
 - [x] **A2. One-tap `tel:119`** on the EMERGENCY card. Done 2026-10-16,
       full-width button inside the verdict banner. The static footer disclaimer
       is untouched.
-- [ ] **A3. Surface the post-triage next action.** `hospitals.py` exists and the
-      chat still does not call it. A verdict should lead to "find care near
-      you". Not started.
+- [x] **A3. Surface the post-triage next action.** Done 2026-10-17 (`4210126`).
+      EMERGENCY and MODERATE get a "Find a clinic near you" button that routes
+      to `/today`; LOW deliberately does not get one, because putting a
+      clinic-finder on the calm card would train people to ignore the button
+      that matters.
+      This was a hand-off, not a build. `getNearbyHospitals` already existed
+      (`api/client.ts:158`) and TodayPage already renders the ranked
+      nearby-clinic list with distance, address, and honest
+      unavailable/error/empty states — including telling the user plainly when
+      no location is set. Duplicating that list inside a chat bubble would have
+      meant rebuilding all four states for nothing. Today owns the location
+      question, so the route has no dead end.
 - [x] **A4. Never let a tool change a safety verdict.** Handed to the backend
       lane as `backend/tests/test_tool_registry.py`, landed alongside the tool
       skeleton rather than after it.
@@ -224,15 +233,17 @@ bug. They are listed as open because the underlying settings are still missing.
       (`ChatScreen.tsx:42`).
 - [ ] **F6. 44×44px tap targets** on the new controls.
 
-**Progress 2026-10-16.** A1, A2, A4, B1-B4, B6, C6 and E1-E7 are landed and
-the frontend gate is green (tsc 0, 147/147 tests, lint 0). Groups D and F are
-untouched. Next up is **A3**, then **D1-D4**, then the rest of B and C.
+**Progress 2026-10-16/17.** A1, A2, A3, A4, B1-B4, B6, C6 and E1-E7 are
+landed. The frontend gate is green: tsc 0, 150/150 tests, lint 0. A3 added
+three tests — one clicks the button through to the Today route, one asserts
+MODERATE offers it, and one asserts LOW does not. The LOW case is asserted by
+absence on purpose, so putting the button on the calm card later breaks it.
+Group F is untouched.
 
-**Suggested order.** A1–A4 → B1–B3 → D1–D4 → B4–B8 → C1–C2 → E1–E7. A group A
-is a safety hole in an app whose central claim is that a deterministic engine
-decides urgency, and it is a small diff. Group D is the difference between a
-chatbot and an agent, and D4 is blocked on a data source rather than on code —
-worth starting that search now, in parallel with A.
+**Suggested order.** Group A, B1–B3 and E1–E7 are complete. What is left, in
+order: **D1–D4** → C1–C2 → B5, B7, B8 → group F. D1–D3 are code; **D4 is
+blocked on a data source rather than on code**, so that search is worth
+starting in parallel instead of after.
 
 ---
 
