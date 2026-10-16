@@ -82,3 +82,46 @@ def test_triage_level_constraint_matches_the_enum(path: Path) -> None:
         f"{path.name} must let triage_level stay NULL; a turn that asked a "
         "follow-up question has no verdict to store"
     )
+
+
+# ---------------------------------------------------------------------------
+# created_at gets a default; updated_at deliberately does not.
+# ---------------------------------------------------------------------------
+
+CREATED_AT_MIGRATION = MIGRATIONS / "04_created_at_defaults.sql"
+
+
+def test_created_at_default_migration_exists() -> None:
+    assert CREATED_AT_MIGRATION.is_file(), (
+        "gen_dmm.py emits DEFAULT now() for created_at but the live database "
+        "never got it, so production and a fresh install are different shapes"
+    )
+
+
+def test_created_at_migration_does_not_touch_updated_at() -> None:
+    """The trap, pinned so it cannot be undone by a well-meaning edit.
+
+    `created_at` is written once at INSERT, so a default is simply correct.
+    `updated_at` is not: a default is written at INSERT and then never moves,
+    because there is no trigger. Every subsequent UPDATE would leave the row
+    carrying a stale timestamp that is still NOT NULL, still plausible, and
+    still passes every check that exists. Nothing errors - the column would
+    look maintained and would not be.
+
+    That is not hypothetical: conversation_service.list_conversations orders
+    the history list by conversations.updated_at, so a stale value puts the
+    list in the wrong order and produces no error anywhere.
+    """
+    text = CREATED_AT_MIGRATION.read_text(encoding="utf-8")
+
+    assert "created_at" in text, "the migration must still set the created_at default"
+
+    # The column may be named in prose explaining the decision, but it must
+    # never appear in a statement that alters it.
+    for statement in text.split(";"):
+        if "updated_at" in statement and "ALTER" in statement.upper():
+            pytest.fail(
+                "04 must never ALTER updated_at. Either add a BEFORE UPDATE "
+                "trigger so the column maintains itself, or keep the value "
+                "explicit and correct gen_dmm.py - never a default that lies."
+            )
