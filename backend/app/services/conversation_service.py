@@ -29,6 +29,12 @@ class ConversationSummary:
 
     `last_message` is a preview, not the full log, so the chat screen can draw
     the list without loading every message of every thread.
+
+    `updated_at` means last activity - the newest message, or the conversation's
+    own created_at if it has none. It is NOT the `conversations.updated_at`
+    column, which nothing writes. The name is kept because it is what the client
+    already reads and renders; a second `last_activity_at` alongside it would
+    just be two near-identical timestamps for the next reader to choose between.
     """
 
     id: int
@@ -50,19 +56,40 @@ class ConversationDetail:
 
 
 async def list_conversations(session: AsyncSession, *, user_id: int) -> list[ConversationSummary]:
-    """This user's conversations, most recently updated first.
+    """This user's conversations, most recently active first.
 
     `message_count` counts message *rows*, so three exchanges that each wrote
     a user row and an assistant row report six. A conversation with no messages
     yet reports 0 and a null preview rather than being left out of the list —
     the user just started it.
+
+    `updated_at` is DERIVED from the newest message, not read off the column.
+    Nothing in the write path ever sets `conversations.updated_at`: `_persist_turn`
+    returns an existing conversation untouched, so the column stays frozen at
+    whatever INSERT put there and drifts further from reality with every message.
+    Sorting by it ordered the list by creation time and dated it by creation
+    time, which happened to look right only because a conversation is normally
+    messaged seconds after it is opened.
+
+    Derived rather than maintained by a BEFORE UPDATE trigger on purpose. Tests
+    build their schema from SQLModel metadata on SQLite, not from
+    db/init/01_schema.sql, so a trigger in the Postgres schema file would exist
+    in production and not in the test database at all - a test asserting the
+    ordering would pass in CI and fail live. This is plain SQL that behaves the
+    same on both engines.
+
+    A conversation with no messages has no newest message, so it coalesces to
+    its own created_at. Without that it would sort on NULL, and NULL ordering
+    is engine-dependent - the same class of divergence this avoids.
     """
+    last_activity = func.coalesce(func.max(Message.created_at), Conversation.created_at)
+
     result = await session.execute(
         select(
             Conversation.id,
             Conversation.title,
             Conversation.created_at,
-            Conversation.updated_at,
+            last_activity,
             func.count(Message.id),
             func.max(Message.id),
         )
@@ -72,7 +99,7 @@ async def list_conversations(session: AsyncSession, *, user_id: int) -> list[Con
         # Conversation.id is the primary key, so Postgres/SQLite may take the
         # remaining columns from it.
         .group_by(Conversation.id)
-        .order_by(Conversation.updated_at.desc(), Conversation.id.desc())
+        .order_by(last_activity.desc(), Conversation.id.desc())
     )
     rows = result.all()
 

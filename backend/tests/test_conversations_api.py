@@ -189,24 +189,97 @@ async def test_list_returns_the_callers_conversations(
 
 
 @pytest.mark.asyncio
-async def test_list_is_newest_updated_first(
+async def test_list_orders_by_last_activity_not_creation(
     conversation_client: AsyncClient, conversation_session: AsyncSession
 ) -> None:
-    token, user_id = await _login(conversation_client, "orderer@example.com")
+    """A thread you came back to today belongs above one you opened later and left.
 
-    older = await _conversation(
+    Nothing writes `conversations.updated_at`: `_persist_turn` returns an
+    existing conversation untouched, so that column stays frozen at whatever
+    INSERT put there. Ordering by it silently orders by creation time instead,
+    and it looks right for as long as a conversation is messaged seconds after
+    it is opened. The `updated_at` values below are set explicitly to show the
+    ordering ignores them entirely.
+    """
+    token, user_id = await _login(conversation_client, "activity@example.com")
+
+    revisited = await _conversation(
         conversation_session, user_id, created_at=T0, updated_at=T0 + timedelta(minutes=1)
     )
-    newer = await _conversation(
-        conversation_session, user_id, created_at=T0, updated_at=T0 + timedelta(minutes=9)
+    await _message(
+        conversation_session, revisited.id, "USER", "back again", created_at=T0 + timedelta(hours=3)
     )
-    middle = await _conversation(
-        conversation_session, user_id, created_at=T0, updated_at=T0 + timedelta(minutes=5)
+
+    abandoned = await _conversation(
+        conversation_session,
+        user_id,
+        created_at=T0 + timedelta(hours=1),
+        updated_at=T0 + timedelta(hours=1),
     )
 
     res = await conversation_client.get("/api/conversations", headers=_auth(token))
 
-    assert [c["id"] for c in res.json()["conversations"]] == [newer.id, middle.id, older.id]
+    assert [c["id"] for c in res.json()["conversations"]] == [revisited.id, abandoned.id]
+
+
+@pytest.mark.asyncio
+async def test_updated_at_reports_last_activity_not_the_stale_column(
+    conversation_client: AsyncClient, conversation_session: AsyncSession
+) -> None:
+    """The client renders this field as relative time.
+
+    ChatHistoryList.tsx:112 calls `formatRelativeTime(conversation.updated_at)`.
+    Fixing only the ORDER while still returning the frozen column would sort
+    correctly and then display "3 months ago" on a thread from yesterday -
+    right order, lying timestamp.
+    """
+    token, user_id = await _login(conversation_client, "stamp@example.com")
+    conversation = await _conversation(conversation_session, user_id, created_at=T0, updated_at=T0)
+    await _message(
+        conversation_session,
+        conversation.id,
+        "ASSISTANT",
+        "still here",
+        created_at=T0 + timedelta(days=3),
+    )
+
+    body = (await conversation_client.get("/api/conversations", headers=_auth(token))).json()
+
+    summary = next(c for c in body["conversations"] if c["id"] == conversation.id)
+    assert _as_utc(summary["updated_at"]) == T0 + timedelta(days=3)
+    assert summary["updated_at"] != summary["created_at"], (
+        "returning the untouched column is the bug; it would render as the "
+        "conversation's age rather than its last activity"
+    )
+
+
+@pytest.mark.asyncio
+async def test_empty_conversation_orders_by_its_own_creation(
+    conversation_client: AsyncClient, conversation_session: AsyncSession
+) -> None:
+    """`max()` over no messages is NULL, and NULL ordering is engine-dependent.
+
+    Without the coalesce a brand-new conversation sorts on NULL against real
+    timestamps, which Postgres and SQLite do not agree on - reintroducing
+    exactly the cross-engine divergence the derived ordering exists to avoid.
+    """
+    token, user_id = await _login(conversation_client, "emptyorder@example.com")
+
+    older = await _conversation(conversation_session, user_id, created_at=T0)
+    newer = await _conversation(conversation_session, user_id, created_at=T0 + timedelta(hours=2))
+
+    res = await conversation_client.get("/api/conversations", headers=_auth(token))
+    conversations = res.json()["conversations"]
+
+    assert [c["id"] for c in conversations] == [newer.id, older.id]
+    # The coalesce, asserted on the value rather than only on the position: with
+    # no messages there is no newest message, so the fallback has to be the
+    # conversation's own created_at and not NULL. NULL would sort differently
+    # per engine and render as a dash in ChatHistoryList.
+    for summary, conversation in ((conversations[0], newer), (conversations[1], older)):
+        assert _as_utc(summary["updated_at"]) == T0 + (
+            timedelta(hours=2) if conversation.id == newer.id else timedelta()
+        )
 
 
 @pytest.mark.asyncio
