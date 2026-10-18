@@ -61,8 +61,16 @@ export interface ToolResultClinic {
  */
 export interface ToolResultValue {
   clinics?: readonly ToolResultClinic[] | null;
+  /**
+   * The server saying outright that it did not search. This is the only field
+   * that separates "searched, found none" from "never searched", so a payload
+   * carrying it alone is still readable.
+   *
+   * There is deliberately no `count` here. The wire sends `clinics` and
+   * `provider_available` only, and a declared field nothing populates and
+   * nothing reads is only a future lie. The badge counts the rendered rows.
+   */
   provider_available?: boolean | null;
-  count?: number | null;
 }
 
 export interface ToolResultProps {
@@ -176,6 +184,10 @@ function resolveState(
      than the status it arrives with. `no_location` ships as `error`, but "no
      location saved" is not a failure and must not render as one. */
   if (code === "no_location") return "no_location";
+  /* `provider_unavailable` arrives as status `error` with no result at all, so
+     without this the whole "we did not search" state would be unreachable and an
+     outage would read as a failed search. */
+  if (code === "provider_unavailable") return "unavailable";
   if (status === "error") return "error";
   if (result === null) return "unreadable";
   if (result.provider_available === false) return "unavailable";

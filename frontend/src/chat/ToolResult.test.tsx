@@ -39,7 +39,7 @@ describe("ToolResult", () => {
       <ToolResult
         status="done"
         summary="2 clinics found"
-        result={{ provider_available: true, count: 2, clinics: twoClinics }}
+        result={{ provider_available: true, clinics: twoClinics }}
       />,
     );
 
@@ -108,7 +108,7 @@ describe("ToolResult", () => {
       <ToolResult
         status="done"
         summary="0 clinics found"
-        result={{ provider_available: true, count: 0, clinics: [] }}
+        result={{ provider_available: true, clinics: [] }}
       />,
     );
 
@@ -123,7 +123,7 @@ describe("ToolResult", () => {
       <ToolResult
         status="done"
         summary="0 clinics found"
-        result={{ provider_available: true, count: 0, clinics: [] }}
+        result={{ provider_available: true, clinics: [] }}
       />,
     );
     const { container: failed } = render(
@@ -153,7 +153,7 @@ describe("ToolResult", () => {
 
   it("separates an offline provider from both zero results and a failure", () => {
     const { container } = render(
-      <ToolResult status="done" result={{ provider_available: false, count: 0, clinics: [] }} />,
+      <ToolResult status="done" result={{ provider_available: false, clinics: [] }} />,
     );
 
     const card = container.querySelector("[data-state]");
@@ -173,7 +173,7 @@ describe("ToolResult", () => {
   it("does not claim zero clinics when the result carries no clinic list", () => {
     // The shape a malformed payload coerces into. It reached the card as `[]`
     // once, and "no clinics found" is a claim nothing here supports.
-    const { container } = render(<ToolResult status="done" result={{ count: 0 }} />);
+    const { container } = render(<ToolResult status="done" result={{}} />);
 
     expect(container.querySelector("[data-state]")).toHaveAttribute("data-state", "unreadable");
     expect(screen.queryByText("No clinics found")).not.toBeInTheDocument();
@@ -293,6 +293,21 @@ describe("ToolResult", () => {
 
       expect(document.querySelector('[data-state="error"]')).toBeTruthy();
       expect(screen.queryByText("We need your location first")).toBeNull();
+    });
+
+    /**
+     * `provider_unavailable` ships as status `error` with NO result at all, so
+     * before it was mapped here the whole "we did not search" state was
+     * unreachable and an outage rendered as a failed search.
+     */
+    it("reads provider_unavailable as never-searched, not as a failed search", () => {
+      render(<ToolResult status="error" result={null} code="provider_unavailable" />);
+
+      const card = document.querySelector("[data-state]");
+      expect(card).toHaveAttribute("data-state", "unavailable");
+      expect(screen.getByText("Clinic search is offline")).toBeTruthy();
+      expect(screen.getByText(/We did not search/)).toBeTruthy();
+      expect(screen.queryByText("No clinics found")).toBeNull();
     });
   });
 });

@@ -156,7 +156,12 @@ function readCode(raw: unknown): string | null {
 function readResult(raw: unknown): NearbyCareResult | null {
   if (typeof raw !== "object" || raw === null) return null;
   const result = raw as NearbyCareResult;
-  return Array.isArray(result.clinics) ? result : null;
+  if (Array.isArray(result.clinics)) return result;
+  /* A payload that says only "the provider was not available" is still honest
+     and still renderable. Requiring a clinic array here would drop it and turn
+     "we did not search" into "we searched and found nothing". */
+  if (result.provider_available === false) return result;
+  return null;
 }
 
 // ---- Store ------------------------------------------------------------
