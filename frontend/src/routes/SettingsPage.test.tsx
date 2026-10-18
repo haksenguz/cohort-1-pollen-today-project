@@ -61,6 +61,7 @@ import {
   updateCurrentUser,
   updatePreferences,
 } from "../api/client";
+import { TEXT_SIZE_STORAGE_KEY } from "../prefs/textSize";
 import { SettingsPage } from "./SettingsPage";
 
 const user = (overrides: Partial<UserResponse> = {}): UserResponse => ({
@@ -171,6 +172,9 @@ afterEach(() => {
   vi.restoreAllMocks();
   auth.logout.mockClear();
   Reflect.deleteProperty(navigator, "geolocation");
+  // The page now reads a text size out of storage, so a choice made by one
+  // test would otherwise still be showing on the next one.
+  localStorage.removeItem(TEXT_SIZE_STORAGE_KEY);
 });
 
 describe("SettingsPage overview", () => {
@@ -253,13 +257,39 @@ describe("SettingsPage areas with nothing behind them yet", () => {
 
     await screen.findByText("someone@example.com");
 
-    for (const name of ["Emergency", "Chat and language", "Accessibility", "Privacy and data"]) {
+    // Accessibility is not in this list: bugs.md F4 gave it a working text
+    // size control, and the invariant it is really protecting is that a row
+    // with nothing behind it says so rather than offering a dead control.
+    for (const name of ["Emergency", "Chat and language", "Privacy and data"]) {
       const group = screen.getByRole("region", { name });
       expect(within(group).getAllByText("Not built yet").length).toBeGreaterThan(0);
       expect(within(group).queryAllByRole("button")).toHaveLength(0);
       expect(within(group).queryAllByRole("switch")).toHaveLength(0);
       expect(within(group).queryAllByRole("checkbox")).toHaveLength(0);
     }
+  });
+
+  it("gives Accessibility a real text size row and leaves the rest inert", async () => {
+    renderPage();
+
+    const group = await screen.findByRole("region", { name: "Accessibility" });
+
+    expect(within(group).getByRole("button", { name: /^Text size/ })).toHaveTextContent(
+      "Normal",
+    );
+    expect(within(group).getAllByText("Not built yet")).toHaveLength(2);
+    expect(within(group).getByText("Reduce motion")).toBeTruthy();
+    expect(within(group).getByText("High contrast")).toBeTruthy();
+    expect(within(group).queryAllByRole("switch")).toHaveLength(0);
+  });
+
+  it("shows the stored text size on the row behind", async () => {
+    localStorage.setItem(TEXT_SIZE_STORAGE_KEY, "largest");
+    renderPage();
+
+    expect(await screen.findByRole("button", { name: /^Text size/ })).toHaveTextContent(
+      "Largest",
+    );
   });
 
   it("keeps Quiet hours and the permission link inert inside Notifications", async () => {
