@@ -262,11 +262,23 @@ Sources: [ReAct / core concepts](https://cloud.google.com/resources/core-concept
       portal, which is a form against the key we already hold, not a fresh
       credential. Whether those datasets auto-approve decides minutes vs days.
 
-      **Code 12 is not an auth error.** A wrong endpoint path answers
-      `returnReasonCode=12` ("해당 오픈API 서비스가 없거나 폐기됨"). Do not read
-      it as "this service is discontinued" — it is the same trap
-      `pollen_service.py` records for `HealthWeatherIdxServiceV3`. Get the path
-      from the dataset's own page, not by guessing.
+      **Code 12 is not an auth error, and it can be shown on this very service.**
+      A wrong endpoint path answers `returnReasonCode=12`
+      ("해당 오픈API 서비스가 없거나 폐기됨"). Do not read it as "this service is
+      discontinued". Get the path from the dataset's own page, not by guessing.
+
+      Reproduced 2026-10-18 with the same key against the same dataset: the bare
+      service root answers **400 / code 12**, while two real operations
+      (`getEgytLcinfoInqire`, `getEgytBassInfoInqire`) both answer **403 / code
+      30**. Same service, same key, so the only variable is whether the operation
+      path actually exists. That is the whole discriminator: **12 means the request
+      never reached the auth layer; 30 means it did and the key was judged there.**
+      A 12 is therefore not evidence about a service's health and must never be
+      recorded as one.
+
+      `pollen_service.py` already carries this lesson in its module docstring, and
+      `test_pollen_service.py` asserts the service name, so this trap already has a
+      regression test before anyone touches the hospital APIs.
 
       **Name the key type in settings, not just "the key".** 활용 hands out a
       프로젝트 서비스키 for 기업회원 and a 개인 서비스키 for 개인, so the format
@@ -279,9 +291,11 @@ Sources: [ReAct / core concepts](https://cloud.google.com/resources/core-concept
       side and both are worth distinguishing in a log). Those
       two are config failures and must not surface as "no clinics found".
 
-      Once a key exists, wire the tool against `httpx.MockTransport` first, exactly
-      as `hospital_service` is tested, then make one live call to confirm the
-      payload shape.
+      The key is already in hand, so the trigger for building is an approved
+      활용신청, not a credential. Wire the tool against `httpx.MockTransport`
+      first, exactly as `hospital_service` is tested, and remember it is XML and
+      not JSON, so a guessed parser is worse than no parser. Then make one live
+      call to confirm the payload shape.
 
       Do not let the model infer or guess availability from static text — an
       invented clinic hour is exactly the kind
