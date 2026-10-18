@@ -417,7 +417,15 @@ bug. They are listed as open because the underlying settings are still missing.
       shell behaves; typing abandons the walk deliberately, because bash would
       carry on walking and silently drop the edit, and the edit is about
       someone's symptoms.
-- [ ] **F4. Text size control**, 200% without loss of content (WCAG 2.2).
+- [x] **F4. Text size control**, 200% without loss of content (WCAG 2.2). Four
+      steps on Settings under Accessibility, persisted and applied as a percent
+      on `<html>` so the rem-based layout scales with it. Browser zoom is left
+      alone, never locked. The design point is that `rootFontSizeFor` returns a
+      literal from the step table rather than computing one, so `NaN` and `0px`
+      are structurally unrepresentable instead of merely guarded against;
+      `resolveTextSize` matches on the id, so `toString` and `0` are misses
+      like any other junk. Accessibility is no longer entirely a coming-soon
+      group, but Reduce motion and High contrast still are and still say so.
 - [x] **F5. `prefers-reduced-motion`** guard on the activity pulse. Already
       built at `theme.css:885`, so it was verified in place rather than rebuilt.
       The recorded location `ChatScreen.tsx:42` is stale: the pulse is the
