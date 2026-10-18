@@ -43,7 +43,7 @@ from app.core.enums import ConversationStatus, MessageRole
 from app.core.rate_limit import get_limiter
 from app.core.security import CurrentUser
 from app.models import Conversation, Message, SymptomEvent, TriageResult, User
-from app.services import triage
+from app.services import escalation, triage
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 logger = logging.getLogger(__name__)
@@ -502,6 +502,42 @@ async def _run_chat(
         pending.put(("tool", call.model_dump(exclude_none=True)))
 
     yield _sse("status", {"stage": "starting"})
+
+    # Some messages must not reach the model at all (D11). A crisis disclosure
+    # answered with a pollen reading, or a dosage question answered with a
+    # plausible-sounding number, are the two ways this app could seriously hurt
+    # someone. The check is deterministic and it runs before anything else, so
+    # there is no phrasing of the question that gets past it and no prompt to
+    # talk the model past.
+    scope = escalation.assess(req.message)
+    if scope.blocks_the_model:
+        reply = (
+            escalation.crisis_reply(scope)
+            if scope.verdict == "crisis"
+            else escalation.out_of_scope_reply()
+        )
+        logger.warning("chat: model bypassed (%s) for user %s", scope.verdict, user_id)
+        yield _sse("message", {"delta": reply})
+        yield _sse(
+            "done",
+            {
+                "message": reply,
+                "conversation_id": conversation.id,
+                "symptoms": [],
+                "severity": None,
+                "duration": None,
+                "possible_trigger": None,
+                "breathing_difficulty": None,
+                "airway_swelling": None,
+                # No triage verdict: nothing was assessed, and a level here
+                # would be the one number in the turn that nobody computed.
+                "triage_level": None,
+                "triage_reasons": [],
+                "triage_rule_version": None,
+                "escalated": scope.verdict,
+            },
+        )
+        return
 
     # Where "nearby" means. Resolved here, from the user's own saved profile,
     # because the model cannot read the profile and must not be asked for
