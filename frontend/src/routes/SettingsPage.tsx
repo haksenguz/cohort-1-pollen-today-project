@@ -38,6 +38,7 @@ import type {
 } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
 import { clearToken } from "../auth/token";
+import { useTextSize } from "../prefs/textSize";
 import { formatRisk } from "../utils/format";
 import { DevLlmSettingsCard } from "./DevLlmSettingsCard";
 import {
@@ -54,6 +55,7 @@ import {
   NotificationsScreen,
   ProfileScreen,
   SettingsSubScreen,
+  TextSizeScreen,
 } from "./settings/Screens";
 
 const SCREEN_TITLE: Record<SettingsScreenId, string> = {
@@ -61,6 +63,7 @@ const SCREEN_TITLE: Record<SettingsScreenId, string> = {
   health: "Health",
   location: "Location",
   notifications: "Notifications",
+  textsize: "Text size",
 };
 
 function errorText(error: unknown, fallback: string): string {
@@ -109,6 +112,7 @@ export function SettingsPage() {
   const [prefsLoadError, setPrefsLoadError] = useState<string | null>(null);
   const [screen, setScreen] = useState<SettingsScreenId | null>(null);
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const { step: textSize, setStep: setTextSize } = useTextSize();
 
   const loadAllergies = useCallback(async () => {
     setAllergyLoadError(null);
@@ -195,6 +199,8 @@ export function SettingsPage() {
             onChange={changePrefs}
           />
         );
+      case "textsize":
+        return <TextSizeScreen step={textSize} onChange={setTextSize} />;
     }
   }
 
@@ -298,10 +304,15 @@ export function SettingsPage() {
         rows={["Agent language", "Voice input", "Keep chat history"]}
       />
 
-      <ComingSoonGroup
-        title="Accessibility"
-        rows={["Text size", "Reduce motion", "High contrast"]}
-      />
+      <SettingsGroup title="Accessibility">
+        <SettingsRow
+          label="Text size"
+          value={textSize.label}
+          onSelect={() => setScreen("textsize")}
+        />
+        <ComingSoonRow label="Reduce motion" />
+        <ComingSoonRow label="High contrast" />
+      </SettingsGroup>
 
       <ComingSoonGroup
         title="Privacy and data"

@@ -53,6 +53,11 @@ import {
   formatRisk,
   formatSeverityLabel,
 } from "../../utils/format";
+import {
+  DEFAULT_TEXT_SIZE,
+  TEXT_SIZE_STEPS,
+  type TextSizeStep,
+} from "../../prefs/textSize";
 
 const RISK_OPTIONS: readonly RiskLevel[] = ["LOW", "MODERATE", "HIGH", "EMERGENCY"];
 
@@ -658,6 +663,83 @@ export function NotificationsScreen({
           </Alert>
         ) : null}
         {saved ? <SavedNotice>Saved.</SavedNotice> : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ---- Text size ----------------------------------------------------------
+
+/**
+ * The text size control behind the Accessibility group (bugs.md F4, WCAG 2.2
+ * SC 1.4.4). No fetching and no saving state, unlike the screens above: this
+ * one is a preference about how the reader sees the app on this device, so it
+ * is held in the browser and applies to every screen, not just this one.
+ */
+export function TextSizeScreen({
+  step,
+  onChange,
+}: {
+  step: TextSizeStep;
+  onChange: (next: TextSizeStep) => void;
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Text size</CardTitle>
+        <CardDescription>
+          Makes every text size in the app bigger or smaller. Pinching or
+          ctrl-plus on the browser still zooms on top of this.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-4">
+        <Field>
+          <FieldTitle id="pref-text-size-label">Text size</FieldTitle>
+          <ToggleGroup
+            type="single"
+            variant="outline"
+            value={step.id}
+            onValueChange={(next) => {
+              // Clicking the step that is already selected reports an empty
+              // string, and that is not a choice. Restore defaults is how you
+              // go back to Normal.
+              const picked = TEXT_SIZE_STEPS.find((option) => option.id === next);
+              if (picked) onChange(picked);
+            }}
+            /* w-full flex-wrap rather than the default w-fit row of shrink-0
+               items: at the largest step four options no longer fit across a
+               phone, and without wrapping the last one is pushed out of the
+               card. That is the loss of content SC 1.4.4 is about. */
+            className="w-full flex-wrap justify-start"
+            aria-labelledby="pref-text-size-label"
+          >
+            {TEXT_SIZE_STEPS.map((option) => (
+              <ToggleGroupItem
+                key={option.id}
+                value={option.id}
+                /* Keeps the visible label at the front of the accessible name,
+                   so speech input still matches what is on screen. */
+                aria-label={`${option.label}, ${option.percent}%`}
+              >
+                {option.label}
+              </ToggleGroupItem>
+            ))}
+          </ToggleGroup>
+          <FieldDescription>
+            The largest setting is double the default text size, and every
+            screen stays readable at it.
+          </FieldDescription>
+        </Field>
+
+        <div>
+          <Button
+            variant="outline"
+            className="min-h-11"
+            onClick={() => onChange(DEFAULT_TEXT_SIZE)}
+          >
+            Restore defaults
+          </Button>
+        </div>
       </CardContent>
     </Card>
   );

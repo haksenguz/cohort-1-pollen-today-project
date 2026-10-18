@@ -5,6 +5,24 @@ and where, so a fix can be verified against the same surface.
 
 Status: `open` · `in progress` · `fixed` · `wontfix`
 
+<!-- TWO-WRITER PROTOCOL -----------------------------------------------------
+Two agents edit this file concurrently in one checkout. Regions are marked
+below with `owner:` markers. Edit only inside a region you own; if your change
+belongs in a region the other lane owns, do not edit it — put the text in a
+message and let that lane apply it.
+
+  owner: backend   groups A, B, D, E; the header; the Progress and Suggested
+                   order paragraphs; every numbered B-0xx entry.
+  owner: frontend  group C and group F only.
+
+This split was set because the two lanes had been editing the same file by luck
+rather than by method: 505bee8, e895a05, 5bcef27 and the later privacy and
+migration commits all rewrote lines in here, and they have not collided only
+because no two touched the same line at the same time. Git will happily produce
+a conflict on the next unlucky commit, and a conflicted ledger is worse than a
+stale one because it loses an entry silently.
+-->
+
 ---
 
 ## B-014 — The agent is a chatbot, and the chat screen discards what the engine already decided
@@ -121,13 +139,19 @@ and the reference healthcare-agent architecture in
       Still open, and **re-verified against live Postgres on 2026-10-17** rather
       than assumed: `conversations.title` is still NULL on every row. The
       endpoints READ it, nothing writes it. The UI falls back to "Untitled
-      conversation". The column and the migration exist, so this is purely the
-      missing write.
+      conversation".
+      **Corrected 2026-10-18:** this entry claimed "the column and the migration
+      exist, so this is purely the missing write". That was half wrong, and in the
+      dangerous direction — the column was in `db/migrations/02` and in
+      `01_schema.sql`, but in **no Alembic revision at all**, which is the path
+      that actually runs. See **B-019**. The write is still missing; it was also
+      sitting on a column the deployed schema could not guarantee.
 - [x] **B6.** New Chat button. Done, in the history sheet.
 - [ ] **B7.** Search across conversations. Not started.
 - [ ] **B8.** Resume an in-flight turn after reload — snapshot + SSE replay with
       `Last-Event-ID`, so a dropped stream is not a lost answer. Not started.
 
+<!-- owner: frontend -->
 ### C. Chat experience
 
 - [ ] **C1. Real token streaming.** **Partially delivered — read this before
@@ -157,6 +181,7 @@ and the reference healthcare-agent architecture in
       inside the chat screen, not just the global banner.
 - [ ] **C11. Citations / confidence** so the output feels reviewable.
 
+<!-- owner: backend -->
 ### D. Agent harness — the actual fix
 
 Sources: [ReAct / core concepts](https://cloud.google.com/resources/core-concepts-ai-agents) ·
@@ -312,8 +337,56 @@ Sources: [ReAct / core concepts](https://cloud.google.com/resources/core-concept
       episodes, preferred hospital, language.
 - [ ] **D10. Grounding / RAG layer** over approved content — self-care guidance,
       what the triage levels mean, what to do before an appointment.
-- [ ] **D11. Human escalation path** — hand off to a person when the request
-      leaves the approved workflow.
+- [x] **D11. Human escalation path.** Done as `app/services/escalation.py`, checked in
+      `chat.py` before the model runs. **First finding: there was nothing at
+      all** — grepping `crisis|자살|self-harm|1393|emergency_contact` across
+      `backend/app` returned nothing, in an app that invites the user to write
+      in any language.
+
+      Two properties, both deliberate:
+
+      - **Before the model.** The failure being prevented is the model
+        improvising a medical answer. A prompt telling it to decline is a
+        request; this is a branch that removes the request.
+      - **Deterministic.** A classifier that runs *inside* the model is one the
+        model can be talked out of, and it changes when the model is retrained.
+        This is plain Python, so a reviewer can read exactly what it matches.
+
+      The scope line comes from how regulators describe this class of app. The
+      [MHRA symptom-checker appendix](https://assets.publishing.service.gov.uk/media/64a7d235c531eb000c650051/Appendix_1_-_symptom_checkers.pdf)
+      puts *"software that only signposts the user to suitable care e.g. see
+      your GP, go to A&E"* in the **unlikely to be a medical device** column,
+      while software that *"provides the diagnosis by itself"* or *"claims are
+      made that it can perform, or support the function of, a clinician"*
+      sits on the other side. So diagnosis / drug / dose are refused, and the
+      refusal still does the signposting — a bare "I can't help" strands the
+      user.
+
+      The crisis reply carries the sentence that must never change: **nobody at
+      this app reads these messages.** There is no staffed team, and an app that
+      implies a human is watching spends the exact moment someone reached out.
+      Crisis routing to 1393 / 1333 is real; the promise of a reply would not be.
+
+      Live-probed: `요즘 죽고 싶어요` and `I want to kill myself` both settle
+      `escalated: "crisis"`, `약 얼마나 먹어야 되나요` and `진단해줘` settle
+      `out_of_scope`, and `내 눈이 가려워요` still takes the normal triage path
+      — `escalated` absent, so the boundary is not eating ordinary traffic.
+
+      **Three bugs the tests caught, all worth not repeating:**
+      - The out-of-scope pattern ended with a stray `|`. In VERBOSE mode that
+        adds an empty alternative matching at position 0, so it fired on
+        *every* message and the app would have refused to answer anything.
+      - `목숨을 끊` is `끊`, not `끓` — wrong vowel, so a real Korean crisis
+        phrase slipped through.
+      - The e2e test first asserted the model object was never *constructed*.
+        FastAPI resolves dependencies at request entry, so `get_llm` runs
+        before `_run_chat` is entered. The real assertion is that no
+        **completion** is ever requested.
+
+      Known gaps are in the module docstring, not hidden: patterns are
+      per-language so code-switched phrasing matches nothing, and a crisis
+      described only in body language matches nothing. It is a net, not a
+      guarantee.
 - [ ] **D12. Audit log of every tool call**, for a medical app that books
       appointments.
 - [ ] **D13. Explicit autonomy level per tool** — read-only tools vs
@@ -325,6 +398,7 @@ Sources: [ReAct / core concepts](https://cloud.google.com/resources/core-concept
       duration, slot, booking, status. None of this exists in the ERD yet.
 - [ ] **D16. Confirmation + reminder** delivery (ties into B-010).
 
+<!-- owner: backend -->
 ### E. Settings page
 
 The four groups below — Emergency, Chat & language, Accessibility, Privacy &
@@ -355,8 +429,38 @@ bug. They are listed as open because the underlying settings are still missing.
       `ThemeIcon` export is deleted.
 - [ ] **E8. Emergency contact** — the highest-value missing setting for an allergy
       app; every OS ships its own version.
-- [ ] **E9. Privacy & data** — what is stored (location, messages, symptom
-      events), export, delete. None of it is currently viewable.
+- [x] **E9. Privacy & data.** Done as `app/services/privacy_service.py` +
+      `app/api/privacy.py`. Grounded in 개인정보 보호법 rather than guessed —
+      four articles shaped the implementation:
+
+      | law | what it forced |
+      | --- | --- |
+      | 제23조 | symptom and triage data is **민감정보**, so every derived row is labelled sensitive in the summary, not just "we store some data" |
+      | 제4조3 / 제35조 | export is a **transmission** right, so it is a file download with `Content-Disposition`, not a page you scroll |
+      | 제36조③ | deletion must be **non-recoverable** — no soft-delete flag, no tombstone row |
+      | 제38조④ | access and deletion **must not be harder than sign-up**, so all three rights sit behind the existing bearer token with no email round-trip |
+
+      `GET /api/privacy/summary` also states what is **never** collected (name,
+      address, device location history, any ad identifier). Silence reads as a
+      gap in the policy and the user cannot tell "we don't do this" from "we
+      did not mention it".
+
+      Two things worth keeping in mind if this is ever changed:
+
+      - **`password_hash` is never exported.** An export that carries it is a
+        credential-disclosure bug wearing a privacy feature's clothes.
+      - **The delete has to reach `messages`, `triage_results` and
+        `hospital_results`, none of which have a `user_id`.** A delete written
+        table-by-table on `user_id` removes the parents and leaves three tables
+        of orphans pointing at a user that no longer exists. All three
+        cascade branches are mutation-checked.
+
+      `environment_snapshots` is deliberately **not** deleted: it has no
+      `user_id`, it is shared cache keyed on a *location*, and removing it on
+      one account's exit would destroy data other accounts still read.
+
+      Still open: there is **no UI** for any of this. The endpoints exist and
+      the Settings "Delete account" row still renders disabled (E5).
 - [ ] **E10. Language** — the composer says "any language"; the UI is
       English-only.
 - [ ] **E11. Units** — °C/°F, pollen concentration. Absent from the API too.
@@ -364,28 +468,68 @@ bug. They are listed as open because the underlying settings are still missing.
       Depends on group B.
 - [ ] **E13. Notification quiet hours + a link to the OS permission state.**
 
+<!-- owner: frontend -->
 ### F. Accessibility
 
-- [ ] **F1. `role="log"` + `aria-atomic="false"` + `aria-busy` on the transcript.**
-- [ ] **F2. Announce the finished message once**, never every token.
-- [ ] **F3. Keyboard contract** — Enter sends, Shift+Enter newline, Escape
-      cancels, ↑↓ recalls history.
-- [ ] **F4. Text size control**, 200% without loss of content (WCAG 2.2).
-- [ ] **F5. `prefers-reduced-motion`** guard on the activity pulse
-      (`ChatScreen.tsx:42`).
-- [ ] **F6. 44×44px tap targets** on the new controls.
+- [x] **F1. `role="log"` + `aria-atomic="false"` + `aria-busy` on the transcript.**
+      `ThreadPrimitive.Viewport` takes plain div props, so the attributes go
+      straight onto it. Added `aria-live="polite"` and `aria-relevant="additions"`
+      alongside them, because `role="log"` on its own does not say that only
+      additions matter.
+- [x] **F2. Announce the finished message once**, never every token. Solved by
+      the same `aria-busy` flag as F1 rather than by adding a second live region:
+      the flag is true for the whole turn and false at the end, which is one
+      announcement per finished message and still correct once streaming lands. A
+      parallel `role="status"` region would have announced the same text twice.
+      The tests assert the flag actually flips mid-turn, not merely that the
+      attributes are present.
+- [x] **F3. Keyboard contract** — Enter sends, Shift+Enter newline, Escape
+      cancels, ↑↓ recalls history. The first three are assistant-ui's defaults
+      and are now pinned explicitly on the input, so a dependency bump cannot
+      change them silently. ↑↓ recall is new and derives from the transcript
+      rather than a parallel store, so a resumed conversation keeps its recall
+      history. While a recall walk is active the arrows belong to it, the way a
+      shell behaves; typing abandons the walk deliberately, because bash would
+      carry on walking and silently drop the edit, and the edit is about
+      someone's symptoms.
+- [x] **F4. Text size control**, 200% without loss of content (WCAG 2.2). Four
+      steps on Settings under Accessibility, persisted and applied as a percent
+      on `<html>` so the rem-based layout scales with it. Browser zoom is left
+      alone, never locked. The design point is that `rootFontSizeFor` returns a
+      literal from the step table rather than computing one, so `NaN` and `0px`
+      are structurally unrepresentable instead of merely guarded against;
+      `resolveTextSize` matches on the id, so `toString` and `0` are misses
+      like any other junk. Accessibility is no longer entirely a coming-soon
+      group, but Reduce motion and High contrast still are and still say so.
+- [x] **F5. `prefers-reduced-motion`** guard on the activity pulse. Already
+      built at `theme.css:885`, so it was verified in place rather than rebuilt.
+      The recorded location `ChatScreen.tsx:42` is stale: the pulse is the
+      `.aui-activity-dot` in `agentActivity.tsx`, styled from `theme.css`.
+      No automated coverage, because vitest under jsdom does not apply media
+      queries out of a stylesheet. That gap is real and worth closing with a
+      real browser check rather than a fake unit test.
+- [x] **F6. 44×44px tap targets** on the new controls. Send and cancel measured
+      38px tall at their `11px` padding and are now 44px; the composer input
+      moved from 42 to 44. `SuggestedPrompts` was already `min-h-11`. No
+      automated coverage, for the same jsdom reason as F5.
+- [x] **F7. Group complete.** F1–F6 landed in `ef5392d` (F1, F2, F3, F6),
+      `7bf6cdf` and `5bcef27` (F4). F5 needed no build. Frontend gate: tsc 0,
+      lint 0, 236/236 tests, green on four CI runs.
+
+<!-- end owner: frontend -->
 
 **Progress 2026-10-16/17.** A1, A2, A3, A4, B1-B4, B6, C6 and E1-E7 are
 landed. The frontend gate is green: tsc 0, 150/150 tests, lint 0. A3 added
 three tests — one clicks the button through to the Today route, one asserts
 MODERATE offers it, and one asserts LOW does not. The LOW case is asserted by
 absence on purpose, so putting the button on the calm card later breaks it.
-Group F is untouched.
 
-**Suggested order.** Group A, B1–B3 and E1–E7 are complete. What is left, in
-order: **D1–D4** → C1–C2 → B5, B7, B8 → group F. D1–D3 are code; **D4 is
+**Suggested order.** Group A, B1–B3, E1–E7 and group F are complete. What is
+left, in order: **D1–D4** → C1–C2 → B5, B7, B8. D1–D3 are code; **D4 is
 blocked on a data source rather than on code**, so that search is worth
-starting in parallel instead of after.
+starting in parallel instead of after. Two items need a decision rather than
+work: **B-018b** (five product defaults that decide what a new account looks
+like) and **B-020d** (민감정보 consent is recorded but not enforced).
 
 ---
 
@@ -545,6 +689,147 @@ Metadata-only on PostgreSQL 11+, so no table rewrite and no lock.
       The other four drifted defaults (`alerts.is_read`, both
       `symptom_events` booleans, `environment_snapshots.captured_at`) are
       mechanical insert-time constants and can be closed without a decision.
+
+---
+
+## B-020 — 민감정보 was collected, sent to a third party, and never consented to
+
+- **Reported:** 2026-10-19 (backend lane, production-readiness audit)
+- **Surface:** `backend/app/services/consent.py` (new), `backend/app/api/privacy.py`,
+  `backend/app/models/__init__.py`, `backend/tests/test_consent.py` (new)
+- **Status:** **partially fixed** — the record and the policy exist; the gate and
+  the sign-off do not. Read the open items.
+- **Sources:** [개인정보 보호법 제23조](https://www.law.go.kr/%EB%B2%95%EB%A0%B9/%EA%B0%9C%EC%9D%B8%EC%A0%95%EB%B3%B4%BO%B3%BC%ED%99%94%EB%B2%95/%EC%A0%9C23%EC%A1%B0),
+  [개인정보보호위원회 개인정보보호지침 제15조·제16조](https://www.law.go.kr/LSW/admRulLsInfoP.do?admRulId=73445&efYd=0),
+  [개인정보 처리 통합 안내서](https://www.privacy.go.kr/cmm/fms/FileDown.do?atchFileId=ATCH_000000000916941&fileSn=1),
+  [개인정보 처리방침 작성지침 제30조](https://www.privacy.go.kr/cmm/fms/FileDown.do?atchFileId=ATCH_000000000883004&fileSn=3)
+
+**Observed.** `privacy.py` opened with the comment *"Health data is 민감정보 under
+제23조 and needs its own consent"*, and then consented to nothing. Grepping the
+whole app for `동의|consent|처리방침|약관` returned **one hit, and it was that
+comment.**
+
+Three things were missing, and the third is the one that matters:
+
+1. **No consent record.** No row, column or flag anywhere recorded that anyone had
+   agreed to health-data processing. 제23조① makes health information 민감정보,
+   processable only on consent given *separately* from other consent, and 제15조②
+   requires four specific things be disclosed first.
+2. **No published policy.** 제30조 requires a 개인정보 처리방침 be established
+   **and 공개** — published. There was no policy and no page to put one on.
+3. **No disclosure of the transfer.** `core/openai_client.py` builds an
+   `OpenAI(base_url=...)` client and the symptom conversation is sent to it to
+   generate an answer. That ships 건강 information to an external processor, which
+   is 위탁 under 제22조 and belongs in the policy by name.
+
+**The wrong bit is the part worth reading.** The privacy summary written a day
+earlier said of saved coordinates: *"never sent to the LLM and never placed in a
+prompt."* True, and beside it the summary said nothing about the chat text, which
+**is** sent. Naming the thing that stays behind while staying silent about the
+one that leaves is worse than saying neither — it reads as reassurance covering
+the whole surface. Fixed in this commit.
+
+**Fixed.** `app/services/consent.py` adds the record (grant, withdraw, re-grant;
+withdrawal *clears* the grant rather than shadowing it) and the policy text,
+sectioned as 제30조 requires. Three endpoints: `GET /api/privacy/policy` (public
+on purpose — a policy you can only read after signing up was never disclosed
+before consent was sought), `GET`/`POST /api/privacy/consent`. 14 tests.
+
+The policy is served with `status: "draft"` and `requires_legal_review: true`.
+It is written from the code, not by a lawyer, and it says so rather than
+pretending otherwise.
+
+- [x] **B-020a. No consent record existed.** Now
+      `users.sensitive_consent_at` / `_version` / `_withdrawn_at`, with migration
+      `e5f6a7b8c9d0`. All nullable with no default: a backfill of `granted=true`
+      would manufacture consent nobody gave.
+- [x] **B-020b. No published policy.** `GET /api/privacy/policy`, including the
+      four 제15조② notice items and the 제22조 위탁 disclosure.
+- [x] **B-020c. The summary named the safe field and not the transferred one.**
+      The conversations entry now says the text is sent to the LLM provider.
+- [ ] **B-020d. Consent is recorded but not enforced.** `has_sensitive_consent()`
+      exists and nothing calls it. Gating the allergy and triage writes without
+      gating chat would leave the main flow working and everything else refusing,
+      which is worse than gating nothing — so this needs a decision, not a patch:
+      either the chat flow starts asking (frontend change, other lane), or the
+      app is a consent-gated beta and says so in the policy.
+- [ ] **B-020e. The policy is a draft and the operator is unnamed.** 제30조 wants
+      a named 사업자 and a 사업자등록번호. The policy text carries a placeholder
+      and `operator` is literal. Until someone fills that in this is not publishable.
+- [ ] **B-020f. `제23조③` should be checked again once sharing exists.** The
+      disclosure-and-opt-out duty is triggered by information exposed during
+      service. Today the app has no share or post feature, so it does not apply —
+      but `find_nearby_care` returns real clinic data and any future "share my
+      result" turns this from satisfied to owed.
+
+---
+
+## B-019 — Two migration systems, and the one the CLI runs was four columns behind
+
+- **Reported:** 2026-10-18 (backend lane, while making migrations run on boot)
+- **Surface:** `backend/alembic/versions/`, `backend/db/migrations/`,
+  `backend/db/init/01_schema.sql`, `backend/alembic/env.py`, `backend/entrypoint.sh`
+- **Status:** **fixed** — revision `c1d2e3f4a5b6`, `backend/entrypoint.sh`,
+  `backend/tests/test_migrations.py` (14 tests)
+
+**Observed.** This repo has *two* migration systems, and they had drifted apart.
+
+`backend/db/` holds hand-written SQL: `init/01_schema.sql` (generated from
+`docs/erd/gen_dmm.py`) plus `migrations/02`, `03`, `04`. That half was complete —
+`02` adds `conversations.title` and the two triage columns, `03` adds both CHECK
+constraints, `01_schema.sql` has all of it.
+
+`backend/alembic/versions/` held **one** file, the initial schema, and nothing
+else. So `alembic upgrade head` — the command a developer or a deploy script runs —
+produced a database with **no `conversations.title`, no `messages.triage_level`,
+no `messages.triage_reasons`, and neither CHECK constraint**. Every model column
+added since 2026-09-09 was reachable through one path and invisible through the
+other.
+
+The gap survived six weeks because **nothing ever ran the migrations at all.**
+`init_db()` calls `SQLModel.metadata.create_all`, which creates a table that is
+missing and does nothing whatsoever to a table that already exists. So on an
+existing database every one of those columns would have stayed missing. And the
+tests cannot catch it, because the suite builds its schema from SQLModel metadata
+— so "the tests pass" only ever meant "the models agree with the models".
+
+**The near-miss.** `backend/entrypoint.sh` was written first, to run
+`alembic upgrade head` on boot. Wiring that in *without* the new revision would
+have looked like the fix and been the opposite: it would have stamped every
+existing database at the initial revision and changed nothing, while giving
+everyone a green migration step to trust.
+
+**Fixed.** Revision `c1d2e3f4a5b6` adds the three columns and both constraints to
+the Alembic path, and `entrypoint.sh` runs `alembic upgrade head` before uvicorn.
+Proven on a genuinely empty Postgres: upgrade, idempotent re-upgrade, full
+`downgrade base`, rebuild, then diffed against every model — including proving
+both CHECK constraints actually reject bad values and accept the good ones.
+
+`alembic/env.py` now honours a caller-supplied `config.attributes["connection"]`,
+which is what lets the test suite apply the migrations inside a scratch schema
+instead of against whatever `DATABASE_URL` points at.
+
+- [x] **B-019a. The Alembic path was missing five schema objects.** Columns
+      `conversations.title`, `messages.triage_level`, `messages.triage_reasons`,
+      and constraints `messages_role_check`, `messages_triage_level_check`.
+- [x] **B-019b. Nothing ran the migrations.** `entrypoint.sh` now does, on every
+      boot. `alembic upgrade head` is a no-op once at head. It is *not* safe from
+      several replicas at once — if this scales out, move it to a one-shot
+      release job.
+- [ ] **B-019c. Two migration systems still both exist.** `db/migrations/*.sql`
+      is wired to nothing: compose mounts only `db/init` as
+      `/docker-entrypoint-initdb.d`, which runs once on an empty volume. So the
+      SQL migrations only ever applied when a human ran psql by hand. Pick one.
+      Alembic is the one that is now wired to boot, which makes it the one to
+      keep and the SQL set to retire.
+- [ ] **B-019d. The ORM and the generated SQL disagree on `triage_reasons`.**
+      `app/models/__init__.py` yields `nullable=True` with no server default
+      (`sa_column=Column(JSONB)` never inherits NOT NULL), while `gen_dmm.py`,
+      `01_schema.sql` and `db/migrations/02` all declare
+      `NOT NULL DEFAULT '[]'::jsonb`. Same class of bug as **B-018**, one column
+      over. Every insert goes through the ORM's `default_factory=list` so nothing
+      fails today; it fails the first time a raw INSERT or a bulk path writes the
+      row. Decide which is right and make the other match.
 
 ---
 
