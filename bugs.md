@@ -496,7 +496,7 @@ landed. The frontend gate is green: tsc 0, 150/150 tests, lint 0. A3 added
 three tests — one clicks the button through to the Today route, one asserts
 MODERATE offers it, and one asserts LOW does not. The LOW case is asserted by
 absence on purpose, so putting the button on the calm card later breaks it.
-Group F is untouched.
+Group F is complete — F1-F6 landed in `ef5392d`, `7bf6cdf` and `5bcef27`.
 
 **Suggested order.** Group A, B1–B3 and E1–E7 are complete. What is left, in
 order: **D1–D4** → C1–C2 → B5, B7, B8 → group F. D1–D3 are code; **D4 is
