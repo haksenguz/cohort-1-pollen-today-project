@@ -28,6 +28,8 @@ COPY db ./db
 COPY alembic ./alembic
 COPY alembic.ini ./
 COPY scripts ./scripts
+COPY entrypoint.sh ./entrypoint.sh
+RUN chmod +x ./entrypoint.sh
 
 # Unprivileged. Nothing in the app writes to disk.
 RUN useradd --create-home --uid 10001 appuser && chown -R appuser:appuser /app
@@ -41,9 +43,4 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=25s --retries=3 \
 # --proxy-headers is required, not cosmetic: the rate limiter keys on the client
 # IP, and behind nginx or a PaaS proxy every request would otherwise appear to
 # come from the proxy and share one bucket.
-CMD ["uvicorn", "app.main:app", \
-     "--host", "0.0.0.0", \
-     "--port", "8000", \
-     "--proxy-headers", \
-     "--forwarded-allow-ips", "*", \
-     "--timeout-keep-alive", "65"]
+CMD ["./entrypoint.sh"]

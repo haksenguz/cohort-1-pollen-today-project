@@ -121,8 +121,13 @@ and the reference healthcare-agent architecture in
       Still open, and **re-verified against live Postgres on 2026-10-17** rather
       than assumed: `conversations.title` is still NULL on every row. The
       endpoints READ it, nothing writes it. The UI falls back to "Untitled
-      conversation". The column and the migration exist, so this is purely the
-      missing write.
+      conversation".
+      **Corrected 2026-10-18:** this entry claimed "the column and the migration
+      exist, so this is purely the missing write". That was half wrong, and in the
+      dangerous direction — the column was in `db/migrations/02` and in
+      `01_schema.sql`, but in **no Alembic revision at all**, which is the path
+      that actually runs. See **B-019**. The write is still missing; it was also
+      sitting on a column the deployed schema could not guarantee.
 - [x] **B6.** New Chat button. Done, in the history sheet.
 - [ ] **B7.** Search across conversations. Not started.
 - [ ] **B8.** Resume an in-flight turn after reload — snapshot + SSE replay with
@@ -656,6 +661,75 @@ Metadata-only on PostgreSQL 11+, so no table rewrite and no lock.
       The other four drifted defaults (`alerts.is_read`, both
       `symptom_events` booleans, `environment_snapshots.captured_at`) are
       mechanical insert-time constants and can be closed without a decision.
+
+---
+
+## B-019 — Two migration systems, and the one the CLI runs was four columns behind
+
+- **Reported:** 2026-10-18 (backend lane, while making migrations run on boot)
+- **Surface:** `backend/alembic/versions/`, `backend/db/migrations/`,
+  `backend/db/init/01_schema.sql`, `backend/alembic/env.py`, `backend/entrypoint.sh`
+- **Status:** **fixed** — revision `c1d2e3f4a5b6`, `backend/entrypoint.sh`,
+  `backend/tests/test_migrations.py` (14 tests)
+
+**Observed.** This repo has *two* migration systems, and they had drifted apart.
+
+`backend/db/` holds hand-written SQL: `init/01_schema.sql` (generated from
+`docs/erd/gen_dmm.py`) plus `migrations/02`, `03`, `04`. That half was complete —
+`02` adds `conversations.title` and the two triage columns, `03` adds both CHECK
+constraints, `01_schema.sql` has all of it.
+
+`backend/alembic/versions/` held **one** file, the initial schema, and nothing
+else. So `alembic upgrade head` — the command a developer or a deploy script runs —
+produced a database with **no `conversations.title`, no `messages.triage_level`,
+no `messages.triage_reasons`, and neither CHECK constraint**. Every model column
+added since 2026-09-09 was reachable through one path and invisible through the
+other.
+
+The gap survived six weeks because **nothing ever ran the migrations at all.**
+`init_db()` calls `SQLModel.metadata.create_all`, which creates a table that is
+missing and does nothing whatsoever to a table that already exists. So on an
+existing database every one of those columns would have stayed missing. And the
+tests cannot catch it, because the suite builds its schema from SQLModel metadata
+— so "the tests pass" only ever meant "the models agree with the models".
+
+**The near-miss.** `backend/entrypoint.sh` was written first, to run
+`alembic upgrade head` on boot. Wiring that in *without* the new revision would
+have looked like the fix and been the opposite: it would have stamped every
+existing database at the initial revision and changed nothing, while giving
+everyone a green migration step to trust.
+
+**Fixed.** Revision `c1d2e3f4a5b6` adds the three columns and both constraints to
+the Alembic path, and `entrypoint.sh` runs `alembic upgrade head` before uvicorn.
+Proven on a genuinely empty Postgres: upgrade, idempotent re-upgrade, full
+`downgrade base`, rebuild, then diffed against every model — including proving
+both CHECK constraints actually reject bad values and accept the good ones.
+
+`alembic/env.py` now honours a caller-supplied `config.attributes["connection"]`,
+which is what lets the test suite apply the migrations inside a scratch schema
+instead of against whatever `DATABASE_URL` points at.
+
+- [x] **B-019a. The Alembic path was missing five schema objects.** Columns
+      `conversations.title`, `messages.triage_level`, `messages.triage_reasons`,
+      and constraints `messages_role_check`, `messages_triage_level_check`.
+- [x] **B-019b. Nothing ran the migrations.** `entrypoint.sh` now does, on every
+      boot. `alembic upgrade head` is a no-op once at head. It is *not* safe from
+      several replicas at once — if this scales out, move it to a one-shot
+      release job.
+- [ ] **B-019c. Two migration systems still both exist.** `db/migrations/*.sql`
+      is wired to nothing: compose mounts only `db/init` as
+      `/docker-entrypoint-initdb.d`, which runs once on an empty volume. So the
+      SQL migrations only ever applied when a human ran psql by hand. Pick one.
+      Alembic is the one that is now wired to boot, which makes it the one to
+      keep and the SQL set to retire.
+- [ ] **B-019d. The ORM and the generated SQL disagree on `triage_reasons`.**
+      `app/models/__init__.py` yields `nullable=True` with no server default
+      (`sa_column=Column(JSONB)` never inherits NOT NULL), while `gen_dmm.py`,
+      `01_schema.sql` and `db/migrations/02` all declare
+      `NOT NULL DEFAULT '[]'::jsonb`. Same class of bug as **B-018**, one column
+      over. Every insert goes through the ORM's `default_factory=list` so nothing
+      fails today; it fails the first time a raw INSERT or a bulk path writes the
+      row. Decide which is right and make the other match.
 
 ---
 
