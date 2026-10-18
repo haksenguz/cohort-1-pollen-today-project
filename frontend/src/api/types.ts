@@ -151,8 +151,8 @@ export interface DevLlmSettingsUpdateRequest {
  * A `status` SSE event from `POST /api/chat`.
  *
  * `stage` names a step of the fixed agent pipeline ("extracting", "assessing").
- * It is NOT a tool call: this agent has no tools and does no function-calling,
- * so nothing should ever render this as "using tool X".
+ * It is NOT a tool call. Tool calls arrive as `tool` events, so nothing should
+ * ever render a `status` event as "using tool X".
  */
 export interface ChatStatusEvent {
   stage: string;
@@ -215,10 +215,101 @@ export interface ChatResponse {
   triage_level: TriageLevel | null;
   triage_reasons: string[];
   triage_rule_version: string | null;
+  /**
+   * Every tool the agent called this turn.
+   *
+   * Absent unless the backend sent an audit for this turn, so an absent key
+   * means "this turn called no tools" and never has to be distinguished from an
+   * empty array. See the additive rule in `client.ts`.
+   */
+  tool_calls?: ToolCallAudit[];
 }
 
 export interface ChatErrorEvent {
   detail: string;
+}
+
+// ---- Chat tools ---------------------------------------------------------
+//
+// Wire contract in docs/GOAL.md. ADR 0001 is the ceiling here: no tool type
+// carries a triage level, severity or verdict, and no tool reports urgency.
+// Those come from the deterministic engine in
+// backend/app/services/triage.py and nowhere else.
+
+/**
+ * Where one tool call got to.
+ *
+ * `error` is also what a missing or unrecognised status degrades to. A call we
+ * cannot read must never read as fine.
+ */
+export type ToolCallStatus = "running" | "done" | "error";
+
+/**
+ * One `tool` SSE event: the model chose a tool, and this is that call's
+ * progress.
+ *
+ * `id` pairs a `running` event with its `done` or `error` event. An empty id
+ * means the backend sent none, so pair events by `name` and order instead.
+ *
+ * `summary` is one short plain-English line, never a raw exception. It is null
+ * when the backend sent none, or when the status was unreadable and the client
+ * marked the call `error` itself.
+ *
+ * `result` is populated for tools that return data. Today that is
+ * `find_nearby_care` only.
+ *
+ * `code` names WHY a call could not produce a result, in a small agreed set.
+ * It exists so the three failures a user can act on never collapse into one
+ * another: no location set is a five-second fix, a provider being offline is
+ * not, and neither means "there are no clinics near you". An unrecognised code
+ * is treated as a plain failure, never as success.
+ */
+export type ToolFailureCode = "no_location" | "provider_unavailable" | "no_hours_source";
+
+export interface ToolCallEvent {
+  id: string;
+  name: string;
+  status: ToolCallStatus;
+  args?: Record<string, unknown> | null;
+  summary?: string | null;
+  result?: NearbyCareResult | null;
+  code?: ToolFailureCode | string | null;
+}
+
+/**
+ * One row of `ChatResponse.tool_calls`: the audit of what the agent did.
+ *
+ * `id` is optional. The backend lane added it so an audit row lines up with
+ * its live `tool` event by id rather than by position; a response from a
+ * backend without it still parses, so correlation degrades to order.
+ */
+export interface ToolCallAudit {
+  id?: string | null;
+  name: string;
+  status: ToolCallStatus;
+  summary?: string | null;
+}
+
+/** One clinic from `find_nearby_care`, already ranked by distance. */
+export interface NearbyCareClinic {
+  name: string;
+  address: string | null;
+  distance_m: number | null;
+  phone: string | null;
+  rank: number;
+}
+
+/**
+ * What a clinic lookup returns for the chat to render.
+ *
+ * `provider_available` is the field that separates "searched and found none"
+ * from "never searched", the same way it does on `HospitalNearbyResponse`. It
+ * is optional because a backend that does not send it leaves the client unable
+ * to claim either, which is the `unreadable` state rather than an empty list.
+ */
+export interface NearbyCareResult {
+  clinics: NearbyCareClinic[];
+  provider_available?: boolean | null;
 }
 
 // ---- Conversations --------------------------------------------------

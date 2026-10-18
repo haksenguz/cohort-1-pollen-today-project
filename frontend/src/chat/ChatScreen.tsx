@@ -18,9 +18,12 @@ import {
   useLocalRuntime,
 } from "@assistant-ui/react";
 import { useEffect, useSyncExternalStore } from "react";
-import { allergyChatAdapter, adoptConversation } from "./allergyChatAdapter";
+import { useNavigate } from "react-router-dom";
+import { AgentActivity } from "./agentActivity";
 import { getActivity, subscribeActivity } from "./activity";
+import { allergyChatAdapter, adoptConversation } from "./allergyChatAdapter";
 import { ChatAgentStatus } from "./ChatAgentStatus";
+import { ToolResult } from "./ToolResult";
 import { AssistantTriage } from "./TriageVerdict";
 import { ChatHistorySheet } from "../components/ChatHistorySheet";
 import {
@@ -32,29 +35,6 @@ import {
   useConversationResume,
   useConversationRouteId,
 } from "./sessions";
-
-/**
- * Live stage indicator.
- *
- * A turn is two model calls plus the rule engine — several seconds. Without
- * this the composer sits there doing nothing and the whole screen reads as
- * broken. The text is the pipeline stage the backend reported; it never says
- * "using tool", because this agent has no tools and does no function-calling
- * (ADR 0001). `assessing` deliberately reads "applying the safety rules",
- * since that verdict comes from the deterministic engine and not the model.
- */
-function AgentActivity() {
-  const activity = useSyncExternalStore(subscribeActivity, getActivity);
-  if (!activity) return null;
-  return (
-    <p className="aui-activity" role="status" aria-live="polite">
-      {/* Keyed on the sequence so the pulse animation restarts on every
-          stage change instead of continuing from the previous stage. */}
-      <span className="aui-activity-dot" key={activity.seq} aria-hidden="true" />
-      {activity.label}
-    </p>
-  );
-}
 
 const UserMessage = () => (
   <MessagePrimitive.Root className="aui-msg aui-msg-me">
@@ -103,6 +83,39 @@ const Composer = () => (
   </ComposerPrimitive.Root>
 );
 
+/**
+ * The answer a tool produced, rendered where the user is already looking.
+ *
+ * While a call is running the activity strip above the composer already says
+ * so, so this only mounts once the call has settled. An errored call gets a
+ * card too: the strip's row is polite, and this announces the failure
+ * assertively, which is the right weight for "the search failed".
+ *
+ * Only a clinic lookup gets one. A tool this card cannot draw would otherwise
+ * leave "Clinic search result could not be read" sitting under a strip that
+ * just said something else happened entirely, which is two tools disagreeing
+ * about one call. The store answers whether this is a clinic lookup without
+ * holding the name that decides it.
+ */
+function LatestToolResult() {
+  const activity = useSyncExternalStore(subscribeActivity, getActivity);
+  const navigate = useNavigate();
+  const latest = activity?.tools.at(-1);
+  if (!latest || !latest.isClinicLookup) return null;
+  if (latest.status === "running") return null;
+  return (
+    <div className="px-3 pb-1">
+      <ToolResult
+        status={latest.status}
+        result={latest.result}
+        summary={latest.summary}
+        code={latest.code}
+        onAction={() => navigate("/settings")}
+      />
+    </div>
+  );
+}
+
 const Thread = () => (
   <ThreadPrimitive.Root className="aui-thread">
     <ChatHistorySheet />
@@ -127,6 +140,7 @@ const Thread = () => (
 
     <ChatAgentStatus />
     <AgentActivity />
+    <LatestToolResult />
     <Composer />
     <p className="aui-disclaimer">
       Not a diagnosis. If you have trouble breathing or swelling of the

@@ -15,6 +15,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { getToken } from "../auth/token";
+import type { ToolCallEvent } from "./types";
 import {
   API_BASE_URL,
   ApiError,
@@ -24,6 +25,8 @@ import {
   listConversations,
   markAlertRead,
   readPreferences,
+  streamChat,
+  UNKNOWN_TOOL_NAME,
   updatePreferences,
 } from "./client";
 
@@ -344,5 +347,322 @@ describe("getConversation", () => {
     await expect(getConversation(42)).rejects.toMatchObject({
       status: 401,
     } satisfies Partial<ApiError>);
+  });
+});
+
+const sse = (event: string, data: unknown): string =>
+  `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+
+/** One chunk per element, so the reader's buffering is exercised too. */
+const mockSseFetch = (chunks: string[]) => {
+  const encoder = new TextEncoder();
+  let index = 0;
+  return vi.fn().mockResolvedValue({
+    ok: true,
+    status: 200,
+    statusText: "OK",
+    headers: { get: () => null },
+    json: async () => ({}),
+    body: {
+      getReader: () => ({
+        read: async () =>
+          index < chunks.length
+            ? { done: false, value: encoder.encode(chunks[index++]) }
+            : { done: true, value: undefined },
+      }),
+    },
+  } as unknown as Response);
+};
+
+const DONE_PAYLOAD = {
+  message: "Here are three clinics near you.",
+  conversation_id: 42,
+  symptoms: [],
+  severity: null,
+  duration: null,
+  possible_trigger: null,
+  breathing_difficulty: null,
+  airway_swelling: null,
+  triage_level: null,
+  triage_reasons: [],
+  triage_rule_version: null,
+};
+
+describe("streamChat tool events", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("fires onTool with the id, name, status and args of a running call", async () => {
+    vi.mocked(getToken).mockReturnValue("tkn-abc");
+    const onTool = vi.fn();
+    const onDone = vi.fn();
+    vi.stubGlobal(
+      "fetch",
+      mockSseFetch([
+        sse("status", { stage: "acting" }),
+        sse("tool", {
+          id: "call_1",
+          name: "find_nearby_care",
+          status: "running",
+          args: { radius_m: 3000 },
+        }),
+        sse("message", { delta: "Looking now." }),
+        sse("done", DONE_PAYLOAD),
+      ]),
+    );
+
+    await streamChat("clinic near me?", null, { onTool, onDone });
+
+    expect(onTool).toHaveBeenCalledTimes(1);
+    expect(onTool).toHaveBeenCalledWith({
+      id: "call_1",
+      name: "find_nearby_care",
+      status: "running",
+      args: { radius_m: 3000 },
+      summary: null,
+      result: null,
+    });
+    expect(onDone).toHaveBeenCalledTimes(1);
+  });
+
+  it("still reports status, message and done exactly as before", async () => {
+    vi.mocked(getToken).mockReturnValue("tkn-abc");
+    const onStatus = vi.fn();
+    const onMessage = vi.fn();
+    const onError = vi.fn();
+    const onDone = vi.fn();
+    vi.stubGlobal(
+      "fetch",
+      mockSseFetch([
+        sse("status", { stage: "extracting" }),
+        sse("message", { delta: "How long has it been going on?" }),
+        sse("done", DONE_PAYLOAD),
+      ]),
+    );
+
+    await streamChat("my chest feels tight", null, { onStatus, onMessage, onError, onDone });
+
+    expect(onStatus).toHaveBeenCalledWith({ stage: "extracting" });
+    expect(onMessage).toHaveBeenCalledWith("How long has it been going on?");
+    expect(onError).not.toHaveBeenCalled();
+    // Unchanged on purpose. This test is the additive-contract guard: if a
+    // feature starts mutating the `done` payload, this line is where it shows.
+    expect(onDone).toHaveBeenCalledWith(DONE_PAYLOAD);
+    expect(Object.keys((onDone.mock.calls[0][0] as object))).not.toContain("tool_calls");
+  });
+
+  it("carries the clinic list on a done tool event", async () => {
+    vi.mocked(getToken).mockReturnValue("tkn-abc");
+    const onTool = vi.fn();
+    vi.stubGlobal(
+      "fetch",
+      mockSseFetch([
+        sse("tool", {
+          id: "call_1",
+          name: "find_nearby_care",
+          status: "done",
+          summary: "3 clinics found",
+          result: {
+            clinics: [
+              { name: "Seoul ENT Clinic", address: "Mapo-gu", distance_m: 1240, phone: "02-000", rank: 1 },
+              { name: "Hongdae Allergy Centre", address: null, distance_m: 3100, phone: null, rank: 2 },
+            ],
+          },
+        }),
+      ]),
+    );
+
+    await streamChat("clinic near me?", null, { onTool });
+
+    const [event] = onTool.mock.calls[0] as [{ result: { clinics: unknown[] } | null }];
+    expect(event.result?.clinics).toHaveLength(2);
+    expect(event.result?.clinics[0]).toEqual({
+      name: "Seoul ENT Clinic",
+      address: "Mapo-gu",
+      distance_m: 1240,
+      phone: "02-000",
+      rank: 1,
+    });
+  });
+
+  it("fills the audit array from tool_calls on the done event", async () => {
+    vi.mocked(getToken).mockReturnValue("tkn-abc");
+    const onDone = vi.fn();
+    vi.stubGlobal(
+      "fetch",
+      mockSseFetch([
+        sse("done", {
+          ...DONE_PAYLOAD,
+          tool_calls: [
+            { name: "find_nearby_care", status: "done", summary: "3 clinics found" },
+            { name: "check_availability", status: "error", summary: "No hours source" },
+          ],
+        }),
+      ]),
+    );
+
+    await streamChat("clinic near me?", null, { onDone });
+
+    expect(onDone.mock.calls[0][0].tool_calls).toEqual([
+      { name: "find_nearby_care", status: "done", summary: "3 clinics found" },
+      { name: "check_availability", status: "error", summary: "No hours source" },
+    ]);
+  });
+
+  it("omits tool_calls entirely when the backend sent no tool audit", async () => {
+    vi.mocked(getToken).mockReturnValue("tkn-abc");
+    const onDone = vi.fn();
+    vi.stubGlobal("fetch", mockSseFetch([sse("done", DONE_PAYLOAD)]));
+
+    await streamChat("hello", null, { onDone });
+
+    // Absent, not []. A key that only appears when the backend sends it is
+    // additive; a key injected into every response is a contract change, and
+    // it would break every consumer that snapshots the done payload.
+    expect(Object.keys(onDone.mock.calls[0][0] as object)).not.toContain("tool_calls");
+  });
+
+  it("still fires onTool when the summary is missing", async () => {
+    vi.mocked(getToken).mockReturnValue("tkn-abc");
+    const onTool = vi.fn();
+    vi.stubGlobal(
+      "fetch",
+      mockSseFetch([
+        sse("tool", { id: "call_1", name: "find_nearby_care", status: "done" }),
+      ]),
+    );
+
+    await streamChat("clinic near me?", null, { onTool });
+
+    expect(onTool).toHaveBeenCalledTimes(1);
+    const [event] = onTool.mock.calls[0] as [ToolCallEvent];
+    // A summary-less row is not a summary of the tool's name. The chat layer
+    // owns the wording; the client must not hand it a raw identifier.
+    expect(event.summary).toBeNull();
+  });
+
+  it("renders a missing tool name and an unreadable status instead of crashing", async () => {
+    vi.mocked(getToken).mockReturnValue("tkn-abc");
+    const onTool = vi.fn();
+    vi.stubGlobal(
+      "fetch",
+      mockSseFetch([
+        sse("tool", { id: "call_1", status: "finished" }),
+        sse("tool", "not an object"),
+      ]),
+    );
+
+    await expect(
+      streamChat("clinic near me?", null, { onTool }),
+    ).resolves.toBeUndefined();
+
+    expect(onTool).toHaveBeenCalledTimes(1);
+    const [event] = onTool.mock.calls[0] as [{ name: string; status: string }];
+    expect(event.name).toBe(UNKNOWN_TOOL_NAME);
+    expect(event.status).toBe("error");
+  });
+
+  it("keeps a malformed result null instead of an empty clinic list", async () => {
+    vi.mocked(getToken).mockReturnValue("tkn-abc");
+    const onTool = vi.fn();
+    vi.stubGlobal(
+      "fetch",
+      mockSseFetch([
+        // Every one of these is a result we could not read. Coercing any of
+        // them to `[]` is what makes the card claim "no clinics found".
+        sse("tool", { id: "c1", name: "find_nearby_care", status: "done", result: {} }),
+        sse("tool", { id: "c2", name: "find_nearby_care", status: "done", result: { clinics: "three" } }),
+        sse("tool", { id: "c3", name: "find_nearby_care", status: "done", result: "ok" }),
+      ]),
+    );
+
+    await streamChat("clinic near me?", null, { onTool });
+
+    for (const [event] of onTool.mock.calls as [ToolCallEvent][]) {
+      expect(event.result).toBeNull();
+    }
+  });
+
+  it("carries provider_available so an offline provider is not an empty result", async () => {
+    vi.mocked(getToken).mockReturnValue("tkn-abc");
+    const onTool = vi.fn();
+    vi.stubGlobal(
+      "fetch",
+      mockSseFetch([
+        sse("tool", {
+          id: "c1",
+          name: "find_nearby_care",
+          status: "done",
+          result: { provider_available: false, count: 0, clinics: [] },
+        }),
+        sse("tool", {
+          id: "c2",
+          name: "find_nearby_care",
+          status: "done",
+          result: { provider_available: true, clinics: [{ name: "A Clinic", distance_m: 900 }] },
+        }),
+      ]),
+    );
+
+    await streamChat("clinic near me?", null, { onTool });
+
+    const [offline, online] = onTool.mock.calls.map(
+      ([event]) => event as ToolCallEvent,
+    );
+    expect(offline.result?.provider_available).toBe(false);
+    expect(offline.result?.clinics).toEqual([]);
+    expect(online.result?.provider_available).toBe(true);
+    expect(online.result?.clinics).toHaveLength(1);
+  });
+
+  it("keeps the stream alive when a tool payload is unparseable JSON", async () => {
+    vi.mocked(getToken).mockReturnValue("tkn-abc");
+    const onTool = vi.fn();
+    const onMessage = vi.fn();
+    const onDone = vi.fn();
+    vi.stubGlobal(
+      "fetch",
+      mockSseFetch([
+        "event: tool\ndata: {not json\n\n",
+        sse("tool", { id: "call_1", name: "find_nearby_care", status: "error", summary: "Provider unavailable" }),
+        sse("message", { delta: "I could not reach the clinic list." }),
+        sse("done", { ...DONE_PAYLOAD, tool_calls: [{ name: "find_nearby_care", status: "error", summary: "Provider unavailable" }] }),
+      ]),
+    );
+
+    await expect(
+      streamChat("clinic near me?", null, { onTool, onMessage, onDone }),
+    ).resolves.toBeUndefined();
+
+    expect(onTool).toHaveBeenCalledTimes(1);
+    expect(onTool.mock.calls[0][0].summary).toBe("Provider unavailable");
+    expect(onMessage).toHaveBeenCalledTimes(1);
+    expect(onDone).toHaveBeenCalledTimes(1);
+    expect(onDone.mock.calls[0][0].tool_calls).toHaveLength(1);
+  });
+
+  it("never puts a triage field on a tool event", async () => {
+    vi.mocked(getToken).mockReturnValue("tkn-abc");
+    const onTool = vi.fn();
+    vi.stubGlobal(
+      "fetch",
+      mockSseFetch([
+        sse("tool", {
+          id: "call_1",
+          name: "find_nearby_care",
+          status: "error",
+          summary: "Provider unavailable",
+          triage_level: "EMERGENCY",
+          triage_verdict: "emergency",
+        }),
+      ]),
+    );
+
+    await streamChat("clinic near me?", null, { onTool });
+
+    const [event] = onTool.mock.calls[0] as [Record<string, unknown>];
+    expect(Object.keys(event)).not.toContain("triage_level");
+    expect(Object.keys(event)).not.toContain("triage_verdict");
   });
 });

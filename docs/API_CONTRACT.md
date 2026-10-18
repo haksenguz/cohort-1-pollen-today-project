@@ -370,6 +370,55 @@ data: {"detail": "the symptom agent failed to process this message"}
 | `triage_level` | `str \| null` (a `TriageLevel` value when set) |
 | `triage_reasons` | `list[str]` |
 | `triage_rule_version` | `str \| null` |
+| `tool_calls` | `list[ToolCallEvent] \| null` — **omitted entirely when no tool ran**, never `[]`. Absence and an empty array are different states. |
+
+### `tool` events (added 2026-10-18)
+
+A tool call is announced when the model chooses it and settled when it returns.
+`status` is `running` | `done` | `error`. `id` pairs a `running` with its
+terminal event.
+
+| field | on | notes |
+| --- | --- | --- |
+| `id` | all | pairs the `running` with its `done`/`error` |
+| `name` | all | internal identifier — never render it |
+| `status` | all | |
+| `args` | `running` only | what the model asked for; noise once settled |
+| `summary` | settled | one plain-English line, never an exception, never JSON |
+| `result` | `done` only | the rows, for a tool with an agreed result key |
+| `code` | settled | why there is no result; see below |
+
+```
+event: tool
+data: {"id":"call_1","name":"find_nearby_hospitals","status":"running","args":{"speciality":"ALLERGY"}}
+
+event: tool
+data: {"id":"call_1","name":"find_nearby_hospitals","status":"done","summary":"Found 5 results.",
+       "result":{"clinics":[{"name":"...","address":"...","distance_m":129,"phone":null,"rank":1}],
+                 "provider_available":true}}
+
+event: tool
+data: {"id":"call_2","name":"find_nearby_hospitals","status":"error","code":"no_location",
+       "summary":"We need your location first. Your profile has no location saved, so we could not
+                  search. This does not mean there are no clinics around you."}
+```
+
+**`code`** is what stops three different failures collapsing into one flat
+"something went wrong":
+
+| code | means | client |
+| --- | --- | --- |
+| `no_location` | the caller's profile has no coordinates | "We need your location first", with a button to Settings |
+| `provider_unavailable` | the upstream was not configured or not reachable | "Clinic search is offline… We did not search." |
+| `no_hours_source` | no real opening-hours data exists | plain failure; reserved, not yet emitted |
+
+**`no_location` must never render as "no clinics found."** Nothing was searched,
+so the count is unknown, and on a safety path that is a claim nobody can
+support. An unrecognised `code` renders as a plain failure — never as success.
+
+`provider_available` inside `result` carries the same distinction for the
+success path: `true` with an empty `clinics` means we searched and found
+nothing, which is a different statement from never having searched.
 
 **Other error paths:** an unknown `conversation_id` raises `HTTPException(404,
 "conversation not found")`. That happens inside an already-started

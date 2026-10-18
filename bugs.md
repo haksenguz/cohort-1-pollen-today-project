@@ -49,8 +49,14 @@ one-tap `tel:119`.
 the conversation id in a module-level `let`. Refresh the page or reopen the
 installed PWA and it is `null` — the next message silently starts a new
 conversation. Meanwhile `conversations` and `messages` (`models/__init__.py:44`,
-`:53`) persist every turn, and no endpoint in `backend/app/api/` can list or
-load them.
+`:53`) persist every turn with no way to read them back.
+
+> **Resolved as of 2026-10-17, and this paragraph is kept for the record.** The
+> read side now exists — see B1/B2 below — and the module-level `let` is gone.
+> What remains open is not "no session" but two narrower problems, both tracked:
+> the `conversations.updated_at` column is still never written (**B-015**), and
+> nothing generates a title (**B5**). Do not read the original wording below as
+> current state; read the checkbox list.
 
 **The constraint that outranks all of it.** ADR 0001: the LLM does conversation
 and extraction; `services/triage.py` owns every safety decision. Giving the model
@@ -78,9 +84,21 @@ and the reference healthcare-agent architecture in
 - [x] **A2. One-tap `tel:119`** on the EMERGENCY card. Done 2026-10-16,
       full-width button inside the verdict banner. The static footer disclaimer
       is untouched.
-- [ ] **A3. Surface the post-triage next action.** `hospitals.py` exists and the
-      chat still does not call it. A verdict should lead to "find care near
-      you". Not started.
+- [x] **A3. Surface the post-triage next action.** Done 2026-10-17 (`4210126`).
+      EMERGENCY and MODERATE get a "Find a clinic near you" button that routes
+      to `/today`; LOW deliberately does not get one, because putting a
+      clinic-finder on the calm card would train people to ignore the button
+      that matters.
+      This was a hand-off, not a build. `getNearbyHospitals` already existed
+      (`api/client.ts:158`) and TodayPage already renders the ranked
+      nearby-clinic list with distance, address, and honest
+      unavailable/error/empty states — including telling the user plainly when
+      no location is set. Duplicating that list inside a chat bubble would have
+      meant rebuilding all four states for nothing. Today owns the location
+      question, so the route has no dead end.
+      Known cost of the hand-off: **the route is the thing, not the results.**
+      The user leaves the chat to see care options, and the verdict card is no
+      longer in view. Do not read A3 as "chat can show clinics".
 - [x] **A4. Never let a tool change a safety verdict.** Handed to the backend
       lane as `backend/tests/test_tool_registry.py`, landed alongside the tool
       skeleton rather than after it.
@@ -100,8 +118,11 @@ and the reference healthcare-agent architecture in
       empty and error states — "no conversations" and "failed to load" do not
       look the same.
 - [ ] **B5.** Auto-generate a conversation title from the first user message.
-      Still open. The endpoints READ `conversations.title` but nothing writes
-      it, so it is always null. The UI falls back to "Untitled conversation".
+      Still open, and **re-verified against live Postgres on 2026-10-17** rather
+      than assumed: `conversations.title` is still NULL on every row. The
+      endpoints READ it, nothing writes it. The UI falls back to "Untitled
+      conversation". The column and the migration exist, so this is purely the
+      missing write.
 - [x] **B6.** New Chat button. Done, in the history sheet.
 - [ ] **B7.** Search across conversations. Not started.
 - [ ] **B8.** Resume an in-flight turn after reload — snapshot + SSE replay with
@@ -109,8 +130,16 @@ and the reference healthcare-agent architecture in
 
 ### C. Chat experience
 
-- [ ] **C1. Real token streaming.** `chat.py:220` sends the whole reply in one
-      `message` event. Stream deltas; target first token under ~800ms.
+- [ ] **C1. Real token streaming.** **Partially delivered — read this before
+      claiming it is done.** The whole-reply-in-one-event behaviour described in
+      the original report is gone: the stream now emits incremental `message`
+      deltas, concatenating exactly to the final reply (word-start offsets, empty
+      input yields zero deltas, whitespace-only is delivered verbatim). But that
+      is **incremental delivery of an already-complete string, not
+      provider-side token streaming** — the model has finished before the first
+      delta is produced, so the <800ms first-token target is still unmet and
+      nothing here improves time-to-first-byte. Still open: get deltas from the
+      provider as they are generated.
 - [ ] **C2. Markdown rendering** to semantic HTML — the model already emits
       `**bold**` and lists, currently rendered literally.
 - [ ] **C3. Retry / regenerate** the last response without retyping.
@@ -137,17 +166,139 @@ Sources: [ReAct / core concepts](https://cloud.google.com/resources/core-concept
 [healthcare agent architecture](https://www.appther.com/blogs/build-healthcare-ai-agent) ·
 [scheduling workflow stages](https://thoughtly.com/blog/ai-agents-healthcare-appointment-scheduling-intake)
 
-- [ ] **D1. Tool-calling loop.** The model receives typed tool schemas and
-      chooses which to call, with what arguments, in what order. `LLMClient`
-      grows a `bind_tools` / function-call path instead of returning a bare string.
-- [ ] **D2. ReAct loop.** Reason → act → observe → repeat, with a hard step and
-      cost cap. Bounded and observable, never an open-ended while-loop.
-- [ ] **D3. `search_nearby_care`** tool → wraps `find_nearby_hospitals`. First
-      argument: the user's stored location, not a re-typed coordinate.
-- [ ] **D4. `check_availability`** tool. **Blocked upstream:** Naver Local Search
-      returns no hours. Resolve a real source (hospital booking APIs / 지역 health
-      centre data) before writing this tool. Do not let the model infer or guess
-      availability from static text — an invented clinic hour is exactly the kind
+- [x] **D1. Tool-calling loop.** Landed. `LLMClient.complete_with_tools` binds
+      typed schemas, parses `message.tool_calls` and hands them back;
+      `chat.py` builds the registry per request and offers it to the model, so
+      the model chooses the tool, the arguments and the order. The A4 guard
+      still walks schemas recursively and rejects urgency intent by name and
+      description. What did *not* change: `LLMClient` still exposes a plain
+      `complete()` for every client that offers no tools, so a turn with no
+      registry is byte-for-byte the old chatbot.
+- [x] **D2. ReAct loop.** Landed. Reason → act → observe, hard-bounded at
+      `MAX_TOOL_STEPS = 3` (`symptom_agent.py:54`). One honest detail about
+      what that number bounds: it caps **model calls**, not tool calls. A
+      single step may issue several calls in parallel — the live smoke did
+      exactly that, asking for `ALLERGY` and `GENERAL` clinics in one step —
+      so the cost ceiling is on provider round-trips, which is where the money
+      is, not on tool invocations. The observe step is real: each result is
+      appended to the transcript as a `tool` message with the tool's own name,
+      and the next step reads it.
+- [x] **D3. `find_nearby_care` → wraps `find_nearby_hospitals`.** Landed, and the
+      first argument is the user's stored location rather than a re-typed
+      coordinate — that was the whole blocker. **D8 also landed as a side
+      effect**: the observations are in state and are read, which is what made
+      the tool loop observable at all.
+
+      *What actually made it reachable, since the stub did not say:* the schema
+      declared `"required": ["latitude", "longitude"]`, and the model's only
+      route to a location is the profile, which it cannot read. So the tool was
+      unsatisfiable by construction. The live proof was a turn with a location
+      saved that ran `starting → extracting → saving → done` with no call at
+      all; the same message with coordinates typed inline called instantly.
+      The schema now asks for nothing, and `chat.py:_origin_for` resolves the
+      profile. **A `wired=False` stub hid this** — it looked like "not built
+      yet" rather than "built wrong". A half-saved location (latitude, no
+      longitude) is treated as none, because a wrong clinic on a safety path is
+      worse than no clinic.
+- [ ] **D4. `check_availability`** tool. **The data source is resolved — this is no
+      longer blocked on research.** Re-verified 2026-10-18 against the portal's own
+      field schema, not from memory. Correcting the earlier note that called it
+      blocked upstream:
+
+      | source | id | what it actually returns |
+      |---|---|---|
+      | 국립중앙의료원 전국 응급의료기관 정보 조회 | [15000563](https://www.data.go.kr/data/15000563/openapi.do) | `dutyTime1c`–`dutyTime8c` / `...s` = 진료시간 per weekday **and 공휴일**; `dutyEryn` = 응급실운영여부; `hvec`/`hvgc`/`hvcc` = live ER/ward/neuro bed counts; `wgs84Lat`/`wgs84Lon`; `dgidIdName` = 진료과목 |
+      | 국립중앙의료원 전국 명절 비상 진료기관 | [15000480](https://www.data.go.kr/data/15000480/openapi.do) | `dutyDaytime1`–`3` = 명절비상진료시간, e.g. `09:00~17:00`, queried by 시/구/과목/날짜 |
+      | 국립중앙의료원 전국 병·의원 찾기 | [15000736](https://www.data.go.kr/data/15000736/openapi.do) | ordinary weekly hours, queryable by 진료요일 |
+
+      All three are REST, XML, free (비용부과유무: 무료), and updated 실시간. The
+      `S`/`C` pair is start/close, so a day is a real range rather than a single
+      timestamp, which is what "is this clinic open right now" actually needs.
+
+      **State of the evidence, precisely:** the field list above is now verified
+      against the portal's *published spec*, not read off a summary. The 15000563
+      page embeds a complete Swagger definition in its own HTML (`paramtrNm` /
+      `paramtrDc`), and every name in the table matches it verbatim, cross-checked
+      against safemap's 병의원 출력결과표. It is still **not** verified against a live
+      response, because a response needs the key. Treat the schema as proven and the
+      payload shape as unproven.
+
+      **Four things the table does not tell you, each of which will bite:**
+
+      1. **Times are `HHMM` strings, not `HH:MM`.** safemap's own sample row reads
+         `dutytime1c=1830`, `dutytime1s=2000`. Parsed as a number, 1830 is a
+         nonsense minute value. A bare `-` means no hours that day, which is a
+         *closed* answer and must never render as an open clinic.
+      2. **There is no coordinate filter.** The portal's own keywords are
+         주소(시도), 주소(시군구), 질환수술(시술명), 페이지번호, 목록건수. So the cheap
+         shape is *one* 시군구 query returning every ER in the district with its
+         hours, matched against `find_nearby_care`'s list by `hpid` or name. Not one
+         call per clinic. Responses carry `hpid`, `wgs84Lat`, `wgs84Lon`, so that
+         match is possible.
+      3. **`dutyTime8*` is 공휴일, and a holiday is not derivable from a weekday.**
+         Answering correctly on a public holiday needs a KR holiday calendar. Until
+         one exists, either say so or fall back to the weekday pair, but never
+         guess which of the two applies.
+      4. **Scope is 응급의료기관 only.** This lists emergency institutions, not
+         ordinary allergy clinics. The tool can honestly answer "is the ER open";
+         it cannot answer "is my allergist open" and must not look like it can.
+         "Now" also has to be computed in `Asia/Seoul`, not the server's local zone.
+
+      **The key already exists. What is missing is a per-service 활용신청.**
+      `POLLEN_API_KEY` in `backend/.env` *is* a live data.go.kr `serviceKey` —
+      `pollen_service.py` calls `apis.data.go.kr/1360000/HealthWthrIdxServiceV3`
+      with it. Probed 2026-10-18, so this is not inference:
+
+      | call | result |
+      | --- | --- |
+      | that same key, the pollen service it is approved for | HTTP 200, authorised |
+      | that same key, `B552657/ErmctInfoInqireService` (15000563) | HTTP 403, `returnReasonCode=30`, 등록되지 않은 서비스키 |
+
+      The first row is the control: the key is valid and current, not expired.
+      So code 30 here is **not** a bad key. The portal's own table defines 30 as
+      "check that the key is right **and** that 활용신청 for that service
+      completed" — the first half is now proven true, so it is the second half
+      that is failing. The remaining step is applying for each dataset on the
+      portal, which is a form against the key we already hold, not a fresh
+      credential. Whether those datasets auto-approve decides minutes vs days.
+
+      **Code 12 is not an auth error, and it can be shown on this very service.**
+      A wrong endpoint path answers `returnReasonCode=12`
+      ("해당 오픈API 서비스가 없거나 폐기됨"). Do not read it as "this service is
+      discontinued". Get the path from the dataset's own page, not by guessing.
+
+      Reproduced 2026-10-18 with the same key against the same dataset: the bare
+      service root answers **400 / code 12**, while two real operations
+      (`getEgytLcinfoInqire`, `getEgytBassInfoInqire`) both answer **403 / code
+      30**. Same service, same key, so the only variable is whether the operation
+      path actually exists. That is the whole discriminator: **12 means the request
+      never reached the auth layer; 30 means it did and the key was judged there.**
+      A 12 is therefore not evidence about a service's health and must never be
+      recorded as one.
+
+      `pollen_service.py` already carries this lesson in its module docstring, and
+      `test_pollen_service.py` asserts the service name, so this trap already has a
+      regression test before anyone touches the hospital APIs.
+
+      **Name the key type in settings, not just "the key".** 활용 hands out a
+      프로젝트 서비스키 for 기업회원 and a 개인 서비스키 for 개인, so the format
+      depends on the account that applied. This one is a 개인, so it is a 개인
+      서비스키. Until 활용신청 is approved per service a call can only fail two
+      ways, both documented on the portal page and both worth asserting on
+      explicitly: `SERVICE_ACCESS_DENIED_ERROR` (20, no approval for that service)
+      and `SERVICE_KEY_IS_NOT_REGISTERED_ERROR` (30, key not registered **or
+      활용신청 not completed** — these two are indistinguishable from the caller's
+      side and both are worth distinguishing in a log). Those
+      two are config failures and must not surface as "no clinics found".
+
+      The key is already in hand, so the trigger for building is an approved
+      활용신청, not a credential. Wire the tool against `httpx.MockTransport`
+      first, exactly as `hospital_service` is tested, and remember it is XML and
+      not JSON, so a guessed parser is worse than no parser. Then make one live
+      call to confirm the payload shape.
+
+      Do not let the model infer or guess availability from static text — an
+      invented clinic hour is exactly the kind
       of confident wrong answer that makes this dangerous.
 - [ ] **D5. `book_appointment`** — writes only after explicit patient
       confirmation, atomically, so two users cannot take the same slot.
@@ -224,15 +375,176 @@ bug. They are listed as open because the underlying settings are still missing.
       (`ChatScreen.tsx:42`).
 - [ ] **F6. 44×44px tap targets** on the new controls.
 
-**Progress 2026-10-16.** A1, A2, A4, B1-B4, B6, C6 and E1-E7 are landed and
-the frontend gate is green (tsc 0, 147/147 tests, lint 0). Groups D and F are
-untouched. Next up is **A3**, then **D1-D4**, then the rest of B and C.
+**Progress 2026-10-16/17.** A1, A2, A3, A4, B1-B4, B6, C6 and E1-E7 are
+landed. The frontend gate is green: tsc 0, 150/150 tests, lint 0. A3 added
+three tests — one clicks the button through to the Today route, one asserts
+MODERATE offers it, and one asserts LOW does not. The LOW case is asserted by
+absence on purpose, so putting the button on the calm card later breaks it.
+Group F is untouched.
 
-**Suggested order.** A1–A4 → B1–B3 → D1–D4 → B4–B8 → C1–C2 → E1–E7. A group A
-is a safety hole in an app whose central claim is that a deterministic engine
-decides urgency, and it is a small diff. Group D is the difference between a
-chatbot and an agent, and D4 is blocked on a data source rather than on code —
-worth starting that search now, in parallel with A.
+**Suggested order.** Group A, B1–B3 and E1–E7 are complete. What is left, in
+order: **D1–D4** → C1–C2 → B5, B7, B8 → group F. D1–D3 are code; **D4 is
+blocked on a data source rather than on code**, so that search is worth
+starting in parallel instead of after.
+
+---
+
+## B-015 — The history list was ordered and dated by creation time, not activity
+
+- **Reported:** 2026-10-17 (backend lane, while reconciling B-014 group B)
+- **Surface:** `backend/app/services/conversation_service.py`,
+  `backend/app/api/chat.py`, `frontend/src/components/ChatHistoryList.tsx`
+- **Status:** **partially fixed** — `23c309e`. Read the open half.
+
+**Observed.** `list_conversations` ordered by `conversations.updated_at`. Nothing
+ever writes that column: `_persist_turn` returns an existing conversation
+untouched, so it stayed frozen at whatever INSERT put there. The list was
+therefore really ordering by creation time and rendering a conversation's age as
+its last activity. It looked correct only because a conversation is normally
+messaged seconds after it is opened — a bug waiting for a user who comes back
+the next day.
+
+Live evidence before the fix: 44 conversations had a frozen `updated_at` older
+than their own last message. Conversation 46 sat 35 microseconds after its own
+`created_at` while its final message arrived 50 seconds later.
+
+**Fixed:** ordering and the reported value are both derived from
+`coalesce(max(messages.created_at), created_at)`. Returning the derived value in
+the *existing* `updated_at` field matters as much as the ordering, because
+`ChatHistoryList.tsx:112` renders `formatRelativeTime(conversation.updated_at)` —
+fixing only the order would sort correctly and then display "3 months ago" on a
+thread from yesterday.
+
+**The `coalesce` is load-bearing, not cosmetic.** Without it an empty
+conversation yields `updated_at: None`, which fails `ConversationSummaryResponse`
+validation and turns `GET /api/conversations` into a **500 for that user**.
+
+**Deliberately derived, not maintained by a trigger.** Tests build their schema
+from SQLModel metadata, not from `db/init/01_schema.sql`, so a `BEFORE UPDATE`
+trigger would exist in production and not in any test database — a test
+asserting the ordering would pass in CI and fail live. That is B-011's exact
+shape.
+
+- [ ] **B-015a. `conversations.updated_at` is still never written.** The fix is at
+      the query level only. Nothing in the app reads the column any more, so
+      nothing depends on it — but anyone reading it directly gets a plausible
+      wrong answer with no error, which is the same failure class as the
+      unrecognised `role` value and the `?? "low"` fallback. Either write it in
+      `_persist_turn`, or drop the column. Leaving it is the indefensible middle.
+
+---
+
+## B-016 — `messages.role` was free text, so a bad value silently deleted the safety banner
+
+- **Reported:** 2026-10-17 (backend lane; raised by the frontend lane, which owns
+  the rendering that breaks)
+- **Surface:** `backend/app/models/__init__.py`, `backend/app/api/conversations.py`,
+  `backend/db/migrations/`, `docs/erd/gen_dmm.py`,
+  `frontend/src/api/types.ts`, `frontend/src/chat/sessions/conversationSession.ts`
+- **Status:** fixed — `354f51b`, `91362e5`
+
+**Observed.** `role VARCHAR(10)` and `triage_level VARCHAR(12)` had no CHECK
+constraint. `role` is the dangerous one: the frontend's
+`ConversationMessageRole` is a **closed** union (`"user" | "assistant"`) and
+`conversationSession.ts` passes it into assistant-ui with no normalisation;
+assistant-ui picks the message component **by role**, and `TriageVerdict` renders
+inside `AssistantMessage` only. A role it does not recognise means the triage
+banner does not render — silently, no error, no console output, just a missing
+EMERGENCY card on a message that had one when it was live.
+
+Live data made this concrete rather than theoretical: **every row in the database
+stores UPPERCASE** `'USER'` / `'ASSISTANT'`, because that is what
+`MessageRole` produces. Only the API response is lowercased. So the column and
+the contract genuinely disagreed, and the disagreement was invisible until you
+read the rows.
+
+**The trap that makes this worth writing down.** The obvious constraint, written
+to match the documented lowercase API contract, **aborts against a live
+database**: Postgres validates existing rows when `ADD CONSTRAINT` runs. It has
+to be the column's casing. This only ever appears against real data, never in a
+fresh test database.
+
+**`SYSTEM` is excluded on purpose.** `MessageRole.SYSTEM` exists as a third enum
+member, nothing writes it, and the frontend union has no `"system"`. Allowing it
+would let through a row that renders with no safety banner. Failing at the
+constraint is the correct outcome; `gen_dmm.py` previously documented SYSTEM as
+legal and is corrected.
+
+---
+
+## B-017 — The constraints were enforced in production and in no test database at all
+
+- **Reported:** 2026-10-17 (frontend lane, while checking how far B-016's guard
+  actually reached)
+- **Surface:** `backend/tests/conftest.py`, `.github/workflows/ci.yml`,
+  `backend/app/models/__init__.py`
+- **Status:** fixed — `91362e5`
+
+**Observed.** B-016's constraints existed in exactly two places —
+`docs/erd/gen_dmm.py` (which regenerates `01_schema.sql`) and
+`db/migrations/03`. **The test suite applies neither.** Tests build their schema
+from SQLModel metadata, and CI never runs `db/migrations/*.sql`. So every test
+database — including the Postgres 17 service the workflow spins up *specifically
+to catch dialect-specific bugs* — had a `messages` table with no constraint at
+all. Worse, the two tests guarding those constraints only asserted on
+`path.read_text()` of the SQL *files*, so the suite passed green while the safety
+constraint was enforced nowhere it was actually exercised.
+
+**This is the one that makes B-016 worth trusting.** A constraint that exists
+only in a generated file is enforced where it costs the most and verified
+nowhere.
+
+**Fixed:** `Message` declares both constraints in `__table_args__`, so
+`create_all` emits them on every engine. Behavioural tests now write `user`,
+`User`, `SYSTEM` and `assistant` and expect each rejected, alongside the values
+`chat.py` actually writes being accepted — 14 pass on SQLite, 14 on Postgres.
+
+Adding it immediately caught two existing tests that had been relying on the
+constraint not existing: `test_conftest_wipe_order.py` and
+`test_conversations_api.py` both inserted lowercase `"user"`, a value `chat.py`
+never writes. Both now use the `MessageRole` spelling. Neither test was about
+casing, so nothing they assert changed.
+
+---
+
+## B-018 — `gen_dmm.py` and the live database disagreed on defaults, and one half of the fix is a trap
+
+- **Reported:** 2026-10-17 (backend lane, surfaced while probing B-016's casing)
+- **Surface:** `docs/erd/gen_dmm.py`, `backend/db/init/01_schema.sql`,
+  `backend/db/migrations/`
+- **Status:** **partially fixed** — `87c112a`. Read the open half.
+
+**Observed.** `01_schema.sql` is *generated* from `gen_dmm.py` and is rewritten
+wholesale every run. It declared `DEFAULT now()` on every `created_at`, and the
+live database had none of them. Production and a fresh install were different
+shapes. The app never noticed, because SQLModel sets these Python-side on every
+insert — but any raw SQL `INSERT` had to supply the timestamp by hand or fail on
+NOT NULL. That is how it was found: two probe runs failed for this reason.
+
+**Fixed:** migration `04` sets the default on all ten `created_at` columns.
+Idempotent by construction — it only touches columns that currently have none.
+Metadata-only on PostgreSQL 11+, so no table rewrite and no lock.
+
+- [ ] **B-018a. `updated_at` defaults are still missing, and adding them would be
+      worse than leaving them.** `gen_dmm.py` declares `DEFAULT now()` for
+      `updated_at` too, and the live columns have none. Do **not** close that gap
+      the obvious way. A default on `updated_at` is written at INSERT and never
+      moves, because there is no trigger — so after any UPDATE the row carries a
+      stale timestamp that is still `NOT NULL`, still plausible, and passes every
+      check that exists. Nothing errors; the column looks maintained and is not.
+      Interacts with **B-015a**: the same column is the one the history list
+      used to trust. Either add a real `BEFORE UPDATE` trigger, or keep the value
+      explicit and correct `gen_dmm.py` so the file stops lying.
+
+- [ ] **B-018b. Five product defaults remain unapplied.** `conversations.status`
+      `'ACTIVE'`, `notification_preferences.alert_pollen` /
+      `alert_air_quality` / `alert_weather` all `true`, and `min_risk_level`
+      `'MODERATE'`. These are **product decisions, not schema cleanup** — they
+      decide what a brand-new account looks like before the user touches
+      anything, and they are exactly the settings someone notices on day one.
+      The other four drifted defaults (`alerts.is_read`, both
+      `symptom_events` booleans, `environment_snapshots.captured_at`) are
+      mechanical insert-time constants and can be closed without a decision.
 
 ---
 
