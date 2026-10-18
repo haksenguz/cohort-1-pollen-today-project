@@ -44,9 +44,16 @@ async def update_me(
 
     if body.password is not None:
         current_user.password_hash = hash_password(body.password)
-    if body.latitude is not None:
+
+    # Tested against `model_fields_set`, not against `is not None`, because
+    # `None` is a legitimate value here and not the same as "not mentioned".
+    # With an `is not None` guard a location could be set but never cleared: a
+    # user who saved the wrong place had no way back, and the chat's
+    # `no_location` card - which tells someone to fix their location - offered
+    # no matching way to undo it. Omitting the field still means "leave it".
+    if "latitude" in body.model_fields_set:
         current_user.latitude = body.latitude
-    if body.longitude is not None:
+    if "longitude" in body.model_fields_set:
         current_user.longitude = body.longitude
 
     current_user.updated_at = datetime.now(UTC)
