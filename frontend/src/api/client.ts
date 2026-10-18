@@ -20,10 +20,15 @@ import type {
   HospitalNearbyParams,
   HospitalNearbyResponse,
   LoginRequest,
+  NearbyCareClinic,
+  NearbyCareResult,
   PreferenceResponse,
   PreferenceUpdateRequest,
   RegisterRequest,
   TokenResponse,
+  ToolCallAudit,
+  ToolCallEvent,
+  ToolCallStatus,
   TriageRequest,
   TriageResponse,
   UserResponse,
@@ -234,10 +239,11 @@ export function getConversation(conversationId: number): Promise<ConversationDet
 
 // ---- Chat (SSE) ------------------------------------------------------
 //
-// POST /api/chat is Bearer-protected and streams Server-Sent Events: one
-// `message` event followed by one `done` event, or a single `error` event.
-// It is not a token-by-token stream — `message.delta` carries the full
-// assistant reply as one string. See docs/API_CONTRACT.md.
+// POST /api/chat is Bearer-protected and streams Server-Sent Events: a
+// `status` event per pipeline step, any number of `tool` events as the agent
+// acts, one `message` event, then one `done` event, or a single `error`
+// event. It is not a token-by-token stream — `message.delta` carries the full
+// assistant reply as one string. See docs/API_CONTRACT.md and docs/GOAL.md.
 //
 // The chat screen itself lives in frontend/src/chat/ (TASKS.md J5) — kept here
 // only so every endpoint in the contract has a typed client function.
@@ -248,7 +254,12 @@ export interface ChatStreamHandlers {
   onError?: (error: ChatErrorEvent) => void;
   /** Fired for each `status` event: which part of the turn is running now. */
   onStatus?: (event: ChatStatusEvent) => void;
+  /** Fired for each `tool` event: a tool call starting, finishing or failing. */
+  onTool?: (event: ToolCallEvent) => void;
 }
+
+/** Stands in for a tool name the backend did not send. */
+export const UNKNOWN_TOOL_NAME = "Unknown tool";
 
 export async function streamChat(
   message: string,
@@ -311,15 +322,137 @@ function parseSseEvent(rawEvent: string, handlers: ChatStreamHandlers): void {
   }
 
   if (dataLines.length === 0) return;
-  const data = JSON.parse(dataLines.join("\n"));
+
+  let data: unknown;
+  try {
+    data = JSON.parse(dataLines.join("\n"));
+  } catch {
+    // One unreadable payload is not worth losing the rest of the turn over.
+    return;
+  }
 
   if (eventName === "message") {
-    handlers.onMessage?.(data.delta as string);
+    if (isRecord(data)) handlers.onMessage?.(data.delta as string);
   } else if (eventName === "status") {
     handlers.onStatus?.(data as ChatStatusEvent);
+  } else if (eventName === "tool") {
+    const toolEvent = toToolCallEvent(data);
+    if (toolEvent) handlers.onTool?.(toolEvent);
   } else if (eventName === "done") {
-    handlers.onDone?.(data as ChatResponse);
+    handlers.onDone?.(withToolCalls(data));
   } else if (eventName === "error") {
     handlers.onError?.(data as ChatErrorEvent);
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function toToolCallStatus(value: unknown): ToolCallStatus {
+  if (value === "running" || value === "done" || value === "error") return value;
+  return "error";
+}
+
+function toDisplayName(value: unknown, fallback: string): string {
+  return typeof value === "string" && value.length > 0 ? value : fallback;
+}
+
+function toOptionalString(value: unknown): string | null {
+  return typeof value === "string" ? value : null;
+}
+
+function toOptionalNumber(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function toOptionalBoolean(value: unknown): boolean | null {
+  return typeof value === "boolean" ? value : null;
+}
+
+/**
+ * Turns a raw `tool` payload into the shape the chat layer renders. Returns
+ * null only when the payload is not an object at all, because there is
+ * nothing to render. A payload that is an object but incomplete still fires:
+ * the name falls back to `UNKNOWN_TOOL_NAME`, an absent summary stays null for
+ * the chat layer to fill, and an unreadable status becomes `error` rather than
+ * a call that looks fine.
+ */
+function toToolCallEvent(data: unknown): ToolCallEvent | null {
+  if (!isRecord(data)) return null;
+  return {
+    id: toOptionalString(data.id) ?? "",
+    name: toDisplayName(data.name, UNKNOWN_TOOL_NAME),
+    status: toToolCallStatus(data.status),
+    args: isRecord(data.args) ? data.args : null,
+    summary: toOptionalString(data.summary),
+    result: toNearbyCareResult(data.result),
+    // Same additive rule: carry the key only when the backend sent one.
+    ...(toOptionalString(data.code) === null ? {} : { code: toOptionalString(data.code) as string }),
+  };
+}
+
+/**
+ * A payload that is not an object, or one that carries no clinic list, is
+ * null. It is deliberately NOT an empty list: coercing a malformed result to
+ * `[]` is what makes a lookup we never got render as "no clinics found", which
+ * is the same lie as an unreadable triage level rendering as LOW.
+ *
+ * `provider_available: false` is the one shape that survives without a clinic
+ * list, because it is the server saying outright that it did not search. That
+ * is a real value, not a stand-in for a missing one.
+ */
+function toNearbyCareResult(value: unknown): NearbyCareResult | null {
+  if (!isRecord(value)) return null;
+
+  const providerAvailable = toOptionalBoolean(value.provider_available);
+  if (providerAvailable === false) return { clinics: [], provider_available: false };
+
+  if (!Array.isArray(value.clinics)) return null;
+  return {
+    clinics: value.clinics.filter(isRecord).map(toNearbyCareClinic),
+    ...(providerAvailable === null ? {} : { provider_available: providerAvailable }),
+  };
+}
+
+function toNearbyCareClinic(clinic: Record<string, unknown>, index: number): NearbyCareClinic {
+  return {
+    name: toDisplayName(clinic.name, "Unknown clinic"),
+    address: toOptionalString(clinic.address),
+    distance_m: toOptionalNumber(clinic.distance_m),
+    phone: toOptionalString(clinic.phone),
+    // The list is already distance-ordered, so position is the rank the
+    // backend would have sent.
+    rank: toOptionalNumber(clinic.rank) ?? index + 1,
+  };
+}
+
+function toToolCallAudit(value: unknown): ToolCallAudit[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter(isRecord).map((entry) => {
+    const id = toOptionalString(entry.id);
+    return {
+      // Same additive rule as `tool_calls` itself: carry the id only when the
+      // backend sent one, rather than stamping `id: null` onto every row.
+      ...(id === null ? {} : { id }),
+      name: toDisplayName(entry.name, UNKNOWN_TOOL_NAME),
+      status: toToolCallStatus(entry.status),
+      summary: toOptionalString(entry.summary),
+    };
+  });
+}
+
+/**
+ * Attach the audit array ONLY when the backend actually sent one. Injecting
+ * `tool_calls: []` into every response would change the `done` payload for
+ * every consumer, and the test "still reports status, message and done exactly
+ * as before" exists precisely to prove this feature is additive. A new
+ * optional key is additive; a new always-present key is not.
+ */
+function withToolCalls(data: unknown): ChatResponse {
+  const response = data as ChatResponse;
+  if (isRecord(data) && Array.isArray(data.tool_calls)) {
+    response.tool_calls = toToolCallAudit(data.tool_calls);
+  }
+  return response;
 }

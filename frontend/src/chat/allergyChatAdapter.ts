@@ -20,7 +20,7 @@ import type {
 import { ApiError, streamChat } from "../api/client";
 import type { ChatResponse } from "../api/types";
 import { clearToken } from "../auth/token";
-import { clearActivity, setActivity } from "./activity";
+import { clearActivity, setActivity, setToolActivity } from "./activity";
 
 /**
  * The backend identifies a conversation by id and expects it back on the
@@ -136,8 +136,10 @@ export const allergyChatAdapter: ChatModelAdapter = {
         conversationId,
         {
           // `status` events name which part of the turn is running. They are
-          // pipeline stages, NOT tool calls — this agent has no tools.
+          // pipeline stages, NOT tool calls — a `tool` event is the only thing
+          // that reports a tool, and it arrives separately.
           onStatus: (event) => setActivity(event.stage),
+          onTool: (event) => setToolActivity(event),
           onMessage: (delta) => {
             state.reply = delta;
           },
