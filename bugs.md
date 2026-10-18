@@ -200,10 +200,30 @@ Sources: [ReAct / core concepts](https://cloud.google.com/resources/core-concept
       yet" rather than "built wrong". A half-saved location (latitude, no
       longitude) is treated as none, because a wrong clinic on a safety path is
       worse than no clinic.
-- [ ] **D4. `check_availability`** tool. **Blocked upstream:** Naver Local Search
-      returns no hours. Resolve a real source (hospital booking APIs / 지역 health
-      centre data) before writing this tool. Do not let the model infer or guess
-      availability from static text — an invented clinic hour is exactly the kind
+- [ ] **D4. `check_availability`** tool. **The data source is resolved — this is no
+      longer blocked on research.** Re-verified 2026-10-18 against the portal's own
+      field schema, not from memory. Correcting the earlier note that called it
+      blocked upstream:
+
+      | source | id | what it actually returns |
+      |---|---|---|
+      | 국립중앙의료원 전국 응급의료기관 정보 조회 | [15000563](https://www.data.go.kr/data/15000563/openapi.do) | `dutyTime1c`–`dutyTime8c` / `...s` = 진료시간 per weekday **and 공휴일**; `dutyEryn` = 응급실운영여부; `hvec`/`hvgc`/`hvcc` = live ER/ward/neuro bed counts; `wgs84Lat`/`wgs84Lon`; `dgidIdName` = 진료과목 |
+      | 국립중앙의료원 전국 명절 비상 진료기관 | [15000480](https://www.data.go.kr/data/15000480/openapi.do) | `dutyDaytime1`–`3` = 명절비상진료시간, e.g. `09:00~17:00`, queried by 시/구/과목/날짜 |
+      | 국립중앙의료원 전국 병·의원 찾기 | [15000736](https://www.data.go.kr/data/15000736/openapi.do) | ordinary weekly hours, queryable by 진료요일 |
+
+      All three are REST, XML, free, and updated 실시간. The `S`/`C` pair is
+      start/close, so a day is a real range rather than a single timestamp — which
+      is what "is this clinic open right now" actually needs.
+
+      **What is still missing is a credential, not a source:** there is no
+      data.go.kr key in `backend/.env` or in settings today. Until one is
+      obtained, none of this is verified against a live call — the field list
+      above is read off the portal, not proven by a response. Obtain the key,
+      then wire the tool against `httpx.MockTransport` first, exactly as
+      `hospital_service` is tested.
+
+      Do not let the model infer or guess availability from static text — an
+      invented clinic hour is exactly the kind
       of confident wrong answer that makes this dangerous.
 - [ ] **D5. `book_appointment`** — writes only after explicit patient
       confirmation, atomically, so two users cannot take the same slot.
