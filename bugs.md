@@ -312,8 +312,56 @@ Sources: [ReAct / core concepts](https://cloud.google.com/resources/core-concept
       episodes, preferred hospital, language.
 - [ ] **D10. Grounding / RAG layer** over approved content — self-care guidance,
       what the triage levels mean, what to do before an appointment.
-- [ ] **D11. Human escalation path** — hand off to a person when the request
-      leaves the approved workflow.
+- [x] **D11. Human escalation path.** Done as `app/services/escalation.py`, checked in
+      `chat.py` before the model runs. **First finding: there was nothing at
+      all** — grepping `crisis|자살|self-harm|1393|emergency_contact` across
+      `backend/app` returned nothing, in an app that invites the user to write
+      in any language.
+
+      Two properties, both deliberate:
+
+      - **Before the model.** The failure being prevented is the model
+        improvising a medical answer. A prompt telling it to decline is a
+        request; this is a branch that removes the request.
+      - **Deterministic.** A classifier that runs *inside* the model is one the
+        model can be talked out of, and it changes when the model is retrained.
+        This is plain Python, so a reviewer can read exactly what it matches.
+
+      The scope line comes from how regulators describe this class of app. The
+      [MHRA symptom-checker appendix](https://assets.publishing.service.gov.uk/media/64a7d235c531eb000c650051/Appendix_1_-_symptom_checkers.pdf)
+      puts *"software that only signposts the user to suitable care e.g. see
+      your GP, go to A&E"* in the **unlikely to be a medical device** column,
+      while software that *"provides the diagnosis by itself"* or *"claims are
+      made that it can perform, or support the function of, a clinician"*
+      sits on the other side. So diagnosis / drug / dose are refused, and the
+      refusal still does the signposting — a bare "I can't help" strands the
+      user.
+
+      The crisis reply carries the sentence that must never change: **nobody at
+      this app reads these messages.** There is no staffed team, and an app that
+      implies a human is watching spends the exact moment someone reached out.
+      Crisis routing to 1393 / 1333 is real; the promise of a reply would not be.
+
+      Live-probed: `요즘 죽고 싶어요` and `I want to kill myself` both settle
+      `escalated: "crisis"`, `약 얼마나 먹어야 되나요` and `진단해줘` settle
+      `out_of_scope`, and `내 눈이 가려워요` still takes the normal triage path
+      — `escalated` absent, so the boundary is not eating ordinary traffic.
+
+      **Three bugs the tests caught, all worth not repeating:**
+      - The out-of-scope pattern ended with a stray `|`. In VERBOSE mode that
+        adds an empty alternative matching at position 0, so it fired on
+        *every* message and the app would have refused to answer anything.
+      - `목숨을 끊` is `끊`, not `끓` — wrong vowel, so a real Korean crisis
+        phrase slipped through.
+      - The e2e test first asserted the model object was never *constructed*.
+        FastAPI resolves dependencies at request entry, so `get_llm` runs
+        before `_run_chat` is entered. The real assertion is that no
+        **completion** is ever requested.
+
+      Known gaps are in the module docstring, not hidden: patterns are
+      per-language so code-switched phrasing matches nothing, and a crisis
+      described only in body language matches nothing. It is a net, not a
+      guarantee.
 - [ ] **D12. Audit log of every tool call**, for a medical app that books
       appointments.
 - [ ] **D13. Explicit autonomy level per tool** — read-only tools vs
