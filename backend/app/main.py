@@ -18,6 +18,7 @@ from app.api import (
     health,
     hospitals,
     notifications,
+    privacy,
     triage,
     users,
 )
@@ -112,6 +113,7 @@ app.include_router(environment.router)
 app.include_router(triage.router)
 app.include_router(auth.router)
 app.include_router(users.router)
+app.include_router(privacy.router)
 app.include_router(allergies.router)
 app.include_router(chat.router)
 app.include_router(conversations.router)

@@ -355,8 +355,38 @@ bug. They are listed as open because the underlying settings are still missing.
       `ThemeIcon` export is deleted.
 - [ ] **E8. Emergency contact** — the highest-value missing setting for an allergy
       app; every OS ships its own version.
-- [ ] **E9. Privacy & data** — what is stored (location, messages, symptom
-      events), export, delete. None of it is currently viewable.
+- [x] **E9. Privacy & data.** Done as `app/services/privacy_service.py` +
+      `app/api/privacy.py`. Grounded in 개인정보 보호법 rather than guessed —
+      four articles shaped the implementation:
+
+      | law | what it forced |
+      | --- | --- |
+      | 제23조 | symptom and triage data is **민감정보**, so every derived row is labelled sensitive in the summary, not just "we store some data" |
+      | 제4조3 / 제35조 | export is a **transmission** right, so it is a file download with `Content-Disposition`, not a page you scroll |
+      | 제36조③ | deletion must be **non-recoverable** — no soft-delete flag, no tombstone row |
+      | 제38조④ | access and deletion **must not be harder than sign-up**, so all three rights sit behind the existing bearer token with no email round-trip |
+
+      `GET /api/privacy/summary` also states what is **never** collected (name,
+      address, device location history, any ad identifier). Silence reads as a
+      gap in the policy and the user cannot tell "we don't do this" from "we
+      did not mention it".
+
+      Two things worth keeping in mind if this is ever changed:
+
+      - **`password_hash` is never exported.** An export that carries it is a
+        credential-disclosure bug wearing a privacy feature's clothes.
+      - **The delete has to reach `messages`, `triage_results` and
+        `hospital_results`, none of which have a `user_id`.** A delete written
+        table-by-table on `user_id` removes the parents and leaves three tables
+        of orphans pointing at a user that no longer exists. All three
+        cascade branches are mutation-checked.
+
+      `environment_snapshots` is deliberately **not** deleted: it has no
+      `user_id`, it is shared cache keyed on a *location*, and removing it on
+      one account's exit would destroy data other accounts still read.
+
+      Still open: there is **no UI** for any of this. The endpoints exist and
+      the Settings "Delete account" row still renders disabled (E5).
 - [ ] **E10. Language** — the composer says "any language"; the UI is
       English-only.
 - [ ] **E11. Units** — °C/°F, pollen concentration. Absent from the API too.
