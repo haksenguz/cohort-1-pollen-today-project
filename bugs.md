@@ -248,9 +248,20 @@ Sources: [ReAct / core concepts](https://cloud.google.com/resources/core-concept
       data.go.kr key in `backend/.env` or in settings today, and obtaining one is
       the only remaining step. It is free and needs no card, but it does require a
       data.go.kr account plus a 활용신청 per service, and that signup belongs to
-      Ismail rather than to an agent. Once a key exists, wire the tool against
-      `httpx.MockTransport` first, exactly as `hospital_service` is tested, then
-      make one live call to confirm the payload shape.
+      Ismail rather than to an agent.
+
+      **Name the key type in settings, not just "the key".** 활용 hands out a
+      프로젝트 서비스키 for 기업회원 and a 개인 서비스키 for 개인, so the format
+      depends on the account that applied. This one is a 개인, so it is a 개인
+      서비스키. Until 활용신청 is approved per service a call can only fail two
+      ways, both documented on the portal page and both worth asserting on
+      explicitly: `SERVICE_ACCESS_DENIED_ERROR` (20, no approval for that service)
+      and `SERVICE_KEY_IS_NOT_REGISTERED_ERROR` (30, key not registered). Those
+      two are config failures and must not surface as "no clinics found".
+
+      Once a key exists, wire the tool against `httpx.MockTransport` first, exactly
+      as `hospital_service` is tested, then make one live call to confirm the
+      payload shape.
 
       Do not let the model infer or guess availability from static text — an
       invented clinic hour is exactly the kind
