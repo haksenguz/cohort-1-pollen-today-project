@@ -1,36 +1,81 @@
+# Production-shaped stack. `docker compose up` brings up the same four things
+# everywhere, so "works on my machine" and "works in prod" stop being different
+# claims.
+#
+# Only `web` is published. The previous version mapped 5432 and 6379 to the
+# host, which on a public machine is an open database and an open Redis.
+
+name: allergy-ai
+
 services:
   db:
     image: postgres:16
+    restart: unless-stopped
     environment:
-      POSTGRES_USER: allergy
-      POSTGRES_PASSWORD: allergy
-      POSTGRES_DB: allergy_ai
-    ports:
-      - "5432:5432"
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB}
     volumes:
       - pgdata:/var/lib/postgresql/data
+      # Runs once, on an empty volume only. Safe to drop if the app's own
+      # init_db() already creates the schema - which it does, from SQLModel
+      # metadata, so the constraints declared in __table_args__ are applied.
       - ./backend/db/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U allergy -d allergy_ai"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 5s
       timeout: 3s
       retries: 10
+    # Deliberately no `ports:`. Reachable only as `db:5432` inside the network.
 
   redis:
-    image: redis:7
-    ports:
-      - "6379:6379"
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    # Deliberately no `ports:`.
 
   api:
     build: ./backend
+    restart: unless-stopped
     environment:
-      DATABASE_URL: postgresql+asyncpg://allergy:allergy@db:5432/allergy_ai
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       REDIS_URL: redis://redis:6379
-    ports:
-      - "8000:8000"
+      CORS_ORIGINS: ${CORS_ORIGINS:?set CORS_ORIGINS to your public site origin}
+      # Never :? these three. Absent keys must degrade honestly, not crash:
+      # no LLM key means the agent cannot run, and no POLLEN_API_KEY means the
+      # backend serves a flagged sample rather than a real reading.
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-}
+      NAVER_CLIENT_ID: ${NAVER_CLIENT_ID:-}
+      NAVER_CLIENT_SECRET: ${NAVER_CLIENT_SECRET:-}
+      POLLEN_API_KEY: ${POLLEN_API_KEY:-}
+      DEV_SETTINGS_ENABLED: "false"
     depends_on:
       db:
         condition: service_healthy
+      redis:
+        condition: service_healthy
+    # No `ports:` on the public interface either - nginx reaches it as `api:8000`.
+
+  web:
+    build:
+      context: ./frontend
+      args:
+        # Baked into the bundle. Absolute origin, because client.ts does
+        # `new URL(path, API_BASE_URL)`.
+        VITE_API_BASE_URL: ${PUBLIC_ORIGIN:?set PUBLIC_ORIGIN, e.g. https://your-host}
+    restart: unless-stopped
+    ports:
+      - "${PUBLIC_BIND:-0.0.0.0}:${PUBLIC_PORT:-8080}:80"
+    depends_on:
+      api:
+        condition: service_started
 
 volumes:
   pgdata:
