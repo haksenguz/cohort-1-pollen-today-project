@@ -5,6 +5,24 @@ and where, so a fix can be verified against the same surface.
 
 Status: `open` · `in progress` · `fixed` · `wontfix`
 
+<!-- TWO-WRITER PROTOCOL -----------------------------------------------------
+Two agents edit this file concurrently in one checkout. Regions are marked
+below with `owner:` markers. Edit only inside a region you own; if your change
+belongs in a region the other lane owns, do not edit it — put the text in a
+message and let that lane apply it.
+
+  owner: backend   groups A, B, D, E; the header; the Progress and Suggested
+                   order paragraphs; every numbered B-0xx entry.
+  owner: frontend  group C and group F only.
+
+This split was set because the two lanes had been editing the same file by luck
+rather than by method: 505bee8, e895a05, 5bcef27 and the later privacy and
+migration commits all rewrote lines in here, and they have not collided only
+because no two touched the same line at the same time. Git will happily produce
+a conflict on the next unlucky commit, and a conflicted ledger is worse than a
+stale one because it loses an entry silently.
+-->
+
 ---
 
 ## B-014 — The agent is a chatbot, and the chat screen discards what the engine already decided
@@ -133,6 +151,7 @@ and the reference healthcare-agent architecture in
 - [ ] **B8.** Resume an in-flight turn after reload — snapshot + SSE replay with
       `Last-Event-ID`, so a dropped stream is not a lost answer. Not started.
 
+<!-- owner: frontend -->
 ### C. Chat experience
 
 - [ ] **C1. Real token streaming.** **Partially delivered — read this before
@@ -162,6 +181,7 @@ and the reference healthcare-agent architecture in
       inside the chat screen, not just the global banner.
 - [ ] **C11. Citations / confidence** so the output feels reviewable.
 
+<!-- owner: backend -->
 ### D. Agent harness — the actual fix
 
 Sources: [ReAct / core concepts](https://cloud.google.com/resources/core-concepts-ai-agents) ·
@@ -378,6 +398,7 @@ Sources: [ReAct / core concepts](https://cloud.google.com/resources/core-concept
       duration, slot, booking, status. None of this exists in the ERD yet.
 - [ ] **D16. Confirmation + reminder** delivery (ties into B-010).
 
+<!-- owner: backend -->
 ### E. Settings page
 
 The four groups below — Emergency, Chat & language, Accessibility, Privacy &
@@ -447,6 +468,7 @@ bug. They are listed as open because the underlying settings are still missing.
       Depends on group B.
 - [ ] **E13. Notification quiet hours + a link to the OS permission state.**
 
+<!-- owner: frontend -->
 ### F. Accessibility
 
 - [x] **F1. `role="log"` + `aria-atomic="false"` + `aria-busy` on the transcript.**
@@ -490,18 +512,24 @@ bug. They are listed as open because the underlying settings are still missing.
       38px tall at their `11px` padding and are now 44px; the composer input
       moved from 42 to 44. `SuggestedPrompts` was already `min-h-11`. No
       automated coverage, for the same jsdom reason as F5.
+- [x] **F7. Group complete.** F1–F6 landed in `ef5392d` (F1, F2, F3, F6),
+      `7bf6cdf` and `5bcef27` (F4). F5 needed no build. Frontend gate: tsc 0,
+      lint 0, 236/236 tests, green on four CI runs.
+
+<!-- end owner: frontend -->
 
 **Progress 2026-10-16/17.** A1, A2, A3, A4, B1-B4, B6, C6 and E1-E7 are
 landed. The frontend gate is green: tsc 0, 150/150 tests, lint 0. A3 added
 three tests — one clicks the button through to the Today route, one asserts
 MODERATE offers it, and one asserts LOW does not. The LOW case is asserted by
 absence on purpose, so putting the button on the calm card later breaks it.
-Group F is complete — F1-F6 landed in `ef5392d`, `7bf6cdf` and `5bcef27`.
 
-**Suggested order.** Group A, B1–B3 and E1–E7 are complete. What is left, in
-order: **D1–D4** → C1–C2 → B5, B7, B8 → group F. D1–D3 are code; **D4 is
+**Suggested order.** Group A, B1–B3, E1–E7 and group F are complete. What is
+left, in order: **D1–D4** → C1–C2 → B5, B7, B8. D1–D3 are code; **D4 is
 blocked on a data source rather than on code**, so that search is worth
-starting in parallel instead of after.
+starting in parallel instead of after. Two items need a decision rather than
+work: **B-018b** (five product defaults that decide what a new account looks
+like) and **B-020d** (민감정보 consent is recorded but not enforced).
 
 ---
 
