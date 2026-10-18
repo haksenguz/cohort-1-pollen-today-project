@@ -211,16 +211,46 @@ Sources: [ReAct / core concepts](https://cloud.google.com/resources/core-concept
       | 국립중앙의료원 전국 명절 비상 진료기관 | [15000480](https://www.data.go.kr/data/15000480/openapi.do) | `dutyDaytime1`–`3` = 명절비상진료시간, e.g. `09:00~17:00`, queried by 시/구/과목/날짜 |
       | 국립중앙의료원 전국 병·의원 찾기 | [15000736](https://www.data.go.kr/data/15000736/openapi.do) | ordinary weekly hours, queryable by 진료요일 |
 
-      All three are REST, XML, free, and updated 실시간. The `S`/`C` pair is
-      start/close, so a day is a real range rather than a single timestamp — which
-      is what "is this clinic open right now" actually needs.
+      All three are REST, XML, free (비용부과유무: 무료), and updated 실시간. The
+      `S`/`C` pair is start/close, so a day is a real range rather than a single
+      timestamp, which is what "is this clinic open right now" actually needs.
+
+      **State of the evidence, precisely:** the field list above is now verified
+      against the portal's *published spec*, not read off a summary. The 15000563
+      page embeds a complete Swagger definition in its own HTML (`paramtrNm` /
+      `paramtrDc`), and every name in the table matches it verbatim, cross-checked
+      against safemap's 병의원 출력결과표. It is still **not** verified against a live
+      response, because a response needs the key. Treat the schema as proven and the
+      payload shape as unproven.
+
+      **Four things the table does not tell you, each of which will bite:**
+
+      1. **Times are `HHMM` strings, not `HH:MM`.** safemap's own sample row reads
+         `dutytime1c=1830`, `dutytime1s=2000`. Parsed as a number, 1830 is a
+         nonsense minute value. A bare `-` means no hours that day, which is a
+         *closed* answer and must never render as an open clinic.
+      2. **There is no coordinate filter.** The portal's own keywords are
+         주소(시도), 주소(시군구), 질환수술(시술명), 페이지번호, 목록건수. So the cheap
+         shape is *one* 시군구 query returning every ER in the district with its
+         hours, matched against `find_nearby_care`'s list by `hpid` or name. Not one
+         call per clinic. Responses carry `hpid`, `wgs84Lat`, `wgs84Lon`, so that
+         match is possible.
+      3. **`dutyTime8*` is 공휴일, and a holiday is not derivable from a weekday.**
+         Answering correctly on a public holiday needs a KR holiday calendar. Until
+         one exists, either say so or fall back to the weekday pair, but never
+         guess which of the two applies.
+      4. **Scope is 응급의료기관 only.** This lists emergency institutions, not
+         ordinary allergy clinics. The tool can honestly answer "is the ER open";
+         it cannot answer "is my allergist open" and must not look like it can.
+         "Now" also has to be computed in `Asia/Seoul`, not the server's local zone.
 
       **What is still missing is a credential, not a source:** there is no
-      data.go.kr key in `backend/.env` or in settings today. Until one is
-      obtained, none of this is verified against a live call — the field list
-      above is read off the portal, not proven by a response. Obtain the key,
-      then wire the tool against `httpx.MockTransport` first, exactly as
-      `hospital_service` is tested.
+      data.go.kr key in `backend/.env` or in settings today, and obtaining one is
+      the only remaining step. It is free and needs no card, but it does require a
+      data.go.kr account plus a 활용신청 per service, and that signup belongs to
+      Ismail rather than to an agent. Once a key exists, wire the tool against
+      `httpx.MockTransport` first, exactly as `hospital_service` is tested, then
+      make one live call to confirm the payload shape.
 
       Do not let the model infer or guess availability from static text — an
       invented clinic hour is exactly the kind
