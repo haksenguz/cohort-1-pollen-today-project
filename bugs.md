@@ -244,11 +244,29 @@ Sources: [ReAct / core concepts](https://cloud.google.com/resources/core-concept
          it cannot answer "is my allergist open" and must not look like it can.
          "Now" also has to be computed in `Asia/Seoul`, not the server's local zone.
 
-      **What is still missing is a credential, not a source:** there is no
-      data.go.kr key in `backend/.env` or in settings today, and obtaining one is
-      the only remaining step. It is free and needs no card, but it does require a
-      data.go.kr account plus a 활용신청 per service, and that signup belongs to
-      Ismail rather than to an agent.
+      **The key already exists. What is missing is a per-service 활용신청.**
+      `POLLEN_API_KEY` in `backend/.env` *is* a live data.go.kr `serviceKey` —
+      `pollen_service.py` calls `apis.data.go.kr/1360000/HealthWthrIdxServiceV3`
+      with it. Probed 2026-10-18, so this is not inference:
+
+      | call | result |
+      | --- | --- |
+      | that same key, the pollen service it is approved for | HTTP 200, authorised |
+      | that same key, `B552657/ErmctInfoInqireService` (15000563) | HTTP 403, `returnReasonCode=30`, 등록되지 않은 서비스키 |
+
+      The first row is the control: the key is valid and current, not expired.
+      So code 30 here is **not** a bad key. The portal's own table defines 30 as
+      "check that the key is right **and** that 활용신청 for that service
+      completed" — the first half is now proven true, so it is the second half
+      that is failing. The remaining step is applying for each dataset on the
+      portal, which is a form against the key we already hold, not a fresh
+      credential. Whether those datasets auto-approve decides minutes vs days.
+
+      **Code 12 is not an auth error.** A wrong endpoint path answers
+      `returnReasonCode=12` ("해당 오픈API 서비스가 없거나 폐기됨"). Do not read
+      it as "this service is discontinued" — it is the same trap
+      `pollen_service.py` records for `HealthWeatherIdxServiceV3`. Get the path
+      from the dataset's own page, not by guessing.
 
       **Name the key type in settings, not just "the key".** 활용 hands out a
       프로젝트 서비스키 for 기업회원 and a 개인 서비스키 for 개인, so the format
@@ -256,7 +274,9 @@ Sources: [ReAct / core concepts](https://cloud.google.com/resources/core-concept
       서비스키. Until 활용신청 is approved per service a call can only fail two
       ways, both documented on the portal page and both worth asserting on
       explicitly: `SERVICE_ACCESS_DENIED_ERROR` (20, no approval for that service)
-      and `SERVICE_KEY_IS_NOT_REGISTERED_ERROR` (30, key not registered). Those
+      and `SERVICE_KEY_IS_NOT_REGISTERED_ERROR` (30, key not registered **or
+      활용신청 not completed** — these two are indistinguishable from the caller's
+      side and both are worth distinguishing in a log). Those
       two are config failures and must not surface as "no clinics found".
 
       Once a key exists, wire the tool against `httpx.MockTransport` first, exactly
