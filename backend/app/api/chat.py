@@ -5,7 +5,9 @@ with `text/event-stream`: several `message` events carrying incremental
 fragments of the assistant reply, and a `done` event carrying the complete
 authoritative reply plus the same fields as documentation §12's example
 response, the structured extraction and, once the rule engine has run, its
-triage verdict.
+triage verdict. A `tool` event reports each lookup the agent makes while the
+turn is still running, and `done` repeats them as an audit trail so a client
+that missed a live frame can still show what ran.
 
 The split is additive, never corrective: a client appends each `delta` and
 then reconciles against `done`, which is always sufficient on its own to
@@ -24,7 +26,8 @@ import logging
 import queue
 import re
 from collections.abc import AsyncIterator
-from typing import Annotated
+from functools import partial
+from typing import Annotated, Any, Literal
 from weakref import WeakSet
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -39,7 +42,7 @@ from app.core.db import SessionDep
 from app.core.enums import ConversationStatus, MessageRole
 from app.core.rate_limit import get_limiter
 from app.core.security import CurrentUser
-from app.models import Conversation, Message, SymptomEvent, TriageResult
+from app.models import Conversation, Message, SymptomEvent, TriageResult, User
 from app.services import triage
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
@@ -49,6 +52,39 @@ logger = logging.getLogger(__name__)
 class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=2000)
     conversation_id: int | None = None
+
+
+ToolStatus = Literal["running", "done", "error"]
+
+
+class ToolCallEvent(BaseModel):
+    """One tool call as the client sees it.
+
+    `summary` is a single short plain-English line, never an exception and never
+    JSON — the audience is a beginner, not a debugger. `args` is set on
+    `running` only, where it is what the model asked for; once the call settles
+    it is noise. `id` is what lets a client tie a live event to its audit row.
+
+    Nothing in this shape can carry a safety field. ADR 0001 keeps every
+    urgency decision in `app.services.triage`, and a tool event reports a
+    lookup, it never judges the user.
+    """
+
+    id: str
+    name: str
+    status: ToolStatus
+    summary: str | None = None
+    args: dict[str, Any] | None = None
+    # The tool's actual rows, so the user can read the answer instead of a
+    # sentence about it. Present on `done` only, and only for a tool with an
+    # agreed key in `_TOOL_RESULT_KEYS` - never on `running` or `error`, and
+    # never with a key invented on the spot.
+    result: dict[str, Any] | None = None
+    # Why the call could not produce a result, in the agreed vocabulary. Without
+    # it a missing location and a dead provider both arrive as `error` with a
+    # sentence, and only one of them is something the user can fix in five
+    # seconds. Absent on every success.
+    code: str | None = None
 
 
 class ChatResponse(BaseModel):
@@ -63,6 +99,7 @@ class ChatResponse(BaseModel):
     triage_level: str | None
     triage_reasons: list[str]
     triage_rule_version: str | None
+    tool_calls: list[ToolCallEvent] | None = None
 
 
 def _sse(event: str, data: dict) -> str:
@@ -99,6 +136,195 @@ def _fragments(text: str, *, words_per_fragment: int = _FRAGMENT_WORDS) -> list[
         start = cut
     parts.append(text[start:])
     return parts
+
+
+# ---------------------------------------------------------------------------
+# Tool activity.
+#
+# The agent runs a bounded reason -> act -> observe loop inside `run_turn`, and
+# the generator below is outside it, so tool activity has to cross that
+# boundary the same way progress stages already do: something on the worker
+# thread puts an event on a queue, this generator drains it.
+#
+# The two halves of a call are not available from the same place. A call's id,
+# name and arguments exist only in the model's tool request, so they are read
+# off the client by `_ToolActivityLLM` before `run_turn` gets to see them. What
+# the call actually returned is recorded afterwards as one plain string per
+# call, in the order the calls were made, which is enough to settle each one.
+# ---------------------------------------------------------------------------
+
+# The one prefix `symptom_agent._observe` puts on a call that failed. It never
+# carries the exception behind it, so it is the whole of what may be shown.
+_ERROR_PREFIX = "error: "
+
+
+def _split_refusal(text: str) -> tuple[str | None, str]:
+    """Peel a machine-readable refusal code off the front of a failure.
+
+    `symptom_agent` writes a refusal as `error: <code>: <sentence>`. The code is
+    only taken when it is one this build knows about, so a sentence that merely
+    starts with a word and a colon is still shown whole rather than being
+    silently cut in half.
+    """
+    head, separator, tail = text.partition(": ")
+    if separator and head in symptom_agent.TOOL_REFUSAL_MESSAGES:
+        return head, tail
+    return None, text
+
+
+# Anything shaped like an identifier - `find_nearby_hospitals`, `radius_m`,
+# `KEY_ERROR`. These are code tokens and this text is read by a person.
+_IDENTIFIER = re.compile(r"\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b", re.IGNORECASE)
+
+
+def _for_the_user(text: str, tool_name: str) -> str:
+    """Turn one sentence the agent wrote into one line a beginner can read.
+
+    The observation keeps the tool name on purpose: the model needs to know
+    which lookup failed to decide what to do next. The user does not, and a
+    snake_case identifier on a safety screen is the same class of leak as a
+    raw exception - so it is stripped here, at the one place the sentence
+    becomes user-facing, rather than at the source where the model would lose
+    it.
+    """
+    if tool_name:
+        text = re.sub(rf"\b{re.escape(tool_name)}\b", "that", text, flags=re.IGNORECASE)
+    text = _IDENTIFIER.sub("", text)
+    return " ".join(text.split()).replace("_", " ").strip()
+
+
+def _as_a_line(sentence: str, tool_name: str = "") -> str:
+    """One readable line out of one the agent already wrote for a human.
+
+    Only tidied, never rewritten: a capital, a full stop, no identifiers. A
+    lookup whose failure has no sentence at all says the one thing that is true.
+    """
+    text = _for_the_user(sentence, tool_name)
+    if not text:
+        return "That lookup did not finish."
+    text = text[0].upper() + text[1:]
+    return text if text.endswith((".", "!", "?")) else f"{text}."
+
+
+# The result key each tool's payload is published under. A tool the client has
+# no agreed key for gets no payload rather than an invented one - the wire shape
+# is a contract, and guessing a key is how a client ends up reading `undefined`.
+_TOOL_RESULT_KEYS = {
+    # The name the contract uses and the name currently registered are the same
+    # lookup under two labels; both publish under the same key.
+    "find_nearby_hospitals": "clinics",
+    "find_nearby_care": "clinics",
+}
+
+
+def _settle(observation: str, tool_name: str) -> tuple[ToolStatus, str, dict | None, str | None]:
+    """Read one settled observation as `(status, summary, result, code)`.
+
+    A failed call comes back as a sentence saying what went wrong, and that
+    sentence is the entire user-facing truth about it — there is no honest
+    result to add, so none is invented and no payload is published. If the tool
+    declined with a code, that code is carried alongside so the client can offer
+    the fix instead of a dead end.
+
+    A successful call comes back as the tool's own JSON. It is decoded far
+    enough to count what arrived and, for a tool with an agreed result key, to
+    hand the rows to the client so the user can actually see them. What any
+    particular tool means by its result belongs to the tool, not to this layer.
+
+    An empty observation means the call was announced but never came back. It
+    is reported as unfinished rather than as a success, because nothing here
+    saw a result and reporting one would be making it up.
+    """
+    if not observation.strip():
+        return "error", _as_a_line("", tool_name), None, None
+    if observation.startswith(_ERROR_PREFIX):
+        code, sentence = _split_refusal(observation[len(_ERROR_PREFIX) :])
+        return "error", _as_a_line(sentence, tool_name), None, code
+    try:
+        result = json.loads(observation)
+    except json.JSONDecodeError:
+        return "done", "Finished the lookup.", None, None
+
+    key = _TOOL_RESULT_KEYS.get(tool_name)
+    if isinstance(result, list):
+        summary = "No results found." if not result else f"Found {len(result)} results."
+        return "done", summary, ({key: result} if key else None), None
+    if isinstance(result, dict) and key:
+        # A tool that already returns the agreed key publishes as itself, so a
+        # payload that carries more than rows - `provider_available` is what
+        # separates "searched and found none" from "never searched" - is not
+        # flattened down to a list and silently loses that distinction. Any
+        # other dict is still published under the agreed key, which is the only
+        # place a client knows to look.
+        if key in result:
+            rows = result[key]
+            summary = (
+                "No results found."
+                if isinstance(rows, list) and not rows
+                else f"Found {len(rows)} results."
+                if isinstance(rows, list)
+                else "Finished the lookup."
+            )
+            return "done", summary, result, None
+        return "done", "Finished the lookup.", {key: result}, None
+    return "done", "Finished the lookup.", None, None
+
+
+def _drain(pending: queue.Queue[tuple[str, dict]]) -> list[tuple[str, dict]]:
+    """Everything queued so far, oldest first, without blocking the event loop."""
+    events: list[tuple[str, dict]] = []
+    while True:
+        try:
+            events.append(pending.get_nowait())
+        except queue.Empty:
+            return events
+
+
+class _ToolActivityLLM:
+    """Announces every tool call the model asks for, before it is observed.
+
+    `run_turn` runs the tool itself and reports only the outcome, so this is
+    the one point inside the files this module owns where a call's id, name and
+    arguments still exist. Wrapping rather than unwrapping the loop keeps the
+    agent's control flow, its step cap and its observations exactly as they
+    were; this only reads what passes by.
+    """
+
+    def __init__(self, inner: symptom_agent.LLMClient, announce) -> None:
+        self._inner = inner
+        self._announce = announce
+        self._calls = 0
+
+    def complete(self, messages) -> str:
+        return self._inner.complete(messages)
+
+    def complete_with_tools(self, messages, tools):
+        turn = self._inner.complete_with_tools(messages, tools)
+        for call in turn.tool_calls:
+            self._calls += 1
+            self._announce(
+                ToolCallEvent(
+                    # A provider that returns no id still has to be
+                    # correlatable, so it gets one for this turn.
+                    id=call.id or f"call_{self._calls}",
+                    name=call.name,
+                    status="running",
+                    args=dict(call.arguments or {}),
+                )
+            )
+        return turn
+
+
+def _with_tool_activity(llm: symptom_agent.LLMClient, announce) -> symptom_agent.LLMClient:
+    """Wrap `llm` so its tool calls are announced, but only if it can make any.
+
+    A client with no `complete_with_tools` is returned untouched. Giving it the
+    attribute anyway would make `make_tool_node` believe tools are on offer and
+    take the tool-enabled path against a client that cannot serve it.
+    """
+    if not hasattr(llm, "complete_with_tools"):
+        return llm
+    return _ToolActivityLLM(llm, announce)
 
 
 async def _get_or_create_conversation(
@@ -232,6 +458,19 @@ async def _persist_turn(
     return event
 
 
+async def _origin_for(session: AsyncSession, user_id: int) -> symptom_agent.NearbyCareOrigin | None:
+    """The caller's saved location, or None if they have never set one.
+
+    Half a location is treated as none: a latitude with no longitude would send
+    a clinic lookup somewhere in the ocean, and a wrong clinic on a safety path
+    is worse than no clinic at all.
+    """
+    user = await session.get(User, user_id)
+    if user is None or user.latitude is None or user.longitude is None:
+        return None
+    return symptom_agent.NearbyCareOrigin(latitude=user.latitude, longitude=user.longitude)
+
+
 async def _run_chat(
     req: ChatRequest,
     session: AsyncSession,
@@ -241,35 +480,57 @@ async def _run_chat(
 ) -> AsyncIterator[str]:
     state = await _load_state(session, conversation)
 
-    # A turn is two sequential model calls plus the rule engine — several
-    # seconds of silence otherwise, which reads as "broken" rather than
-    # "working". `run_turn` is synchronous, so it runs on a worker thread and
-    # pushes stage labels into a queue that this generator drains, letting the
-    # user watch progress happen instead of receiving it all at the end.
+    # A turn is two sequential model calls plus the rule engine, and a tool
+    # lookup in between — several seconds of silence otherwise, which reads as
+    # "broken" rather than "working". `run_turn` is synchronous, so it runs on
+    # a worker thread and pushes events into a queue that this generator
+    # drains, letting the user watch progress happen instead of receiving it
+    # all at the end.
     #
-    # These stages describe internal steps. The agent has no tools and does no
-    # function-calling, so they must never be rendered as tool invocations.
-    stages: queue.Queue[str] = queue.Queue()
+    # Both kinds of event ride the same queue so they keep their real order. A
+    # `status` stage is an internal step of a model call and is never rendered
+    # as a tool invocation; a lookup is reported as its own `tool` event, and
+    # the two are never conflated on the client's side.
+    pending: queue.Queue[tuple[str, dict]] = queue.Queue()
+    announced: list[ToolCallEvent] = []
+
+    def _stage(stage: str) -> None:
+        pending.put(("status", {"stage": stage}))
+
+    def _announce(call: ToolCallEvent) -> None:
+        announced.append(call)
+        pending.put(("tool", call.model_dump(exclude_none=True)))
+
     yield _sse("status", {"stage": "starting"})
 
+    # Where "nearby" means. Resolved here, from the user's own saved profile,
+    # because the model cannot read the profile and must not be asked for
+    # coordinates it has no way to know. A user with no location saved still
+    # gets a working tool that declines honestly, rather than a turn where
+    # nothing happens.
+    origin = await _origin_for(session, user_id)
+
     task = asyncio.create_task(
-        asyncio.to_thread(symptom_agent.run_turn, llm, state, req.message, stages.put)
+        asyncio.to_thread(
+            partial(
+                symptom_agent.run_turn,
+                progress=_stage,
+                # The registry the app ships with, so offering tools stays the
+                # agent's decision about what exists and never this layer's.
+                registry=symptom_agent.default_tool_registry(origin),
+            ),
+            _with_tool_activity(llm, _announce),
+            state,
+            req.message,
+        )
     )
 
     while not task.done():
-        drained = False
-        while True:
-            try:
-                yield _sse("status", {"stage": stages.get_nowait()})
-                drained = True
-            except queue.Empty:
-                break
+        drained = _drain(pending)
+        for name, data in drained:
+            yield _sse(name, data)
         if not drained:
             await asyncio.sleep(0.02)
-
-    # Anything that landed between the last poll and completion.
-    while not stages.empty():
-        yield _sse("status", {"stage": stages.get_nowait()})
 
     try:
         result = await task
@@ -277,6 +538,30 @@ async def _run_chat(
         logger.exception("symptom_agent.run_turn failed")
         yield _sse("error", {"detail": "the symptom agent failed to process this message"})
         return
+
+    # Anything that landed between the last poll and completion, before any
+    # call is settled below: a `running` always reaches the client before the
+    # event that closes it.
+    for name, data in _drain(pending):
+        yield _sse(name, data)
+
+    # Settle each announced call against the observation the agent recorded for
+    # it. The two are appended in the same order, one per call, so index `i` of
+    # one belongs to index `i` of the other; a call with no observation at all
+    # settles as unfinished rather than as a success.
+    observations = result.get("tool_observations") or []
+    tool_calls: list[ToolCallEvent] = []
+    for index, call in enumerate(announced):
+        status, summary, payload, code = _settle(
+            observations[index] if index < len(observations) else "", call.name
+        )
+        # Rebuilt rather than copied: the arguments were what the model asked
+        # for at `running`, and they are not part of what the call returned.
+        settled = ToolCallEvent(
+            id=call.id, name=call.name, status=status, summary=summary, result=payload, code=code
+        )
+        tool_calls.append(settled)
+        yield _sse("tool", settled.model_dump(exclude_none=True))
 
     yield _sse("status", {"stage": "saving"})
 
@@ -317,8 +602,16 @@ async def _run_chat(
         triage_level=result.get("triage_level"),
         triage_reasons=result.get("triage_reasons") or [],
         triage_rule_version=result.get("triage_rule_version"),
+        tool_calls=tool_calls or None,
     )
-    yield _sse("done", payload.model_dump())
+    # `tool_calls` is added to the wire only when a tool actually ran. An
+    # absent key and an empty list are different states on the client side, and
+    # a client that predates this field must see exactly the payload it saw
+    # before, so the default is no key rather than an empty array.
+    data = payload.model_dump(exclude={"tool_calls"})
+    if payload.tool_calls:
+        data["tool_calls"] = [call.model_dump(exclude_none=True) for call in payload.tool_calls]
+    yield _sse("done", data)
 
     # J4: a model-call failure is reported *after* the `done` event, and only
     # when the rule engine did not already reach a verdict on this turn.
@@ -380,6 +673,20 @@ class _LazyLLMClient:
 
             self._client = get_openai_client_from_settings()
         return self._client.complete(messages)
+
+    def complete_with_tools(self, messages, tools):
+        """Delegates the optional tool-calling capability.
+
+        `make_tool_node` duck-types for this method and skips the tool loop
+        entirely when it is absent, so a client that only wraps `complete`
+        silently opts the whole app out of tools. The wrapper therefore has to
+        pass the capability through unchanged rather than hide it.
+        """
+        if self._client is None:
+            from app.core.openai_client import get_openai_client_from_settings
+
+            self._client = get_openai_client_from_settings()
+        return self._client.complete_with_tools(messages, tools)
 
 
 def get_llm() -> symptom_agent.LLMClient:

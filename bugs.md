@@ -166,20 +166,40 @@ Sources: [ReAct / core concepts](https://cloud.google.com/resources/core-concept
 [healthcare agent architecture](https://www.appther.com/blogs/build-healthcare-ai-agent) ·
 [scheduling workflow stages](https://thoughtly.com/blog/ai-agents-healthcare-appointment-scheduling-intake)
 
-- [ ] **D1. Tool-calling loop.** **Skeleton only — this is NOT a working agent
-      loop, and the distinction is the whole point of B-014.** What landed:
-      `ToolDefinition` / `ToolRegistry`, an optional `complete_with_tools` path,
-      a hard `MAX_TOOL_STEPS=3` cap, one **marked stub** (`find_nearby_hospitals`,
-      which returns nothing rather than fabricating results), and the A4 guard
-      that walks schemas recursively and rejects urgency intent by name and
-      description. `LLMClient` is **untouched** — still a single
-      `complete(messages) -> str`. Nothing in that skeleton lets the model choose
-      a tool, an argument, or an order. Treat D1 as barely started: the
-      scaffolding and its safety guard are real, the loop is not.
-- [ ] **D2. ReAct loop.** Reason → act → observe → repeat, with a hard step and
-      cost cap. Bounded and observable, never an open-ended while-loop.
-- [ ] **D3. `search_nearby_care`** tool → wraps `find_nearby_hospitals`. First
-      argument: the user's stored location, not a re-typed coordinate.
+- [x] **D1. Tool-calling loop.** Landed. `LLMClient.complete_with_tools` binds
+      typed schemas, parses `message.tool_calls` and hands them back;
+      `chat.py` builds the registry per request and offers it to the model, so
+      the model chooses the tool, the arguments and the order. The A4 guard
+      still walks schemas recursively and rejects urgency intent by name and
+      description. What did *not* change: `LLMClient` still exposes a plain
+      `complete()` for every client that offers no tools, so a turn with no
+      registry is byte-for-byte the old chatbot.
+- [x] **D2. ReAct loop.** Landed. Reason → act → observe, hard-bounded at
+      `MAX_TOOL_STEPS = 3` (`symptom_agent.py:54`). One honest detail about
+      what that number bounds: it caps **model calls**, not tool calls. A
+      single step may issue several calls in parallel — the live smoke did
+      exactly that, asking for `ALLERGY` and `GENERAL` clinics in one step —
+      so the cost ceiling is on provider round-trips, which is where the money
+      is, not on tool invocations. The observe step is real: each result is
+      appended to the transcript as a `tool` message with the tool's own name,
+      and the next step reads it.
+- [x] **D3. `find_nearby_care` → wraps `find_nearby_hospitals`.** Landed, and the
+      first argument is the user's stored location rather than a re-typed
+      coordinate — that was the whole blocker. **D8 also landed as a side
+      effect**: the observations are in state and are read, which is what made
+      the tool loop observable at all.
+
+      *What actually made it reachable, since the stub did not say:* the schema
+      declared `"required": ["latitude", "longitude"]`, and the model's only
+      route to a location is the profile, which it cannot read. So the tool was
+      unsatisfiable by construction. The live proof was a turn with a location
+      saved that ran `starting → extracting → saving → done` with no call at
+      all; the same message with coordinates typed inline called instantly.
+      The schema now asks for nothing, and `chat.py:_origin_for` resolves the
+      profile. **A `wired=False` stub hid this** — it looked like "not built
+      yet" rather than "built wrong". A half-saved location (latitude, no
+      longitude) is treated as none, because a wrong clinic on a safety path is
+      worse than no clinic.
 - [ ] **D4. `check_availability`** tool. **Blocked upstream:** Naver Local Search
       returns no hours. Resolve a real source (hospital booking APIs / 지역 health
       centre data) before writing this tool. Do not let the model infer or guess

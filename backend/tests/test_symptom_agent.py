@@ -686,7 +686,24 @@ def test_an_unknown_tool_name_is_observed_as_an_error_not_a_crash():
         {**symptom_agent.initial_state(), "messages": [{"role": "user", "content": "book me in?"}]}
     )
 
-    assert result["tool_observations"] == ["error: there is no tool named 'book_appointment'."]
+    assert result["tool_observations"] == ["error: that lookup is not available."]
+
+
+def test_an_observation_never_names_the_tool():
+    """Every failure sentence is generic, including the hallucinated-name case.
+
+    `book_appointment` is a name the model invented; putting it in the
+    observation would surface an internal identifier on a user-facing path.
+    The model loses nothing — the transcript hands it its own `name` next to
+    the observation — so the name is logged server-side and kept out of text.
+    """
+    llm = ToolCallingFakeLLM([(_tool_call(name="book_appointment"),), "sorry"])
+
+    result = symptom_agent.make_tool_node(llm, ToolRegistry([_lookup_tool()]))(
+        {**symptom_agent.initial_state(), "messages": [{"role": "user", "content": "book me in?"}]}
+    )
+
+    assert "book_appointment" not in result["tool_observations"][0]
 
 
 def test_a_tool_that_raises_degrades_to_an_observation():
@@ -699,7 +716,7 @@ def test_a_tool_that_raises_degrades_to_an_observation():
         {**symptom_agent.initial_state(), "messages": [{"role": "user", "content": "clinic?"}]}
     )
 
-    assert result["tool_observations"] == ["error: the lookup_clinic lookup failed."]
+    assert result["tool_observations"] == ["error: that lookup failed."]
 
 
 def test_an_llm_failure_during_the_tool_loop_ends_the_loop_quietly():

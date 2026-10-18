@@ -476,21 +476,36 @@ def test_a_tool_result_never_appears_in_the_assistant_reply_as_a_verdict():
 
 
 # ---------------------------------------------------------------------------
-# The unwired executor: a marked stub beats a fabricated result.
+# The shipped clinic lookup: wired, but it refuses rather than faking.
 # ---------------------------------------------------------------------------
 
 
-def test_the_shipped_hospital_lookup_is_registered_but_not_faked():
+def test_the_shipped_clinic_lookup_is_wired_and_asks_the_model_for_nothing():
     tool = symptom_agent.default_tool_registry().get("find_nearby_hospitals")
 
     assert tool is not None
-    assert tool.wired is False
-    with pytest.raises(symptom_agent.ToolNotWiredError):
-        tool.execute({"latitude": 37.5, "longitude": 127.0})
+    assert tool.wired is True
+    # The model's only route to a location is the profile, which it cannot read.
+    # Asking it for coordinates made the tool unsatisfiable and the tool was
+    # unreachable: the turn completed without ever calling it.
+    assert tool.parameters["required"] == []
+    assert "latitude" not in tool.parameters["properties"]
+    assert "longitude" not in tool.parameters["properties"]
 
 
-def test_an_unwired_tool_observes_an_error_and_invents_nothing():
-    llm = _HostileToolLLM("find_nearby_hospitals", {"latitude": 37.5, "longitude": 127.0})
+def test_the_clinic_lookup_refuses_rather_than_inventing_when_there_is_no_location():
+    tool = symptom_agent.default_tool_registry().get("find_nearby_hospitals")
+
+    # No origin means no search was possible. Raising is the honest answer; a
+    # row of made-up clinics on a safety path is not.
+    with pytest.raises(symptom_agent.ToolRefused) as refused:
+        tool.execute({})
+
+    assert refused.value.code == symptom_agent.NO_LOCATION
+
+
+def test_a_clinic_lookup_that_cannot_answer_observes_an_error_and_invents_nothing():
+    llm = _HostileToolLLM("find_nearby_hospitals", {})
     registry = symptom_agent.default_tool_registry()
 
     result = symptom_agent.make_tool_node(llm, registry)(
@@ -498,8 +513,12 @@ def test_an_unwired_tool_observes_an_error_and_invents_nothing():
     )
 
     # A model that never stops asking is still bounded, and every one of those
-    # attempts observes the same honest failure rather than a made-up clinic.
+    # attempts observes the same honest refusal rather than a made-up clinic.
+    # The sentence names no tool: an internal identifier must not ride out on
+    # a sentence the model may turn into user-facing prose.
     assert result["tool_steps"] == symptom_agent.MAX_TOOL_STEPS
     assert set(result["tool_observations"]) == {
-        "error: the find_nearby_hospitals lookup is not available right now."
+        f"error: {symptom_agent.NO_LOCATION}: "
+        f"{symptom_agent.TOOL_REFUSAL_MESSAGES[symptom_agent.NO_LOCATION]}"
     }
+    assert not any("find_nearby_hospitals" in o for o in result["tool_observations"])

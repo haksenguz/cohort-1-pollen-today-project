@@ -12,6 +12,7 @@ real generator with a scripted model. Agent behaviour is covered in
 """
 
 import json
+import re
 from collections.abc import AsyncGenerator
 
 import pytest
@@ -19,10 +20,12 @@ import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
+from sqlmodel import select
 
 from app.agents import symptom_agent
 from app.api import chat as chat_api
 from app.core.db import get_session
+from app.core.openai_client import ToolCall, ToolTurn
 from app.core.rate_limit import InMemoryRateLimiter, set_limiter
 from app.main import app
 from app.models import Conversation, User, UserAllergy
@@ -77,10 +80,20 @@ async def chat_client(chat_session: AsyncSession) -> AsyncGenerator[AsyncClient,
     app.dependency_overrides.clear()
 
 
-async def _register_and_login(client: AsyncClient, email: str) -> str:
+async def _register_and_login(
+    client: AsyncClient,
+    email: str,
+    *,
+    latitude: float | None = None,
+    longitude: float | None = None,
+) -> str:
     payload = {"email": email, "password": "correcthorse123"}
+    if latitude is not None:
+        payload["latitude"] = latitude
+    if longitude is not None:
+        payload["longitude"] = longitude
     await client.post("/api/auth/register", json=payload)
-    res = await client.post("/api/auth/login", json=payload)
+    res = await client.post("/api/auth/login", json={"email": email, "password": "correcthorse123"})
     return res.json()["access_token"]
 
 
@@ -172,7 +185,7 @@ async def test_429_is_a_status_code_not_an_sse_event(chat_client: AsyncClient) -
     """It has to arrive before the stream opens.
 
     Once the 200 and its headers are sent, a refusal inside the generator is
-    unreachable by the client — the definition of the bug this guards.
+    unreachable by the client â€” the definition of the bug this guards.
     """
     set_limiter(InMemoryRateLimiter(limit_per_minute=1))
     token = await _register_and_login(chat_client, "streamy@example.com")
@@ -278,13 +291,15 @@ class _ScriptedLLM:
 def _stub_turn_reply(reply: str):
     """A `run_turn` that answers with one fixed reply.
 
-    The graph cannot produce an empty or whitespace-only reply on its own —
+    The graph cannot produce an empty or whitespace-only reply on its own â€”
     `ask_question` falls back to a canned question and `triage_node` to the
-    rule engine's text — so that state has to be injected to pin what the
+    rule engine's text â€” so that state has to be injected to pin what the
     stream does with it.
+
+    Takes `registry` and ignores it, like the real `run_turn` it stands in for.
     """
 
-    def _run_turn(llm, state, user_message, progress=None):
+    def _run_turn(llm, state, user_message, progress=None, registry=None):
         next_state = dict(state)
         next_state["assistant_reply"] = reply
         return next_state
@@ -492,7 +507,7 @@ async def test_whitespace_only_reply_is_delivered_verbatim(
         "double  spaces  between  every  single  word  in  this  one",
         "a much longer reply that runs well past the fragment size "
         "so the cut lands in the middle of a sentence",
-        "무술가 호흡곤란이 있어요",
+        "ë¬´ìˆ ê°€ í˜¸í¡ê³¤ëž€ì´ ìžˆì–´ìš”",
         "tabs\tand\nnewlines\n\nmixed   in here with more than six words",
         "trailing spaces here   ",
     ],
@@ -574,3 +589,579 @@ def test_verdict_agrees_with_the_engine_on_a_normal_turn() -> None:
         reasons == triage.assess(triage.SymptomInput(symptoms=["itchy eyes"], severity=3)).reasons
     )
     assert version == triage.RULE_VERSION
+
+
+# ---------------------------------------------------------------------------
+# Tool activity on the stream.
+#
+# The agent runs a bounded reason -> act -> observe loop, and a turn may call a
+# tool zero times or several. Each call it does make reports `running` the
+# moment the model asks for it, then exactly one of `done` / `error` when it
+# settles. The terminal `done` event repeats the whole list as an audit trail,
+# so a client that missed a live frame can still show what ran.
+#
+# These drive the real graph, the real tool node and the real `_observe`; only
+# persistence is stubbed, as above.
+# ---------------------------------------------------------------------------
+
+
+# Sample directory data, exactly the shape the tool registry promises. It comes
+# from a fake executor, never from a real lookup, so nothing here is clinical.
+_SAMPLE_CLINICS = [
+    {"name": "Han River Clinic", "address": "Seongdong-gu", "distance_m": 900, "rank": 1},
+    {"name": "Seoul Allergy Centre", "address": "Jongno-gu", "distance_m": 2100, "rank": 2},
+]
+
+_TOOL_NAME = "find_nearby_care"
+_TOOL_CALL_ID = "call_abc123"
+_TOOL_ARGS = {"radius_m": 3000}
+
+
+class _ToolScriptedLLM:
+    """Asks for one tool on the first tool-enabled call, then answers.
+
+    The second call returns no `tool_calls`, which is what ends the loop the way
+    a model that has seen its observation and is ready to reply would end it.
+    """
+
+    def __init__(
+        self,
+        extraction: str,
+        name: str = _TOOL_NAME,
+        call_id: str = _TOOL_CALL_ID,
+        arguments: dict | None = None,
+    ) -> None:
+        self._extraction = extraction
+        self._name = name
+        self._call_id = call_id
+        self._arguments = arguments if arguments is not None else dict(_TOOL_ARGS)
+        self._tool_turns = 0
+
+    def complete(self, messages) -> str:
+        return self._extraction
+
+    def complete_with_tools(self, messages, tools):
+        self._tool_turns += 1
+        if self._tool_turns > 1:
+            return ToolTurn(content="looking that up")
+        return ToolTurn(
+            tool_calls=(ToolCall(id=self._call_id, name=self._name, arguments=self._arguments),)
+        )
+
+
+def _tool_registry(execute, *, wired: bool = True) -> symptom_agent.ToolRegistry:
+    """One read-only lookup tool, with no safety field anywhere in its input or
+    output schema â€” the ADR 0001 boundary."""
+    return symptom_agent.ToolRegistry(
+        [
+            symptom_agent.ToolDefinition(
+                name=_TOOL_NAME,
+                description="Look up nearby clinics. Read-only: it changes nothing.",
+                parameters={
+                    "type": "object",
+                    "properties": {"radius_m": {"type": "integer"}},
+                    "required": [],
+                },
+                result_schema={
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string"},
+                        "distance_m": {"type": "integer"},
+                    },
+                },
+                execute=execute,
+                wired=wired,
+            )
+        ]
+    )
+
+
+@pytest.fixture
+def tool_registry(monkeypatch):
+    def _install(registry) -> None:
+        # The real factory takes the caller's resolved origin; these tests
+        # supply their own registry and so ignore it.
+        monkeypatch.setattr(symptom_agent, "default_tool_registry", lambda origin=None: registry)
+
+    return _install
+
+
+@pytest.fixture
+def tool_llm(monkeypatch):
+    def _install(fake) -> None:
+        monkeypatch.setitem(app.dependency_overrides, chat_api.get_llm, lambda: fake)
+
+    return _install
+
+
+def _tool_events(events: list[tuple[str, dict]]) -> list[dict]:
+    return [data for name, data in events if name == "tool"]
+
+
+@pytest.mark.asyncio
+async def test_a_tool_call_reports_running_with_its_arguments(
+    chat_client: AsyncClient, stub_persistence, tool_registry, tool_llm
+) -> None:
+    """The user has to watch the lookup start, not learn about it afterwards."""
+    tool_registry(_tool_registry(lambda arguments: _SAMPLE_CLINICS))
+    tool_llm(_ToolScriptedLLM(_TRIAGE_EXTRACTION))
+
+    token = await _register_and_login(chat_client, "toolrun@example.com")
+    events = await _turn(chat_client, token)
+    tools = _tool_events(events)
+    names = [name for name, _ in events]
+
+    assert [data["status"] for data in tools] == ["running", "done"]
+    assert all(data["name"] == _TOOL_NAME for data in tools)
+    assert all(data["id"] == _TOOL_CALL_ID for data in tools)
+    assert tools[0]["args"] == _TOOL_ARGS
+    assert "args" not in tools[1], "arguments are reported when the call starts, not when it ends"
+    # Emitted while the turn is still running, not batched after the reply.
+    assert names.index("tool") < names.index("message")
+
+
+@pytest.mark.asyncio
+async def test_done_repeats_every_tool_call_as_an_audit_trail(
+    chat_client: AsyncClient, stub_persistence, tool_registry, tool_llm
+) -> None:
+    """A client that missed a live frame can still render what ran.
+
+    The id is what correlates the two, so the audit row and the live event for
+    one call have to carry the same one.
+    """
+    tool_registry(_tool_registry(lambda arguments: _SAMPLE_CLINICS))
+    tool_llm(_ToolScriptedLLM(_TRIAGE_EXTRACTION))
+
+    token = await _register_and_login(chat_client, "audit@example.com")
+    events = await _turn(chat_client, token)
+    running = _tool_events(events)[0]
+    audit = _only_done(events)["tool_calls"]
+
+    assert len(audit) == 1
+    entry = audit[0]
+    assert entry["id"] == running["id"]
+    assert entry["name"] == _TOOL_NAME
+    assert entry["status"] == "done"
+    assert entry["summary"] == "Found 2 results."
+    assert "args" not in entry
+
+
+@pytest.mark.asyncio
+async def test_a_turn_with_no_tool_sends_no_tool_calls_key_at_all(
+    chat_client: AsyncClient, stub_persistence, scripted_llm
+) -> None:
+    """No tool ran, so there is nothing to audit.
+
+    An absent key and an empty list are different states on the client side, and
+    `done` stays additive: a client that predates this change must see exactly
+    the payload it saw before.
+    """
+    token = await _register_and_login(chat_client, "notools@example.com")
+    scripted_llm(_TRIAGE_EXTRACTION)
+
+    events = await _turn(chat_client, token)
+    done = _only_done(events)
+
+    assert _tool_events(events) == []
+    assert "tool_calls" not in done, "an absent key and an empty array are not the same state"
+
+
+@pytest.mark.asyncio
+async def test_a_failed_tool_says_so_in_plain_words_and_leaks_nothing(
+    chat_client: AsyncClient, stub_persistence, tool_registry, tool_llm
+) -> None:
+    """A failed lookup must be visibly failed, not quietly empty.
+
+    The exception carries a connection string and a traceback's worth of
+    detail; none of it belongs on the user's screen.
+    """
+
+    def _explode(arguments):
+        raise RuntimeError("connection refused: postgres://user:hunter2@10.0.0.5:5432/nav")
+
+    tool_registry(_tool_registry(_explode))
+    tool_llm(_ToolScriptedLLM(_TRIAGE_EXTRACTION))
+
+    token = await _register_and_login(chat_client, "toolerr@example.com")
+    events = await _turn(chat_client, token)
+
+    assert [data["status"] for data in _tool_events(events)] == ["running", "error"]
+    entry = _only_done(events)["tool_calls"][0]
+
+    assert entry["status"] == "error"
+    assert entry["summary"] == "That lookup failed."
+    assert "\n" not in entry["summary"], "one line, not a paragraph"
+    for leak in ("Traceback", "RuntimeError", "postgres://", "hunter2", "10.0.0.5", "{", "error:"):
+        assert leak not in entry["summary"]
+
+
+@pytest.mark.asyncio
+async def test_a_tool_with_no_backend_says_so_instead_of_inventing(
+    chat_client: AsyncClient, stub_persistence, tool_registry, tool_llm
+) -> None:
+    """An unwired lookup is reported as unavailable, never as an empty result.
+
+    Reporting "0 results" for a tool that never ran would tell the user there
+    are no clinics nearby, which is a claim nobody can support.
+    """
+
+    def _must_not_run(arguments):
+        raise AssertionError("an unwired tool must not reach its executor")
+
+    tool_registry(_tool_registry(_must_not_run, wired=False))
+    tool_llm(_ToolScriptedLLM(_TRIAGE_EXTRACTION))
+
+    token = await _register_and_login(chat_client, "unwired@example.com")
+    events = await _turn(chat_client, token)
+
+    entry = _only_done(events)["tool_calls"][0]
+    assert entry["status"] == "error"
+    assert entry["summary"] == "That lookup is not available right now."
+
+
+@pytest.mark.asyncio
+async def test_a_successful_tool_publishes_its_rows_on_the_wire(
+    chat_client: AsyncClient, stub_persistence, tool_registry, tool_llm
+) -> None:
+    """The client renders from `result`, not from the sentence about it.
+
+    This is the gap that let a "done" report go out claiming the payload was
+    on the wire while the parsed rows were decoded, counted and thrown away.
+    The user would have seen a sentence about clinics and no clinics.
+    """
+    clinics = [
+        {
+            "name": "Seoul National Hospital",
+            "address": "Jongno",
+            "distance_m": 1240,
+            "phone": "02-000-0000",
+            "rank": 1,
+        },
+        {
+            "name": "Boramae Clinic",
+            "address": "Seongbuk",
+            "distance_m": 2310,
+            "phone": None,
+            "rank": 2,
+        },
+    ]
+
+    tool_registry(_tool_registry(lambda arguments: clinics))
+    tool_llm(_ToolScriptedLLM(_TRIAGE_EXTRACTION))
+
+    token = await _register_and_login(chat_client, "rows@example.com")
+    events = await _turn(chat_client, token)
+
+    settled = [d for d in _tool_events(events) if d["status"] == "done"]
+    assert len(settled) == 1, f"expected one settled tool event, got {len(settled)}"
+
+    payload = settled[0]
+    assert payload["summary"] == "Found 2 results."
+    assert payload["result"] == {"clinics": clinics}, (
+        "the rows themselves have to reach the client, not just a count of them"
+    )
+
+    # The audit row carries the same thing, so a resumed view can render too.
+    entry = _only_done(events)["tool_calls"][0]
+    assert entry["result"] == {"clinics": clinics}
+
+
+@pytest.mark.asyncio
+async def test_a_failed_tool_publishes_no_rows_at_all(
+    chat_client: AsyncClient, stub_persistence, tool_registry, tool_llm
+) -> None:
+    """No payload on `error` â€” a failure must not render as an empty list.
+
+    An empty `clinics` array on screen says "there are none nearby". That is
+    a claim nobody can support, and it is the claim the user is most likely
+    to act on.
+    """
+
+    def _boom(arguments):
+        raise RuntimeError("provider unreachable")
+
+    tool_registry(_tool_registry(_boom))
+    tool_llm(_ToolScriptedLLM(_TRIAGE_EXTRACTION))
+
+    token = await _register_and_login(chat_client, "failedrows@example.com")
+    events = await _turn(chat_client, token)
+
+    entry = _only_done(events)["tool_calls"][0]
+    assert entry["status"] == "error"
+    assert "result" not in entry
+
+    settled = [d for d in _tool_events(events) if d["status"] == "error"]
+    assert settled and all("result" not in d for d in settled)
+
+
+@pytest.mark.asyncio
+async def test_a_running_tool_event_carries_no_rows_yet(
+    chat_client: AsyncClient, stub_persistence, tool_registry, tool_llm
+) -> None:
+    """`running` reports what was asked for, never what came back."""
+
+    tool_registry(_tool_registry(lambda arguments: [{"name": "X", "rank": 1}]))
+    tool_llm(_ToolScriptedLLM(_TRIAGE_EXTRACTION))
+
+    token = await _register_and_login(chat_client, "runningrows@example.com")
+    events = await _turn(chat_client, token)
+
+    running = [d for d in _tool_events(events) if d["status"] == "running"]
+    assert running, "the running event is what tells the user something is happening"
+    assert all("result" not in d for d in running)
+    assert all(d["args"] == _TOOL_ARGS for d in running)
+
+
+@pytest.mark.asyncio
+async def test_a_tool_with_no_agreed_result_key_publishes_nothing(
+    chat_client: AsyncClient, stub_persistence, tool_registry, tool_llm
+) -> None:
+    """An unknown tool gets no payload rather than an invented key.
+
+    The wire shape is a contract. Guessing `results` or `data` for a tool
+    nobody agreed a key for is how a client ends up reading `undefined`.
+    """
+    registry = symptom_agent.ToolRegistry(
+        [
+            symptom_agent.ToolDefinition(
+                name="some_other_lookup",
+                description="A lookup nobody agreed a result key for.",
+                parameters={"type": "object", "properties": {}, "required": []},
+                result_schema={"type": "object", "properties": {}},
+                execute=lambda arguments: [{"name": "X", "rank": 1}],
+                wired=True,
+            )
+        ]
+    )
+    tool_registry(registry)
+    tool_llm(_ToolScriptedLLM(_TRIAGE_EXTRACTION, name="some_other_lookup"))
+
+    token = await _register_and_login(chat_client, "nokey@example.com")
+    events = await _turn(chat_client, token)
+
+    entry = _only_done(events)["tool_calls"][0]
+    assert entry["status"] == "done"
+    assert entry["summary"] == "Found 1 results."
+    assert "result" not in entry
+
+
+@pytest.mark.asyncio
+async def test_no_tool_identifier_ever_reaches_the_user(
+    chat_client: AsyncClient, stub_persistence, tool_registry, tool_llm
+) -> None:
+    """A snake_case name on a safety screen is the same leak as a raw exception.
+
+    The observation names no tool at all — the transcript hands the model its
+    own `name` next to the observation — but `summary` is read by a person. A
+    user must never be told `find_nearby_hospitals` is unavailable - they do not
+    know what that is, and an identifier on that line reads as a broken app
+    rather than a broken lookup.
+    """
+
+    def _boom(arguments):
+        raise RuntimeError("connection refused: postgres://user:pw@10.0.0.5:5432/nav")
+
+    tool_registry(_tool_registry(_boom))
+    tool_llm(_ToolScriptedLLM(_TRIAGE_EXTRACTION))
+
+    token = await _register_and_login(chat_client, "noleak@example.com")
+    events = await _turn(chat_client, token)
+
+    for data in _tool_events(events):
+        # `name` and `args` on the running event are the pinned contract - the
+        # client renders the strip from them. Only `summary` is prose written
+        # for a person, and only it can leak an identifier.
+        summary = data.get("summary") or ""
+        # Both spellings: the raw name, and the spaced form a naive
+        # underscore-strip would leave behind. Checking only the first is how
+        # this test passed while the leak was still on screen.
+        for form in (_TOOL_NAME, _TOOL_NAME.replace("_", " ")):
+            assert form.lower() not in summary.lower(), (
+                f"tool name leaked to the user as {form!r}: {summary}"
+            )
+        assert not re.search(r"\b[a-z][a-z0-9]*_[a-z0-9_]+\b", summary), (
+            f"an identifier leaked into a user-facing line: {summary}"
+        )
+        if data["status"] == "error":
+            assert summary, "a failure the user can see must say something"
+
+
+@pytest.mark.asyncio
+async def test_no_tool_payload_carries_a_safety_field(
+    chat_client: AsyncClient, stub_persistence, tool_registry, tool_llm
+) -> None:
+    """ADR 0001, on the wire this time.
+
+    The registry guard pins what a tool may declare; this pins what actually
+    reaches the client, so no tool can smuggle an urgency judgement out through
+    an argument or a summary.
+    """
+    tool_registry(_tool_registry(lambda arguments: _SAMPLE_CLINICS))
+    tool_llm(_ToolScriptedLLM(_TRIAGE_EXTRACTION))
+
+    token = await _register_and_login(chat_client, "boundary@example.com")
+    events = await _turn(chat_client, token)
+
+    banned = {"triage_level", "triage_severity", "triage_verdict"}
+    payloads = list(_tool_events(events)) + list(_only_done(events)["tool_calls"])
+    for payload in payloads:
+        assert not set(payload) & banned
+        assert not set(payload.get("args") or {}) & banned
+
+
+# ---------------------------------------------------------------------------
+# B3: the shipped clinic lookup, end to end over the wire.
+#
+# These run the real `default_tool_registry`, not a stand-in, because the whole
+# point of B3 is what that factory does. Only the provider call is faked - the
+# executor, the refusal, the observation and the settle all run for real.
+# ---------------------------------------------------------------------------
+
+
+def _shipped_tool_llm() -> _ToolScriptedLLM:
+    return _ToolScriptedLLM(_TRIAGE_EXTRACTION, name="find_nearby_hospitals", arguments={})
+
+
+@pytest.fixture
+def fake_search(monkeypatch):
+    """Replace the Naver call itself; everything either side of it stays real."""
+    calls: list[tuple] = []
+
+    def _install(*, clinics=None, provider_available=True):
+        def _search(origin, *, specialty, location_query):
+            calls.append((origin, specialty, location_query))
+            return symptom_agent.NearbyCareSearch(
+                clinics=clinics if clinics is not None else [],
+                provider_available=provider_available,
+            )
+
+        monkeypatch.setattr(symptom_agent, "_nearby_care_search", _search)
+        return calls
+
+    return _install
+
+
+@pytest.mark.asyncio
+async def test_a_missing_location_reaches_the_user_as_no_location(
+    chat_client: AsyncClient, stub_persistence, tool_llm
+) -> None:
+    """The one failure a user can fix in five seconds must not read as a dead end.
+
+    A fresh account has no coordinates. The turn must still do the lookup, and
+    must say *why* it produced nothing - not "there are no clinics nearby",
+    which is a claim about the user's city that nothing backs.
+    """
+    tool_llm(_shipped_tool_llm())
+
+    token = await _register_and_login(chat_client, "nolocation@example.com")
+    events = await _turn(chat_client, token)
+
+    settled = _tool_events(events)[-1]
+    assert settled["status"] == "error"
+    assert settled["code"] == symptom_agent.NO_LOCATION
+    assert "result" not in settled, "a refused lookup has no rows to publish"
+    assert "does not mean there are no clinics" in settled["summary"]
+    # The code is for the client, not the reader.
+    assert symptom_agent.NO_LOCATION not in settled["summary"]
+
+
+@pytest.mark.asyncio
+async def test_a_dead_provider_is_not_reported_as_no_nearby_clinics(
+    chat_client: AsyncClient, stub_persistence, tool_llm, fake_search
+) -> None:
+    """A provider that was never reached is not an empty result set."""
+    fake_search(provider_available=False)
+    tool_llm(_shipped_tool_llm())
+
+    # Registered with a location, or the tool refuses before it ever reaches
+    # the provider and this would pass for the wrong reason.
+    token = await _register_and_login(
+        chat_client, "providerdown@example.com", latitude=37.5665, longitude=126.978
+    )
+    events = await _turn(chat_client, token)
+
+    settled = _tool_events(events)[-1]
+    assert settled["status"] == "error"
+    assert settled["code"] == symptom_agent.PROVIDER_UNAVAILABLE
+    assert "result" not in settled
+
+
+@pytest.mark.asyncio
+async def test_a_saved_location_is_resolved_by_the_server_and_never_by_the_model(
+    chat_client: AsyncClient, stub_persistence, tool_llm, fake_search
+) -> None:
+    """The executor searches around the user's saved home, not around nothing.
+
+    The model was asked for `latitude`/`longitude` it cannot know, so it never
+    called the tool at all. The origin now arrives from the profile, and the
+    arguments the model does send are only the optional narrowing.
+    """
+    calls = fake_search(clinics=_SAMPLE_CLINICS)
+    tool_llm(_shipped_tool_llm())
+
+    token = await _register_and_login(
+        chat_client, "homebody@example.com", latitude=37.5665, longitude=126.978
+    )
+    events = await _turn(chat_client, token)
+
+    origin, specialty, location_query = calls[0]
+    assert (origin.latitude, origin.longitude) == (37.5665, 126.978)
+    assert specialty is None and location_query is None
+
+    settled = _tool_events(events)[-1]
+    assert settled["status"] == "done"
+    assert [row["name"] for row in settled["result"]["clinics"]] == [
+        row["name"] for row in _SAMPLE_CLINICS
+    ]
+
+
+@pytest.mark.asyncio
+async def test_the_user_is_told_to_search_nothing_only_when_nothing_was_searched(
+    chat_client: AsyncClient, stub_persistence, tool_llm, fake_search
+) -> None:
+    """A search that ran and came back empty is allowed to say so.
+
+    The mirror of `no_location`: the two must not collapse into one, because
+    one means "go and set your location" and the other means "try a different
+    clinic or call an ambulance".
+    """
+    fake_search(clinics=[])
+    tool_llm(_shipped_tool_llm())
+
+    token = await _register_and_login(
+        chat_client, "empty@example.com", latitude=37.5665, longitude=126.978
+    )
+    events = await _turn(chat_client, token)
+
+    settled = _tool_events(events)[-1]
+    assert settled["status"] == "done"
+    assert settled["result"]["clinics"] == []
+    assert settled["result"]["provider_available"] is True
+    assert settled.get("code") is None
+
+
+@pytest.mark.asyncio
+async def test_half_a_location_is_treated_as_none(chat_session: AsyncSession) -> None:
+    """A latitude with no longitude would search somewhere in the ocean.
+
+    Both fields exist independently on `users` and a partial save is a normal
+    thing for a settings form to produce. A wrong clinic on a safety path is
+    worse than no clinic, so an incomplete pair is refused rather than
+    completed with a default.
+    """
+    both = User(email="both@example.com", password_hash="x", latitude=37.5, longitude=127.0)
+    half = User(email="half@example.com", password_hash="x", latitude=37.5, longitude=None)
+    neither = User(email="neither@example.com", password_hash="x")
+    chat_session.add_all([both, half, neither])
+    await chat_session.commit()
+
+    resolved = await chat_session.execute(select(User).where(User.email == "both@example.com"))
+    assert (
+        await chat_api._origin_for(chat_session, resolved.scalars().first().id)
+    ).latitude == 37.5
+
+    for email in ("half@example.com", "neither@example.com", "missing@example.com"):
+        found = await chat_session.execute(select(User).where(User.email == email))
+        user = found.scalars().first()
+        user_id = user.id if user else 999_999
+        assert await chat_api._origin_for(chat_session, user_id) is None, email

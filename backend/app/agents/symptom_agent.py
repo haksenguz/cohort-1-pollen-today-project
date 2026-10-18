@@ -24,12 +24,14 @@ False by a later, possibly-garbled extraction.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol, TypedDict
 
+import httpx
 from langgraph.graph import END, StateGraph
 
 from app.core.openai_client import (
@@ -41,6 +43,10 @@ from app.core.openai_client import (
 from app.services import triage
 
 logger = logging.getLogger(__name__)
+
+# A lookup that hangs is a turn that never ends. Short on purpose: the clinic
+# list is a convenience on a safety path, not the reason the user came.
+NAVER_TIMEOUT_S = 5.0
 
 # Safety net: stop asking and hand off to the rule engine with whatever we
 # have rather than looping forever on a confused model or a silent user.
@@ -226,63 +232,221 @@ class ToolRegistry:
         return [tool.as_provider_spec() for tool in self._tools.values()]
 
 
-def _not_wired_executor(tool_name: str):
-    def _execute(arguments: Mapping[str, Any]) -> Any:
-        raise ToolNotWiredError(f"{tool_name} has no executor wired up yet")
-
-    return _execute
-
-
 # Read-only lookup: reuses what `GET /api/hospitals/nearby` already does —
-# Naver Local Search, ranked by haversine distance. The executor is a marked
-# stub on purpose. Wiring it means calling the async
-# `app.services.hospital_service.find_nearby_hospitals` from inside the
-# synchronous turn, which needs an httpx client and Naver credentials chosen by
-# whoever owns the request path; inventing the data here would be worse than
-# the stub, so the stub stands until that wiring exists.
-FIND_NEARBY_HOSPITALS = ToolDefinition(
-    name="find_nearby_hospitals",
-    description=(
-        "Look up nearby medical facilities for a coordinate or a place name, "
-        "optionally filtered by speciality. Read-only: it looks places up and "
-        "changes nothing."
+# Naver Local Search, ranked by haversine distance. Naver takes a keyword, not a
+# radius, so `radius_m` stays a client-side filter and `location_query` biases
+# the keyword toward the caller's area.
+
+
+@dataclass(frozen=True)
+class NearbyCareOrigin:
+    """Where "nearby" means, resolved by the server and never by the model.
+
+    The model's only route to a location is the stored profile, which it cannot
+    read. Asking it for `latitude`/`longitude` made the tool unsatisfiable: the
+    turn ran `starting -> extracting -> saving -> done` with no call at all,
+    because there was no honest way for the model to produce the required
+    arguments. Resolving the origin here is what makes the tool reachable.
+    """
+
+    latitude: float
+    longitude: float
+    location_query: str | None = None
+
+
+@dataclass(frozen=True)
+class NearbyCareSearch:
+    """Rows a lookup produced, plus whether the provider was reachable at all.
+
+    `provider_available=False` means the search never ran. That is a different
+    fact from "we searched and there is nothing nearby", and a client that
+    cannot tell them apart will eventually tell a user with a clinic around the
+    corner that there is nothing nearby.
+    """
+
+    clinics: list[dict[str, Any]]
+    provider_available: bool
+
+
+# Codes a wired tool can refuse with. The vocabulary is deliberately tiny and is
+# the same one `app.api.chat` publishes as `ToolCallEvent.code`, so a refusal
+# names why the user should do something different next time.
+NO_LOCATION = "no_location"
+PROVIDER_UNAVAILABLE = "provider_unavailable"
+
+# What a client is shown for each refusal. Plain English, no identifiers, and no
+# claim about the user's health: "we could not search" is not "there is nothing".
+TOOL_REFUSAL_MESSAGES = {
+    NO_LOCATION: (
+        "We need your location first. Your profile has no location saved, so we "
+        "could not search. This does not mean there are no clinics around you."
     ),
-    parameters={
-        "type": "object",
-        "properties": {
-            "latitude": {"type": "number", "description": "Origin latitude in degrees."},
-            "longitude": {"type": "number", "description": "Origin longitude in degrees."},
-            "location_query": {
-                "type": "string",
-                "description": "Place or district name used to bias the keyword, e.g. a city.",
-            },
-            "speciality": {
-                "type": "string",
-                "description": "Optional speciality label, e.g. ENT, ALLERGY, GENERAL.",
-            },
-        },
-        "required": ["latitude", "longitude"],
-    },
-    result_schema={
-        "type": "object",
-        "properties": {
-            "name": {"type": "string"},
-            "address": {"type": "string"},
-            "distance_m": {"type": "integer"},
-            "speciality": {"type": "string"},
-            "category": {"type": "string"},
-            "phone": {"type": "string"},
-            "rank": {"type": "integer"},
-        },
-    },
-    execute=_not_wired_executor("find_nearby_hospitals"),
-    wired=False,
-)
+    PROVIDER_UNAVAILABLE: (
+        "Clinic search is offline. The clinic provider is not connected, so we "
+        "could not search. We did not search."
+    ),
+}
 
 
-def default_tool_registry() -> ToolRegistry:
-    """The registry the app ships with: read-only lookups only."""
-    return ToolRegistry([FIND_NEARBY_HOSPITALS])
+class ToolRefused(Exception):
+    """A wired tool that cannot answer right now, and why.
+
+    Not a crash and not an absence of data: the tool exists, the model asked it
+    a fair question, and the answer is "not with the information we have". The
+    `code` is what survives to the wire so the client can offer the fix instead
+    of rendering a dead end.
+    """
+
+    def __init__(self, code: str) -> None:
+        super().__init__(code)
+        self.code = code
+
+
+def _nearby_care_search(
+    origin: NearbyCareOrigin,
+    *,
+    specialty: str | None,
+    location_query: str | None,
+) -> NearbyCareSearch:
+    """Call the async hospital service from this synchronous executor.
+
+    The turn runs on a worker thread via `asyncio.to_thread`, and the request's
+    pooled `httpx.AsyncClient` is bound to the event loop serving the request —
+    using it from a second loop fails at the first await. So this opens its own
+    client on its own loop and closes it again. One extra connection per lookup
+    is the price of not having a client owned by a loop that is not running.
+    """
+    from app.core.config import get_settings  # noqa: PLC0415 — avoids an import cycle
+    from app.services.hospital_service import (  # noqa: PLC0415 — same
+        NaverLocalClient,
+        find_nearby_hospitals,
+    )
+
+    async def _run() -> NearbyCareSearch:
+        settings = get_settings()
+        async with httpx.AsyncClient(timeout=NAVER_TIMEOUT_S) as http:
+            outcome = await find_nearby_hospitals(
+                NaverLocalClient(http, settings.naver_client_id, settings.naver_client_secret),
+                latitude=origin.latitude,
+                longitude=origin.longitude,
+                specialty=specialty,
+                location_query=location_query or origin.location_query,
+            )
+        return NearbyCareSearch(
+            clinics=[
+                {
+                    "name": r.name,
+                    "address": r.address,
+                    "distance_m": r.distance_m,
+                    "phone": r.phone,
+                    "rank": r.rank,
+                }
+                for r in outcome.results
+            ],
+            provider_available=outcome.provider_available,
+        )
+
+    try:
+        return asyncio.run(_run())
+    except Exception as exc:  # noqa: BLE001 — a lookup must not break the turn
+        logger.warning("nearby care search failed (%s)", exc)
+        raise ToolRefused(PROVIDER_UNAVAILABLE) from exc
+
+
+def build_nearby_care_tool(
+    origin: NearbyCareOrigin | None,
+    *,
+    search: Callable[..., NearbyCareSearch] | None = None,
+) -> ToolDefinition:
+    """The clinic lookup, wired to `origin`, or refusing for want of one.
+
+    `search` is the seam: tests hand in a fake and never touch the network.
+    `origin=None` still produces a *wired* tool. An unwired one would degrade
+    to "that lookup is not available right now", which is a claim about the
+    product when the truth is about the user — and the one thing a user on a
+    safety path can act on in five seconds would be lost.
+    """
+    lookup = search or _nearby_care_search
+
+    def _execute(arguments: Mapping[str, Any]) -> Any:
+        if origin is None:
+            raise ToolRefused(NO_LOCATION)
+        specialty = arguments.get("speciality")
+        outcome = lookup(
+            origin,
+            specialty=str(specialty) if specialty else None,
+            location_query=arguments.get("location_query") or None,
+        )
+        if not outcome.provider_available:
+            raise ToolRefused(PROVIDER_UNAVAILABLE)
+        return {
+            "clinics": outcome.clinics,
+            "provider_available": outcome.provider_available,
+        }
+
+    return ToolDefinition(
+        name=FIND_NEARBY_CARE_TOOL,
+        description=(
+            "Look up nearby medical facilities for the user's saved location, "
+            "optionally filtered by speciality. Read-only: it looks places up "
+            "and changes nothing. The location comes from the user's profile, "
+            "so you do not need to supply coordinates."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "speciality": {
+                    "type": "string",
+                    "description": "Optional speciality label, e.g. ENT, ALLERGY, GENERAL.",
+                },
+                "location_query": {
+                    "type": "string",
+                    "description": (
+                        "Optional place or district name to narrow the search, e.g. a city. "
+                        "Only needed when the user names somewhere other than their saved "
+                        "location."
+                    ),
+                },
+            },
+            "required": [],
+        },
+        result_schema={
+            "type": "object",
+            "properties": {
+                "clinics": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "name": {"type": "string"},
+                            "address": {"type": ["string", "null"]},
+                            "distance_m": {"type": ["integer", "null"]},
+                            "phone": {"type": ["string", "null"]},
+                            "rank": {"type": "integer"},
+                        },
+                    },
+                },
+                "provider_available": {"type": "boolean"},
+            },
+        },
+        execute=_execute,
+    )
+
+
+FIND_NEARBY_CARE_TOOL = "find_nearby_hospitals"
+
+# Kept as a module attribute so the guard test and any other caller can reach the
+# shipped definition without building a registry around it.
+FIND_NEARBY_HOSPITALS = build_nearby_care_tool(None)
+
+
+def default_tool_registry(origin: NearbyCareOrigin | None = None) -> ToolRegistry:
+    """The registry the app ships with: read-only lookups only.
+
+    `origin` is the caller's saved location. It is resolved per request by
+    `app.api.chat`, never asked of the model.
+    """
+    return ToolRegistry([build_nearby_care_tool(origin)])
 
 
 # Reports what the agent is doing, stage by stage, so `app.api.chat` can tell
@@ -532,16 +696,29 @@ def _observe(registry: ToolRegistry, call: ToolCall) -> str:
     """
     tool = registry.get(call.name)
     if tool is None:
-        return f"error: there is no tool named {call.name!r}."
+        logger.warning("symptom_agent: model asked for unknown tool %r", call.name)
+        return "error: that lookup is not available."
     if not tool.wired:
-        return f"error: the {tool.name} lookup is not available right now."
+        return "error: that lookup is not available right now."
     try:
         result = tool.execute(call.arguments)
+    except ToolRefused as exc:
+        logger.info("symptom_agent: %s declined (%s)", tool.name, exc.code)
+        # The code is machine-readable and the sentence is for the model; both
+        # ride one observation because `tool_observations` is a list of strings
+        # and adding a parallel list would put the two out of step the moment a
+        # call produced more than one observation.
+        #
+        # `error: ` stays at the front on purpose. It is the prefix
+        # `app.api.chat._settle` reads to decide a call failed, and a refusal
+        # that missed it would fall through to `json.loads`, fail to parse, and
+        # be reported to the user as a successful lookup.
+        return f"error: {exc.code}: {TOOL_REFUSAL_MESSAGES[exc.code]}"
     except ToolNotWiredError:
-        return f"error: the {tool.name} lookup is not available right now."
+        return "error: that lookup is not available right now."
     except Exception as exc:  # noqa: BLE001 — a tool must not break the turn
         logger.warning("symptom_agent: tool %s failed (%s)", tool.name, exc)
-        return f"error: the {tool.name} lookup failed."
+        return "error: that lookup failed."
     return json.dumps(result, ensure_ascii=False, default=str)
 
 
