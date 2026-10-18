@@ -28,6 +28,17 @@ class User(SQLModel, table=True):
     password_hash: str = Field(max_length=255)
     latitude: float | None = None
     longitude: float | None = None
+    # 민감정보 (건강) consent. 개인정보 보호법 제23조① makes health information
+    # sensitive information that may only be processed on separate consent, and
+    # 제15조② requires that consent to be distinguishable from consent to anything
+    # else - so it gets its own columns rather than a flag on the account row.
+    #
+    # `sensitive_consent_version` records *which* text was agreed to. A bare
+    # timestamp cannot answer "were they told about symptom_events before we
+    # started storing them?", and that is the question an audit asks.
+    sensitive_consent_at: datetime | None = Field(default=None, sa_type=_TS)
+    sensitive_consent_version: str | None = Field(default=None, max_length=32)
+    sensitive_consent_withdrawn_at: datetime | None = Field(default=None, sa_type=_TS)
     created_at: datetime = _ts_field()
     updated_at: datetime = _ts_field()
 

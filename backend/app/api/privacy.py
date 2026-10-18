@@ -20,9 +20,66 @@ from pydantic import BaseModel, Field
 
 from app.core.db import SessionDep
 from app.core.security import CurrentUser
+from app.services import consent as consent_service
 from app.services import privacy_service
 
 router = APIRouter(prefix="/api/privacy", tags=["privacy"])
+
+
+class ConsentRequest(BaseModel):
+    """Grant or withdraw 민감정보 consent (제23조①1호)."""
+
+    granted: bool
+    version: str | None = Field(
+        default=None,
+        max_length=32,
+        description="Policy version agreed to. Defaults to the current one.",
+    )
+
+
+class ConsentResponse(BaseModel):
+    purpose: str
+    granted: bool
+    version: str | None
+    granted_at: str | None
+    withdrawn_at: str | None
+    policy_version: str
+    basis: str
+
+
+@router.get("/policy")
+async def privacy_policy() -> dict[str, Any]:
+    """The 개인정보 처리방침 itself (제30조 requires that it be published).
+
+    Public and unauthenticated on purpose: a policy a user can only see after
+    signing in was not disclosed before consent was sought, which is the whole
+    point of 제15조②.
+
+    Served as data rather than a rendered page so there is one source of truth
+    and the frontend can present it in whatever shape its locale needs.
+    """
+    return {
+        **consent_service.POLICY,
+        "required_notice_items": list(consent_service.REQUIRED_NOTICE_ITEMS),
+    }
+
+
+@router.get("/consent")
+async def get_consent(current_user: CurrentUser) -> ConsentResponse:
+    """What the signed-in user has agreed to, if anything."""
+    return ConsentResponse(**consent_service.consent_state(current_user))
+
+
+@router.post("/consent")
+async def set_consent(
+    body: ConsentRequest, session: SessionDep, current_user: CurrentUser
+) -> ConsentResponse:
+    """Record or withdraw 민감정보 consent."""
+    user = await consent_service.record_sensitive_consent(
+        session, user=current_user, granted=body.granted, version=body.version
+    )
+    await session.commit()
+    return ConsentResponse(**consent_service.consent_state(user))
 
 
 class StoredDataPoint(BaseModel):
@@ -39,6 +96,7 @@ class PrivacySummary(BaseModel):
 
     account_email: str
     generated_at: str
+    sensitive_consent: ConsentResponse
     data_points: list[StoredDataPoint]
     not_stored: list[str] = Field(
         default_factory=list,
@@ -71,7 +129,11 @@ _SUMMARY_POINTS: list[StoredDataPoint] = [
         what="Everything you typed in the chat, and every reply the app gave",
         table="conversations, messages",
         sensitive=True,
-        note="Retained for the life of the account. Deleting the account removes all of it.",
+        note=(
+            "Retained for the life of the account. Deleting the account removes all of it. "
+            "This text is the one thing that leaves the server: it is sent to the LLM "
+            "provider to generate an answer (see the policy's section 3)."
+        ),
     ),
     StoredDataPoint(
         what=(
@@ -112,12 +174,17 @@ async def privacy_summary(current_user: CurrentUser) -> PrivacySummary:
     return PrivacySummary(
         account_email=current_user.email,
         generated_at=datetime.now().astimezone().isoformat(),
+        sensitive_consent=ConsentResponse(**consent_service.consent_state(current_user)),
         data_points=_SUMMARY_POINTS,
         not_stored=[
             "Your name, age, gender, address or national identifier — never collected.",
             "Your name, address or phone number at any clinic — never asked for.",
             "Any photo, audio or location history from your device — never accessed.",
             "Advertising or analytics identifiers — there is no third-party tracker in this app.",
+            (
+                "Any public posting or share link for your health data — the app has no "
+                "such feature, which is what keeps 제23조③ satisfied."
+            ),
         ],
     )
 
@@ -172,10 +239,24 @@ async def delete_my_account(session: SessionDep, current_user: CurrentUser) -> D
 
 @router.get("/health-note", response_class=JSONResponse)
 async def health_data_note() -> dict[str, Any]:
-    """Plain statement that the symptom data is sensitive data (제23조)."""
+    """Plain statement that the symptom data is sensitive data (제23조).
+
+    Left unauthenticated, as it was: it states facts about the service rather
+    than about a person, and a page a user reads *before* signing in is the one
+    that can actually inform consent. Per-user consent state lives on /summary,
+    which is authenticated.
+    """
     return {
         "sensitive_data_categories": ["health", "location"],
         "basis": "개인정보 보호법 제23조 (민감정보)",
+        "policy_url": "/api/privacy/policy",
+        "third_party_transfer": {
+            "sent": ["chat content", "symptoms described in chat"],
+            "not_sent": ["saved location coordinates", "email", "password"],
+            "to": "the configured LLM provider (OPENAI_BASE_URL)",
+            "why": "the answer has to be generated by the model, which runs off-device",
+            "basis": "개인정보 보호법 제22조 (위탁) — disclosure required in the policy",
+        },
         "note": (
             "Symptom and triage data is health information and is treated as "
             "sensitive data. It is processed to answer the user's question and is "

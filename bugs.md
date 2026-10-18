@@ -664,6 +664,78 @@ Metadata-only on PostgreSQL 11+, so no table rewrite and no lock.
 
 ---
 
+## B-020 — 민감정보 was collected, sent to a third party, and never consented to
+
+- **Reported:** 2026-10-19 (backend lane, production-readiness audit)
+- **Surface:** `backend/app/services/consent.py` (new), `backend/app/api/privacy.py`,
+  `backend/app/models/__init__.py`, `backend/tests/test_consent.py` (new)
+- **Status:** **partially fixed** — the record and the policy exist; the gate and
+  the sign-off do not. Read the open items.
+- **Sources:** [개인정보 보호법 제23조](https://www.law.go.kr/%EB%B2%95%EB%A0%B9/%EA%B0%9C%EC%9D%B8%EC%A0%95%EB%B3%B4%BO%B3%BC%ED%99%94%EB%B2%95/%EC%A0%9C23%EC%A1%B0),
+  [개인정보보호위원회 개인정보보호지침 제15조·제16조](https://www.law.go.kr/LSW/admRulLsInfoP.do?admRulId=73445&efYd=0),
+  [개인정보 처리 통합 안내서](https://www.privacy.go.kr/cmm/fms/FileDown.do?atchFileId=ATCH_000000000916941&fileSn=1),
+  [개인정보 처리방침 작성지침 제30조](https://www.privacy.go.kr/cmm/fms/FileDown.do?atchFileId=ATCH_000000000883004&fileSn=3)
+
+**Observed.** `privacy.py` opened with the comment *"Health data is 민감정보 under
+제23조 and needs its own consent"*, and then consented to nothing. Grepping the
+whole app for `동의|consent|처리방침|약관` returned **one hit, and it was that
+comment.**
+
+Three things were missing, and the third is the one that matters:
+
+1. **No consent record.** No row, column or flag anywhere recorded that anyone had
+   agreed to health-data processing. 제23조① makes health information 민감정보,
+   processable only on consent given *separately* from other consent, and 제15조②
+   requires four specific things be disclosed first.
+2. **No published policy.** 제30조 requires a 개인정보 처리방침 be established
+   **and 공개** — published. There was no policy and no page to put one on.
+3. **No disclosure of the transfer.** `core/openai_client.py` builds an
+   `OpenAI(base_url=...)` client and the symptom conversation is sent to it to
+   generate an answer. That ships 건강 information to an external processor, which
+   is 위탁 under 제22조 and belongs in the policy by name.
+
+**The wrong bit is the part worth reading.** The privacy summary written a day
+earlier said of saved coordinates: *"never sent to the LLM and never placed in a
+prompt."* True, and beside it the summary said nothing about the chat text, which
+**is** sent. Naming the thing that stays behind while staying silent about the
+one that leaves is worse than saying neither — it reads as reassurance covering
+the whole surface. Fixed in this commit.
+
+**Fixed.** `app/services/consent.py` adds the record (grant, withdraw, re-grant;
+withdrawal *clears* the grant rather than shadowing it) and the policy text,
+sectioned as 제30조 requires. Three endpoints: `GET /api/privacy/policy` (public
+on purpose — a policy you can only read after signing up was never disclosed
+before consent was sought), `GET`/`POST /api/privacy/consent`. 14 tests.
+
+The policy is served with `status: "draft"` and `requires_legal_review: true`.
+It is written from the code, not by a lawyer, and it says so rather than
+pretending otherwise.
+
+- [x] **B-020a. No consent record existed.** Now
+      `users.sensitive_consent_at` / `_version` / `_withdrawn_at`, with migration
+      `e5f6a7b8c9d0`. All nullable with no default: a backfill of `granted=true`
+      would manufacture consent nobody gave.
+- [x] **B-020b. No published policy.** `GET /api/privacy/policy`, including the
+      four 제15조② notice items and the 제22조 위탁 disclosure.
+- [x] **B-020c. The summary named the safe field and not the transferred one.**
+      The conversations entry now says the text is sent to the LLM provider.
+- [ ] **B-020d. Consent is recorded but not enforced.** `has_sensitive_consent()`
+      exists and nothing calls it. Gating the allergy and triage writes without
+      gating chat would leave the main flow working and everything else refusing,
+      which is worse than gating nothing — so this needs a decision, not a patch:
+      either the chat flow starts asking (frontend change, other lane), or the
+      app is a consent-gated beta and says so in the policy.
+- [ ] **B-020e. The policy is a draft and the operator is unnamed.** 제30조 wants
+      a named 사업자 and a 사업자등록번호. The policy text carries a placeholder
+      and `operator` is literal. Until someone fills that in this is not publishable.
+- [ ] **B-020f. `제23조③` should be checked again once sharing exists.** The
+      disclosure-and-opt-out duty is triggered by information exposed during
+      service. Today the app has no share or post feature, so it does not apply —
+      but `find_nearby_care` returns real clinic data and any future "share my
+      result" turns this from satisfied to owed.
+
+---
+
 ## B-019 — Two migration systems, and the one the CLI runs was four columns behind
 
 - **Reported:** 2026-10-18 (backend lane, while making migrations run on boot)
