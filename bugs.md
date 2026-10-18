@@ -366,14 +366,39 @@ bug. They are listed as open because the underlying settings are still missing.
 
 ### F. Accessibility
 
-- [ ] **F1. `role="log"` + `aria-atomic="false"` + `aria-busy` on the transcript.**
-- [ ] **F2. Announce the finished message once**, never every token.
-- [ ] **F3. Keyboard contract** — Enter sends, Shift+Enter newline, Escape
-      cancels, ↑↓ recalls history.
+- [x] **F1. `role="log"` + `aria-atomic="false"` + `aria-busy` on the transcript.**
+      `ThreadPrimitive.Viewport` takes plain div props, so the attributes go
+      straight onto it. Added `aria-live="polite"` and `aria-relevant="additions"`
+      alongside them, because `role="log"` on its own does not say that only
+      additions matter.
+- [x] **F2. Announce the finished message once**, never every token. Solved by
+      the same `aria-busy` flag as F1 rather than by adding a second live region:
+      the flag is true for the whole turn and false at the end, which is one
+      announcement per finished message and still correct once streaming lands. A
+      parallel `role="status"` region would have announced the same text twice.
+      The tests assert the flag actually flips mid-turn, not merely that the
+      attributes are present.
+- [x] **F3. Keyboard contract** — Enter sends, Shift+Enter newline, Escape
+      cancels, ↑↓ recalls history. The first three are assistant-ui's defaults
+      and are now pinned explicitly on the input, so a dependency bump cannot
+      change them silently. ↑↓ recall is new and derives from the transcript
+      rather than a parallel store, so a resumed conversation keeps its recall
+      history. While a recall walk is active the arrows belong to it, the way a
+      shell behaves; typing abandons the walk deliberately, because bash would
+      carry on walking and silently drop the edit, and the edit is about
+      someone's symptoms.
 - [ ] **F4. Text size control**, 200% without loss of content (WCAG 2.2).
-- [ ] **F5. `prefers-reduced-motion`** guard on the activity pulse
-      (`ChatScreen.tsx:42`).
-- [ ] **F6. 44×44px tap targets** on the new controls.
+- [x] **F5. `prefers-reduced-motion`** guard on the activity pulse. Already
+      built at `theme.css:885`, so it was verified in place rather than rebuilt.
+      The recorded location `ChatScreen.tsx:42` is stale: the pulse is the
+      `.aui-activity-dot` in `agentActivity.tsx`, styled from `theme.css`.
+      No automated coverage, because vitest under jsdom does not apply media
+      queries out of a stylesheet. That gap is real and worth closing with a
+      real browser check rather than a fake unit test.
+- [x] **F6. 44×44px tap targets** on the new controls. Send and cancel measured
+      38px tall at their `11px` padding and are now 44px; the composer input
+      moved from 42 to 44. `SuggestedPrompts` was already `min-h-11`. No
+      automated coverage, for the same jsdom reason as F5.
 
 **Progress 2026-10-16/17.** A1, A2, A3, A4, B1-B4, B6, C6 and E1-E7 are
 landed. The frontend gate is green: tsc 0, 150/150 tests, lint 0. A3 added
