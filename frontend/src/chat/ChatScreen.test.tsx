@@ -443,4 +443,138 @@ describe("ChatScreen", () => {
       );
     });
   });
+
+  /* B-014 group F. The transcript is the one place where an accessibility
+     regression is silent: nothing looks different, the button still works, and
+     the only thing that breaks is a blind patient's assistant reading the
+     whole thread again for every token. So these assert attributes and state
+     transitions directly rather than through the DOM shape. */
+  describe("accessibility of the transcript", () => {
+    it("is a log that reads additions rather than the whole thread", async () => {
+      mockTurn(doneEvent(null));
+      renderScreen();
+
+      const log = screen.getByRole("log");
+      expect(log.getAttribute("aria-live")).toBe("polite");
+      /* atomic false is what stops the reader re-reading every prior message
+         when one is added. */
+      expect(log.getAttribute("aria-atomic")).toBe("false");
+      expect(log.getAttribute("aria-relevant")).toBe("additions");
+      expect(log.getAttribute("aria-label")).toBe("Conversation");
+    });
+
+    it("holds announcements while the turn runs, then releases once", async () => {
+      const finish = mockHeldTurn([
+        { id: "call_1", name: "find_nearby_care", status: "running" },
+      ]);
+      renderScreen();
+
+      const log = screen.getByRole("log");
+      /* Before anything is sent there is nothing in flight. */
+      expect(log.getAttribute("aria-busy")).toBe("false");
+
+      await sendATurn();
+
+      /* Busy during the turn. This is the whole of F2: without it a streaming
+         reply would be read out one token at a time. */
+      await waitFor(() => {
+        expect(screen.getByRole("log").getAttribute("aria-busy")).toBe("true");
+      });
+
+      await finish();
+
+      /* Released afterwards, which is when the finished message is spoken. */
+      await waitFor(() => {
+        expect(screen.getByRole("log").getAttribute("aria-busy")).toBe("false");
+      });
+    });
+  });
+
+  describe("composer keyboard contract", () => {
+    it("recalls earlier messages on ArrowUp and walks back down again", async () => {
+      mockTurn(doneEvent(null));
+      renderScreen();
+
+      await sendATurn("my eyes are itchy");
+      await sendATurn("it is worse at night");
+
+      const composer = screen.getByLabelText("Message") as HTMLTextAreaElement;
+      const user = userEvent.setup();
+      composer.focus();
+      composer.setSelectionRange(0, 0);
+      await user.keyboard("{ArrowUp}");
+      await waitFor(() => {
+        expect(composer.value).toBe("it is worse at night");
+      });
+
+      /* Held down, the walk keeps going back even though the caret sits at the
+         end of the recalled text, which is how a shell behaves. */
+      await user.keyboard("{ArrowUp}");
+      await waitFor(() => {
+        expect(composer.value).toBe("my eyes are itchy");
+      });
+
+      await user.keyboard("{ArrowDown}");
+      await waitFor(() => {
+        expect(composer.value).toBe("it is worse at night");
+      });
+    });
+
+    it("stops recalling once the user types, rather than discarding their text", async () => {
+      mockTurn(doneEvent(null));
+      renderScreen();
+
+      await sendATurn("my eyes are itchy");
+
+      const composer = screen.getByLabelText("Message") as HTMLTextAreaElement;
+      const user = userEvent.setup();
+      composer.focus();
+      composer.setSelectionRange(0, 0);
+      await user.keyboard("{ArrowUp}");
+      await waitFor(() => {
+        expect(composer.value).toBe("my eyes are itchy");
+      });
+
+      /* Editing the recalled message abandons the walk. Bash would carry on
+         walking and quietly drop the edit; here the edit is about someone's
+         symptoms, so it wins and the arrows go back to moving the caret. */
+      await user.type(composer, " and it is spreading");
+      expect(composer.value).toBe("my eyes are itchy and it is spreading");
+
+      await user.keyboard("{ArrowUp}");
+      await user.keyboard("{ArrowDown}");
+      expect(composer.value).toBe("my eyes are itchy and it is spreading");
+    });
+
+    it("leaves a newline above the caret reachable", async () => {
+      mockTurn(doneEvent(null));
+      renderScreen();
+
+      await sendATurn("first message");
+
+      const composer = screen.getByLabelText("Message") as HTMLTextAreaElement;
+      const user = userEvent.setup();
+      composer.focus();
+      composer.value = "second line";
+      /* Caret in the middle, so ArrowUp means "move up a line" and must not
+         be stolen by recall. */
+      composer.setSelectionRange(6, 6);
+      await user.keyboard("{ArrowUp}");
+
+      expect(composer.value).toBe("second line");
+    });
+
+    it("does not recall from an empty history", async () => {
+      mockTurn(doneEvent(null));
+      renderScreen();
+
+      const composer = screen.getByLabelText("Message") as HTMLTextAreaElement;
+      const user = userEvent.setup();
+      composer.focus();
+      composer.setSelectionRange(0, 0);
+      await user.keyboard("{ArrowUp}");
+
+      expect(composer.value).toBe("");
+    });
+  });
 });

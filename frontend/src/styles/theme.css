@@ -783,7 +783,7 @@ h2.vt {
 
 .aui-composer-input {
   flex: 1;
-  min-height: 42px;
+  min-height: 44px;
   max-height: 120px;
   resize: none;
   border: 1px solid var(--line);
@@ -802,6 +802,12 @@ h2.vt {
 
 .aui-send,
 .aui-cancel {
+  /* 44px is the target size, not a preference: at 11px padding these buttons
+     measured 38px tall, which fails the tap target floor on a phone. */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
   border: none;
   border-radius: 999px;
   padding: 11px 16px;

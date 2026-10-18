@@ -15,6 +15,8 @@ import {
   ErrorPrimitive,
   MessagePrimitive,
   ThreadPrimitive,
+  useAui,
+  useAuiState,
   useLocalRuntime,
 } from "@assistant-ui/react";
 import { useEffect, useSyncExternalStore } from "react";
@@ -23,6 +25,7 @@ import { AgentActivity } from "./agentActivity";
 import { getActivity, subscribeActivity } from "./activity";
 import { allergyChatAdapter, adoptConversation } from "./allergyChatAdapter";
 import { ChatAgentStatus } from "./ChatAgentStatus";
+import { useComposerHistory } from "./composerHistory";
 import { ToolResult } from "./ToolResult";
 import { AssistantTriage } from "./TriageVerdict";
 import { ChatHistorySheet } from "../components/ChatHistorySheet";
@@ -65,23 +68,78 @@ const AssistantMessage = () => (
   </MessagePrimitive.Root>
 );
 
-const Composer = () => (
-  <ComposerPrimitive.Root className="aui-composer">
-    <ComposerPrimitive.Input
-      className="aui-composer-input"
-      placeholder="Describe how you feel, in any language"
-      aria-label="Message"
-    />
-    {/* Send and Cancel manage their own visibility from composer state, so
-        both are rendered and only the relevant one shows. */}
-    <ComposerPrimitive.Send className="aui-send" aria-label="Send message">
-      Send
-    </ComposerPrimitive.Send>
-    <ComposerPrimitive.Cancel className="aui-cancel" aria-label="Stop generating">
-      Stop
-    </ComposerPrimitive.Cancel>
-  </ComposerPrimitive.Root>
-);
+function Composer() {
+  const aui = useAui();
+  const { recall, forget, isWalking } = useComposerHistory();
+
+  /* Land the caret at the end after a recall. Deferred by a tick so it runs
+     after the controlled textarea has re-rendered with the new value. */
+  const placeCaretAtEnd = (element: HTMLTextAreaElement) => {
+    setTimeout(() => {
+      const end = element.value.length;
+      element.setSelectionRange(end, end);
+    }, 0);
+  };
+
+  const recallBy = (direction: -1 | 1, element: HTMLTextAreaElement) => {
+    aui.composer.setText(recall(direction, element.value));
+    placeCaretAtEnd(element);
+  };
+
+  return (
+    <ComposerPrimitive.Root className="aui-composer">
+      <ComposerPrimitive.Input
+        className="aui-composer-input"
+        placeholder="Describe how you feel, in any language"
+        aria-label="Message"
+        /* Pinned rather than inherited. Enter sends, Shift+Enter inserts a
+           newline and Escape stops the turn, and those are assistant-ui's
+           defaults today. A triage app should not quietly change its keyboard
+           contract because a dependency shipped a minor version, so the
+           behaviour is stated here where a change has to be deliberate. */
+        submitMode="enter"
+        cancelOnEscape={true}
+        onChange={forget}
+        onKeyDown={(event) => {
+          const element = event.currentTarget as HTMLTextAreaElement;
+          const plain = !event.shiftKey && !event.altKey;
+          /* Once a recall walk is under way the arrows belong to it, whatever
+             the caret is doing. A shell behaves the same way, and it is what
+             makes holding the key walk backwards through the thread. */
+          const walking = isWalking();
+
+          if (event.key === "ArrowUp" && plain) {
+            /* Otherwise only from the very start, so a newline above in a
+               multi-line draft stays reachable. */
+            if (
+              !walking &&
+              (element.selectionStart !== 0 || element.selectionEnd !== 0)
+            ) {
+              return;
+            }
+            event.preventDefault();
+            recallBy(-1, element);
+            return;
+          }
+          if (event.key === "ArrowDown" && plain && walking) {
+            /* Only claimed while walking. Otherwise the arrow is left alone so
+               it keeps moving the caret in a multi-line draft. */
+            event.preventDefault();
+            recallBy(1, element);
+          }
+        }}
+      />
+      {/* Send and Cancel manage their own visibility from composer state, so
+          both are rendered and only the relevant one shows. */}
+      <ComposerPrimitive.Send className="aui-send" aria-label="Send message">
+        Send
+      </ComposerPrimitive.Send>
+      <ComposerPrimitive.Cancel className="aui-cancel" aria-label="Stop generating">
+        Stop
+      </ComposerPrimitive.Cancel>
+    </ComposerPrimitive.Root>
+  );
+}
 
 /**
  * The answer a tool produced, rendered where the user is already looking.
@@ -116,10 +174,27 @@ function LatestToolResult() {
   );
 }
 
-const Thread = () => (
-  <ThreadPrimitive.Root className="aui-thread">
-    <ChatHistorySheet />
-    <ThreadPrimitive.Viewport className="aui-viewport">
+function Thread() {
+  /* F1 and F2 are one mechanism, not two. role="log" with aria-atomic="false"
+     tells assistive tech to speak only what was added to the transcript rather
+     than re-reading the thread, and aria-busy holds every change while the turn
+     is in flight, so the finished message is spoken once when that flag drops.
+     Without the busy flag a streaming reply would be read out token by token,
+     which is the trap F2 exists to prevent. */
+  const busy = useAuiState((s) => s.thread.isRunning);
+
+  return (
+    <ThreadPrimitive.Root className="aui-thread">
+      <ChatHistorySheet />
+      <ThreadPrimitive.Viewport
+        className="aui-viewport"
+        role="log"
+        aria-label="Conversation"
+        aria-live="polite"
+        aria-atomic="false"
+        aria-relevant="additions"
+        aria-busy={busy}
+      >
       <ThreadPrimitive.Messages
         components={{ UserMessage, AssistantMessage }}
       />
@@ -147,7 +222,8 @@ const Thread = () => (
       tongue or throat, call 119 now.
     </p>
   </ThreadPrimitive.Root>
-);
+  );
+}
 
 export function ChatScreen() {
   const conversationId = useConversationRouteId();
