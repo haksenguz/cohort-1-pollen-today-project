@@ -533,6 +533,82 @@ like) and **B-020d** (민감정보 consent is recorded but not enforced).
 
 ---
 
+## B-021 — The deployment could not have been deployed
+
+- **Reported:** 2026-10-28 (production-readiness audit, before the first deploy)
+- **Surface:** `docker-compose.yml`, `.env.example`, `frontend/Dockerfile`,
+  `backend/app/core/config.py`, `backend/app/main.py`
+- **Status:** **fixed** — see the checklist at the end
+- **Sources:** [MDN, service worker secure contexts](https://developer.mozilla.org/en-US/docs/Web/API/Service_Worker_API) ·
+  [Caddy automatic HTTPS](https://caddyserver.com/docs/automatic-https)
+
+**Observed, part one: every container signed tokens with a published secret.**
+`docker-compose.yml` passed `DATABASE_URL`, `REDIS_URL`, `CORS_ORIGINS` and the
+provider keys to the `api` service. It did not pass `JWT_SECRET`. The container
+therefore ran on the code default, `jwt_secret: str = "change-me"`
+(`config.py:31`), which is published in this repository. Anyone could mint a
+token for any user id and read their conversations. The stack starts cleanly,
+the health check answers 200, and the hole is invisible until someone uses it.
+
+**Observed, part two: the template could not produce a running stack.**
+`.env.example` listed `DATABASE_URL`, `REDIS_URL`, `JWT_SECRET` and the
+provider keys, and none of the variables Compose actually demands:
+`POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `CORS_ORIGINS`,
+`PUBLIC_ORIGIN`. The README's own first instruction, `cp .env.example .env`
+followed by `docker compose up`, failed on a clean checkout with `set
+POSTGRES_USER`. The same file also still listed `WEATHER_API_KEY`, which
+`Settings` has not read since the Open-Meteo integration made it keyless, so it
+sent whoever was setting up a deployment after a key that does nothing.
+
+**Observed, part three: there was no way to serve it over HTTPS.** The `web`
+container published plain HTTP on a host port, and nothing terminated TLS. A
+PWA service worker only registers on a secure origin, so the install prompt
+would never fire outside `localhost`. The product premise, an installable
+phone app, did not survive the trip off the developer's machine.
+
+**Observed, part four: the build context carried the developer's machine.**
+`frontend/Dockerfile` runs `COPY . .` after `pnpm install`, and there was no
+`.dockerignore` anywhere in the repo. The host's `node_modules` went into the
+image and overwrote the dependencies the image had just installed with a copy
+built for a different platform.
+
+**Observed, part five: the LLM key would have been pointed at the wrong host.**
+The root `.env` carried `OPENAI_API_KEY` but no `OPENAI_BASE_URL`, and the
+container takes its configuration from the environment. The key is a MiniMax
+key, so the deployed agent would have sent it to the OpenAI host and read a
+`401` whose body says "Missing Authentication header". That is B-007 again,
+in a different file.
+
+**Fixed.**
+
+- `JWT_SECRET` is required by the Compose file and refuses to start the
+  container when it is missing.
+- The API now refuses to boot in production on an unsafe configuration:
+  a weak or example signing secret, the dev credential route, or demo mode
+  all stop the process instead of serving traffic. The check lives in
+  `app/core/config.py` and runs at the top of the lifespan, before the
+  database is touched.
+- `.env.example` is the deploy template and lists every variable Compose
+  requires. A test parses the Compose file for `${VAR:?...}` and fails when the
+  template misses one, so the two cannot drift apart again.
+- `deploy/Caddyfile` terminates TLS and forwards to nginx. It sets
+  `flush_interval -1`, because Caddy buffers a proxied response by default and
+  a buffered event stream is not an event stream.
+- `.dockerignore` for both images keeps `node_modules`, `.venv` and the local
+  `.env` out of the build.
+- `docs/DEPLOY.md` is the runbook: first deploy, verification, upgrades,
+  backups, restore, rollback, secret rotation and the failure modes.
+
+- [x] **B-021a. The signing secret never reached the container.**
+- [x] **B-021b. The env template could not produce a running stack.**
+- [x] **B-021c. No TLS, so the PWA could not install.**
+- [x] **B-021d. The build context carried the host's `node_modules`.**
+- [x] **B-021e. The LLM base URL was missing from the deploy environment.**
+- [x] **B-021f. Nothing refused to start on an unsafe configuration.**
+- [x] **B-021g. There was no runbook.**
+
+---
+
 ## B-015 — The history list was ordered and dated by creation time, not activity
 
 - **Reported:** 2026-10-17 (backend lane, while reconciling B-014 group B)

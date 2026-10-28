@@ -59,6 +59,17 @@ Working rules:
 cd backend && uv run ruff check . && uv run ruff format --check . && uv run pytest -q
 ```
 
+## Human voice
+
+Prose a human reads follows these. They are in AGENTS.md rule 12 as well, and
+that rule points here, so this section is the one both refer to.
+
+- No em dashes. Use a full stop, a colon, or parentheses.
+- Active voice. "The engine returns LOW", not "LOW is returned".
+- Vary sentence length. A paragraph of identical sentences reads as filler.
+- Say the thing once. One fact, one place, and no restating it in the summary
+  that sits under the table.
+
 ## Project
 
 - Backend: FastAPI + SQLModel (`backend/`). Package manager for Python: `uv`.

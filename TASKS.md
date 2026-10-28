@@ -1,6 +1,6 @@
 # TASKS — who owns what
 
-Updated: 2026-10-03. One person, one lane.
+Updated: 2026-10-28. One person, one lane.
 
 - **Ismoiljon** (tech lead) owns `feat/ismoiljon` and the whole repo. The
   two-lane split with Jack ended 2026-10-02: `origin/feat/jack` never got
@@ -172,12 +172,40 @@ returns. Both are covered by regression tests now.
       looking for a key that does nothing. The spec's own env-var list (§20) is
       left as written, since that is the historical document it is.
 
+## R1. Deployment readiness
+
+- [x] **R1. The stack starts with a real configuration.** The Compose file
+      requires `JWT_SECRET`, `POSTGRES_*`, `CORS_ORIGINS` and `PUBLIC_ORIGIN`,
+      and `.env.example` is the template that supplies all of them. A test
+      parses the Compose file for every `${VAR:?...}` and fails when the
+      template misses one, so the two cannot drift apart again.
+- [x] **R2. An unsafe configuration stops the boot.** `ENVIRONMENT=production`
+      makes the API refuse to start on a weak or example signing secret, with
+      the dev credential route on, or with demo mode on. The check runs before
+      the database is touched.
+- [x] **R3. TLS in front of the app.** `deploy/Caddyfile` terminates TLS and
+      forwards to nginx, which still serves the PWA and proxies `/api`. A PWA
+      service worker only registers on a secure origin, so without this the
+      install prompt never fires outside `localhost`.
+- [x] **R4. The build context is the repo, not the developer's machine.**
+      `.dockerignore` for both images keeps `node_modules`, `.venv` and the
+      local `.env` out of the image.
+- [x] **R5. A runbook.** `docs/DEPLOY.md`: first deploy, verification against
+      the live instance, upgrades, backups, restore, rollback, secret
+      rotation, troubleshooting, and the limits that are still true (one
+      instance, one database volume, no alert delivery).
+- [ ] **R6. The live deploy.** Needs a host and a domain, which are not
+      things the repository can supply. The stack, the template and the
+      runbook are ready for both.
+
 ## Blocking the demo
 
 Nothing in code and nothing in configuration. All three provider keys are
-issued and verified live. What remains is a decision, not a build: B-010, alert
-delivery. The pipeline generates and stores alerts, but nothing delivers them,
-so a high-pollen alert reaches the user only if they open the Alerts tab.
+issued and verified live, and the deployment path is ready to run
+(`docs/DEPLOY.md`). What remains for the demo is a host, a domain, and a
+decision rather than a build: B-010, alert delivery. The pipeline generates
+and stores alerts, but nothing delivers them, so a high-pollen alert reaches
+the user only if they open the Alerts tab.
 
 ## Verified working
 
