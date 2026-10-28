@@ -175,10 +175,12 @@ returns. Both are covered by regression tests now.
 ## R1. Deployment readiness
 
 - [x] **R1. The stack starts with a real configuration.** The Compose file
-      requires `JWT_SECRET`, `POSTGRES_*`, `CORS_ORIGINS` and `PUBLIC_ORIGIN`,
-      and `.env.example` is the template that supplies all of them. A test
-      parses the Compose file for every `${VAR:?...}` and fails when the
-      template misses one, so the two cannot drift apart again.
+      requires `JWT_SECRET`, `POSTGRES_*` and `PUBLIC_ORIGIN`, and
+      `.env.example` is the template that supplies all of them. A test parses
+      the Compose file for every `${VAR:?...}` and fails when the template
+      misses one, so the two cannot drift apart again. `CORS_ORIGINS` is
+      optional: the API adds `PUBLIC_ORIGIN` to the allowlist by itself, so a
+      wrong value cannot break a working deployment.
 - [x] **R2. An unsafe configuration stops the boot.** `ENVIRONMENT=production`
       makes the API refuse to start on a weak or example signing secret, with
       the dev credential route on, or with demo mode on. The check runs before
@@ -198,14 +200,52 @@ returns. Both are covered by regression tests now.
       things the repository can supply. The stack, the template and the
       runbook are ready for both.
 
+## S1. Product gaps closed before the handoff
+
+Worked in parallel by three workers on 2026-10-28, then integrated and
+re-gated. The bugs.md entries are the record of each one.
+
+- [x] **S1. The chat is a chat, not a transcript.** Real token streaming from
+      the provider (C1), markdown rendering (C2), regenerate (C3), copy (C4),
+      timestamps (C5), jump-to-latest (C7) and an offline state that refuses
+      the send instead of faking it (C10). The frontend worker also shipped
+      the history search field that C7's sibling B7 needed.
+- [x] **S2. The history list is usable.** Conversations are named from the
+      user's first message (B5), `updated_at` is written on every turn
+      (B-015a), and `GET /api/conversations?q=` searches the title and the
+      messages (B7).
+- [x] **S3. 민감정보 is consented to, not just described.** The gate refuses
+      the 민감정보 write paths with a 403 the frontend can act on, the chat
+      asks too, and the consent screen stands in front of the app (B-020d).
+      Reads, export and delete stay open so 제35조 and 제36조 survive a
+      withdrawal.
+- [x] **S4. The privacy rights are real.** The settings rows that said the
+      server had no delete endpoint now open a screen that exports a file and
+      deletes the account behind a two-step confirmation.
+- [x] **S5. The operator can be named.** `OPERATOR_NAME` and
+      `OPERATOR_REGISTRATION_NUMBER` reach the policy, and the emergency
+      contact has a screen (E8).
+- [x] **S6. The interface stopped making claims the backend does not back.**
+      The audit of the demo path is recorded as B-022: a sampled pollen level
+      no longer scores, a day with no measurement no longer reads as "Low",
+      the alert copy says what actually happens, a missing location has a
+      button, and a dead environment provider no longer takes the nearby-care
+      list with it.
+
 ## Blocking the demo
 
 Nothing in code and nothing in configuration. All three provider keys are
 issued and verified live, and the deployment path is ready to run
-(`docs/DEPLOY.md`). What remains for the demo is a host, a domain, and a
-decision rather than a build: B-010, alert delivery. The pipeline generates
-and stores alerts, but nothing delivers them, so a high-pollen alert reaches
-the user only if they open the Alerts tab.
+(`docs/DEPLOY.md`). What remains is a host, a domain, and two decisions
+rather than a build:
+
+- **B-010, alert delivery.** The pipeline generates and stores alerts and
+  sends nothing. The app picks them up while it is open, so a high-pollen
+  alert reaches the user only while the app is running. A delivery channel
+  (SMTP, a webhook, push) is a decision about infrastructure and credentials.
+- **B-020e, the operator.** The privacy policy needs a 사업자 name and a
+  사업자등록번호 before it can be published, and a lawyer has to sign off on
+  the text. `requires_legal_review` stays `true` until a human says so.
 
 ## Verified working
 

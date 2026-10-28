@@ -25,6 +25,64 @@ stale one because it loses an entry silently.
 
 ---
 
+## B-022: The demo path told the user things that were not true
+
+- **Reported:** 2026-10-28 (audit of the demo path, before the deploy handoff)
+- **Surface:** `backend/app/services/risk.py`, `backend/app/api/environment.py`,
+  `frontend/src/routes/TodayPage.tsx`, `frontend/src/routes/SettingsPage.tsx`,
+  `frontend/src/routes/settings/Screens.tsx`, `frontend/src/styles/theme.css`
+- **Status:** fixed
+
+**Observed.** A walk through the app as a first-time user turned up five places
+where the interface claimed something the backend did not back up. Every one of
+them reads as reassurance, which is the wrong direction for a health app.
+
+| what the user saw | what was true |
+| --- | --- |
+| "Moderate · 3 pts" beside the pollen levels | the pollen was a deterministic placeholder, and the allergen boost was counting it |
+| "Low · 0 pts" when every provider had failed | nothing had been measured, so there was no risk for it to be low |
+| "The server has no delete endpoint" | the endpoint existed, worked, and had a test |
+| a greyed-out "Delete account" button | same |
+| "We will notify you" on the Alerts tab | nothing was sent anywhere, and the Settings screen said so in the next breath |
+
+**The pattern is worse than any one of them.** A health app that shows a
+confident green chip on a day it could not ask anybody is worse than an app
+that shows nothing, because the user stops checking. The same goes for a
+screen that says a right does not exist when it does.
+
+**What changed.**
+
+- A sampled pollen level is not a measurement, so it scores nothing. The
+  allergen boost does not count it either. `EnvInput.pollen_is_sample` carries
+  the flag and `risk.py` honours it.
+- No measurement means no verdict. `GET /api/environment/current` returns
+  `risk: null` with `risk_available: false`, and the card says "Unavailable"
+  with no points, next to a note that this is not the same as low risk. The
+  rule engine still owns every verdict it does return; nothing here moved a
+  safety decision into a prompt.
+- The privacy rights are real now. Export downloads a file, delete is a hard
+  delete behind a two-step confirmation, and the false copy is gone.
+- The consent screen stands in front of the app (see **B-020d**).
+- Conversations are named, so the history list is not a column of "Untitled
+  conversation" (see **B5**).
+- The alert copy says what actually happens: the app picks up alerts while it
+  is open, and nothing is sent when it is closed.
+- The "add a location" note has a button, and it opens the screen that takes
+  one.
+- A dead environment provider no longer takes the nearby-care list with it.
+  Those are two different providers, and the clinic list matters most on the
+  day the pollen feed is broken.
+- The public origin joins the CORS allowlist by itself, so a wrong
+  `CORS_ORIGINS` cannot break a deployment that was working.
+
+**One more thing that was quietly broken.** `.risk-dot` had no colour rules at
+all, so the risk chip rendered as an empty circle on the Today and Alerts
+screens. The level was in the text the whole time, which is why nobody
+noticed. The classes are in `theme.css` now, and there is one for the
+"unavailable" case.
+
+---
+
 ## B-014 — The agent is a chatbot, and the chat screen discards what the engine already decided
 
 - **Reported:** 2026-10-16 (user-reported: *"it's not an agent but it's just a chatbot"*)
@@ -135,50 +193,64 @@ and the reference healthcare-agent architecture in
       preview. Done as a Radix `ChatHistorySheet`, with distinct loading,
       empty and error states — "no conversations" and "failed to load" do not
       look the same.
-- [ ] **B5.** Auto-generate a conversation title from the first user message.
-      Still open, and **re-verified against live Postgres on 2026-10-17** rather
-      than assumed: `conversations.title` is still NULL on every row. The
-      endpoints READ it, nothing writes it. The UI falls back to "Untitled
-      conversation".
-      **Corrected 2026-10-18:** this entry claimed "the column and the migration
-      exist, so this is purely the missing write". That was half wrong, and in the
-      dangerous direction — the column was in `db/migrations/02` and in
-      `01_schema.sql`, but in **no Alembic revision at all**, which is the path
-      that actually runs. See **B-019**. The write is still missing; it was also
-      sitting on a column the deployed schema could not guarantee.
+- [x] **B5.** Auto-generate a conversation title from the first user message.
+      Done on 2026-10-28 as `app/services/conversation_title.py`. The title is
+      derived, not generated: the user's own first message, whitespace
+      collapsed, cut on a word boundary at 60 characters, in the language they
+      wrote in. A model call would cost money and add latency to every turn to
+      produce a title the user did not write. The write lands on the first
+      turn, so `conversations.title` is no longer NULL and the history list
+      shows something other than "Untitled conversation".
+      The earlier note on this entry stood: the write was missing, and the
+      column it sat on was in no Alembic revision. **B-019** had already fixed
+      the column.
 - [x] **B6.** New Chat button. Done, in the history sheet.
-- [ ] **B7.** Search across conversations. Not started.
+- [x] **B7.** Search across conversations. Done on 2026-10-28:
+      `GET /api/conversations?q=` matches the title or the message text,
+      case-insensitively, scoped to the caller, with `%` and `_` in the query
+      escaped so a search term cannot act as a wildcard. The response shape is
+      the one the list already had, so the frontend search field in the history
+      sheet uses the same endpoint.
 - [ ] **B8.** Resume an in-flight turn after reload — snapshot + SSE replay with
       `Last-Event-ID`, so a dropped stream is not a lost answer. Not started.
 
 <!-- owner: frontend -->
 ### C. Chat experience
 
-- [ ] **C1. Real token streaming.** **Partially delivered — read this before
-      claiming it is done.** The whole-reply-in-one-event behaviour described in
-      the original report is gone: the stream now emits incremental `message`
-      deltas, concatenating exactly to the final reply (word-start offsets, empty
-      input yields zero deltas, whitespace-only is delivered verbatim). But that
-      is **incremental delivery of an already-complete string, not
-      provider-side token streaming** — the model has finished before the first
-      delta is produced, so the <800ms first-token target is still unmet and
-      nothing here improves time-to-first-byte. Still open: get deltas from the
-      provider as they are generated.
-- [ ] **C2. Markdown rendering** to semantic HTML — the model already emits
-      `**bold**` and lists, currently rendered literally.
-- [ ] **C3. Retry / regenerate** the last response without retyping.
-- [ ] **C4. Copy message.**
-- [ ] **C5. Timestamps** on messages.
+- [x] **C1. Real token streaming.** Done on 2026-10-28. The provider is
+      called with a real stream (`OpenAIChatClient.stream_complete()`), and
+      each piece goes onto the SSE queue as it arrives, so the first text
+      shows up while the model is still writing. The `message` events carry
+      one piece each and concatenate exactly to the `done` event's reply.
+      The rule engine's recommendation is not model text, so it keeps the
+      existing fragment path and `done` is unchanged.
+- [x] **C2. Markdown rendering** to semantic HTML. Done in
+      `chat/Markdown.tsx`: react-markdown with GFM, no raw HTML in the
+      pipeline, links limited to http/https/mailto/tel, images never
+      fetched. A `javascript:` URL loses its link and keeps its words.
+- [x] **C3. Retry / regenerate** the last response without retyping. Done:
+      `POST /api/chat` takes `regenerate: true`, the server replays the last
+      user turn and replaces the last assistant message in place.
+- [x] **C4. Copy message.** Done in `chat/MessageActions.tsx`: copies the
+      reply, confirms with a toast, and says so plainly when the browser
+      refuses.
+- [x] **C5. Timestamps** on messages. Done in `chat/MessageTimestamp.tsx`.
+      The server's `created_at` arrives with the message, and a live message
+      shows no time because there is none yet.
 - [x] **C6. Suggested prompts / quick replies** on the empty state. Done as
       `chat/sessions/SuggestedPrompts.tsx` — tappable chips that seed the
       composer.
-- [ ] **C7. Jump-to-latest** button when the user scrolls up (auto-scroll exists,
-      the escape hatch does not).
+- [x] **C7. Jump-to-latest** button when the user scrolls up (auto-scroll exists,
+      the escape hatch does not). Done with the chat library's own
+      scroll-to-bottom control, which shares its state with the auto-scroll,
+      so the two cannot fight.
 - [ ] **C8. Feedback** thumbs up/down per assistant message.
 - [ ] **C9. Voice input** — the user is short of breath or on the bus; typing is
       the wrong input for this app.
-- [ ] **C10. Offline state for chat** — queued send / clear "you're offline"
-      inside the chat screen, not just the global banner.
+- [x] **C10. Offline state for chat** — queued send / clear "you're offline"
+      inside the chat screen, not just the global banner. Done: the chat
+      watches the connection, refuses a send while offline and says why. It
+      never fakes a send.
 - [ ] **C11. Citations / confidence** so the output feels reviewable.
 
 <!-- owner: backend -->
@@ -427,8 +499,13 @@ bug. They are listed as open because the underlying settings are still missing.
       `theme.css:87-108` already honours `prefers-color-scheme` and nothing
       writes `data-theme` any more, so the app follows the OS. The dead
       `ThemeIcon` export is deleted.
-- [ ] **E8. Emergency contact** — the highest-value missing setting for an allergy
-      app; every OS ships its own version.
+- [x] **E8. Emergency contact** — the highest-value missing setting for an allergy
+      app; every OS ships its own version. Done on 2026-10-28. Three columns on
+      `users` (`emergency_contact_name`, `emergency_contact_phone`,
+      `emergency_contact_note`), a migration (`f2a3b4c5d6e7`), and
+      `GET /api/users/me/emergency-contact` plus `PUT` on the same path. The
+      ERD and `01_schema.sql` were regenerated from `gen_dmm.py` so the diagram
+      and the schema agree. The settings row opens a real screen with a form.
 - [x] **E9. Privacy & data.** Done as `app/services/privacy_service.py` +
       `app/api/privacy.py`. Grounded in 개인정보 보호법 rather than guessed —
       four articles shaped the implementation:
@@ -525,11 +602,14 @@ MODERATE offers it, and one asserts LOW does not. The LOW case is asserted by
 absence on purpose, so putting the button on the calm card later breaks it.
 
 **Suggested order.** Group A, B1–B3, E1–E7 and group F are complete. What is
-left, in order: **D1–D4** → C1–C2 → B5, B7, B8. D1–D3 are code; **D4 is
-blocked on a data source rather than on code**, so that search is worth
-starting in parallel instead of after. Two items need a decision rather than
-work: **B-018b** (five product defaults that decide what a new account looks
-like) and **B-020d** (민감정보 consent is recorded but not enforced).
+left, in order: **D4** → B8 → C8, C9, C11. D4 is blocked on a data source
+rather than on code, so that search is worth starting in parallel instead of
+after. One item still needs a decision rather than work: **B-020e**, the
+operator that has to be named before the policy can be published.
+
+**Progress 2026-10-28.** C1, C2, C3, C4, C5, C7, C10, B5, B7, B-015a, B-020d
+and E8 landed. The audit of the demo path is recorded as **B-022**, and the
+five things it found are fixed.
 
 ---
 
@@ -645,12 +725,13 @@ trigger would exist in production and not in any test database — a test
 asserting the ordering would pass in CI and fail live. That is B-011's exact
 shape.
 
-- [ ] **B-015a. `conversations.updated_at` is still never written.** The fix is at
-      the query level only. Nothing in the app reads the column any more, so
-      nothing depends on it — but anyone reading it directly gets a plausible
-      wrong answer with no error, which is the same failure class as the
-      unrecognised `role` value and the `?? "low"` fallback. Either write it in
-      `_persist_turn`, or drop the column. Leaving it is the indefensible middle.
+- [x] **B-015a. `conversations.updated_at` is still never written.** Done on
+      2026-10-28. The column is written on every persisted turn in
+      `app/api/chat.py` (`_persist_turn`), so it now means what its name says.
+      The list still derives its own ordering from the messages, because a
+      derived value is right for a row written before the write existed.
+      Leaving it unwritten was the indefensible middle, and that middle is
+      gone.
 
 ---
 
@@ -773,8 +854,8 @@ Metadata-only on PostgreSQL 11+, so no table rewrite and no lock.
 - **Reported:** 2026-10-19 (backend lane, production-readiness audit)
 - **Surface:** `backend/app/services/consent.py` (new), `backend/app/api/privacy.py`,
   `backend/app/models/__init__.py`, `backend/tests/test_consent.py` (new)
-- **Status:** **partially fixed** — the record and the policy exist; the gate and
-  the sign-off do not. Read the open items.
+- **Status:** **partially fixed** — the record, the policy and the gate exist; the
+  sign-off does not. Read the open items.
 - **Sources:** [개인정보 보호법 제23조](https://www.law.go.kr/%EB%B2%95%EB%A0%B9/%EA%B0%9C%EC%9D%B8%EC%A0%95%EB%B3%B4%BO%B3%BC%ED%99%94%EB%B2%95/%EC%A0%9C23%EC%A1%B0),
   [개인정보보호위원회 개인정보보호지침 제15조·제16조](https://www.law.go.kr/LSW/admRulLsInfoP.do?admRulId=73445&efYd=0),
   [개인정보 처리 통합 안내서](https://www.privacy.go.kr/cmm/fms/FileDown.do?atchFileId=ATCH_000000000916941&fileSn=1),
@@ -823,15 +904,32 @@ pretending otherwise.
       four 제15조② notice items and the 제22조 위탁 disclosure.
 - [x] **B-020c. The summary named the safe field and not the transferred one.**
       The conversations entry now says the text is sent to the LLM provider.
-- [ ] **B-020d. Consent is recorded but not enforced.** `has_sensitive_consent()`
-      exists and nothing calls it. Gating the allergy and triage writes without
-      gating chat would leave the main flow working and everything else refusing,
-      which is worse than gating nothing — so this needs a decision, not a patch:
-      either the chat flow starts asking (frontend change, other lane), or the
-      app is a consent-gated beta and says so in the policy.
-- [ ] **B-020e. The policy is a draft and the operator is unnamed.** 제30조 wants
-      a named 사업자 and a 사업자등록번호. The policy text carries a placeholder
-      and `operator` is literal. Until someone fills that in this is not publishable.
+- [x] **B-020d. Consent is recorded but not enforced.** Done on 2026-10-28.
+      `require_sensitive_consent()` in `app/services/consent.py` is the one
+      place that answers the question, and it is asked on every 민감정보 write
+      path: `POST /api/chat`, `POST /api/triage`, `POST /api/allergies`. A
+      refusal is a 403 with the code `sensitive_consent_required` and a
+      message that says what to do, so the frontend can branch on it instead
+      of showing a generic failure.
+      The chat asks too, so the whole 민감정보 path sits behind one consent
+      rather than the main flow working while everything else refuses. The
+      frontend puts the consent screen in front of the app
+      (`auth/ConsentContext.tsx`, `components/ConsentGate.tsx`).
+      Reads, export and delete stay open, because 제35조 and 제36조 must
+      survive a withdrawal: a user who says no to processing still keeps the
+      right to see and to delete what is already held.
+      The list of gated routes lives in `app/api/privacy.py`
+      (`_SENSITIVE_WRITE_ROUTES`). A new 민감정보 write route has to be added
+      to it.
+- [ ] **B-020e. The policy is a draft and the operator is unnamed.** The
+      operator now comes from the environment: `OPERATOR_NAME` and
+      `OPERATOR_REGISTRATION_NUMBER` are read by `policy_document()`, so the
+      policy names the 사업자 and the 사업자등록번호 when they are set, and
+      says plainly that no operator is named when they are not.
+      **Still open, and it needs a human:** the two values do not exist yet,
+      and `requires_legal_review` stays `true` on purpose. A lawyer has to
+      read this text and sign off on it, which is a decision no code can make
+      for them.
 - [ ] **B-020f. `제23조③` should be checked again once sharing exists.** The
       disclosure-and-opt-out duty is triggered by information exposed during
       service. Today the app has no share or post feature, so it does not apply —
