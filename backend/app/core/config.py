@@ -1,12 +1,40 @@
 from functools import lru_cache
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Where the app believes it is running. "production" turns on the boot guard
+# in `production_readiness_problems`. Anything else is a typo, and a typo must
+# not quietly mean "no guard".
+ENVIRONMENTS = ("development", "production")
+
+# Secrets that look like a secret and are not. A default that ships to
+# production signs every session token with a value that is published in the
+# repository, so anyone can mint a token for any user.
+INSECURE_JWT_SECRETS = frozenset(
+    {
+        "change-me",
+        "changeme",
+        "change_me",
+        "secret",
+        "secretkey",
+        "secret-key",
+        "jwt-secret",
+        "please-change-me",
+    }
+)
+
+MIN_JWT_SECRET_LENGTH = 32
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     app_name: str = "Allergy AI Companion"
+
+    # "development" by default so a local run never needs this set. A deploy
+    # sets ENVIRONMENT=production, which is what makes the boot guard run.
+    environment: str = "development"
     database_url: str = "postgresql+asyncpg://allergy:allergy@localhost:5432/allergy_ai"
     redis_url: str = "redis://localhost:6379"
 
@@ -46,6 +74,71 @@ class Settings(BaseSettings):
     # only ever turned on for local demo runs.
     demo_mode: bool = False
     demo_user_email: str = "demo@local"
+
+    @field_validator("environment")
+    @classmethod
+    def _environment_is_known(cls, value: str) -> str:
+        normalised = value.strip().lower()
+        if normalised not in ENVIRONMENTS:
+            raise ValueError(
+                f"environment must be one of {list(ENVIRONMENTS)}, got {value!r}. "
+                "An unknown value must not be read as 'no production guard'."
+            )
+        return normalised
+
+
+def production_readiness_problems(settings: Settings) -> list[str]:
+    """What would make this deployment unsafe. Empty list means ready.
+
+    Each item is a mistake that does not error on its own. The stack starts,
+    the health check passes, and the mistake only shows up later: a session
+    forged with a published secret, or a route that hands out the provider key
+    to whoever asks. A boot guard is the only place they can be caught.
+
+    Outside production the list is empty. A local run on the example secret is
+    a local run, and a guard that fires everywhere is a guard people disable.
+
+    The provider keys are deliberately absent from this list. A missing LLM or
+    pollen key degrades one feature and says so in the UI, which is honest.
+    Stopping the deploy over it would not be.
+    """
+    if settings.environment != "production":
+        return []
+
+    problems: list[str] = []
+
+    secret = settings.jwt_secret.strip()
+    if not secret:
+        problems.append("JWT_SECRET is empty. Generate one with `openssl rand -hex 32`.")
+    elif secret.lower() in INSECURE_JWT_SECRETS or len(secret) < MIN_JWT_SECRET_LENGTH:
+        problems.append(
+            "JWT_SECRET is the example value or shorter than "
+            f"{MIN_JWT_SECRET_LENGTH} characters. It signs every session token, so a "
+            "known value lets anyone sign a token for any user. Generate one with "
+            "`openssl rand -hex 32`."
+        )
+
+    if settings.dev_settings_enabled:
+        problems.append(
+            "DEV_SETTINGS_ENABLED is true. That route is unauthenticated and reads "
+            "and writes this instance's provider credentials."
+        )
+
+    if settings.demo_mode:
+        problems.append(
+            "DEMO_MODE is true. Every request without a token is resolved to the "
+            "seeded demo user, so the API has no authentication in front of it."
+        )
+
+    return problems
+
+
+def assert_production_ready(settings: Settings) -> None:
+    """Refuse to boot a production deployment with an unsafe configuration."""
+    problems = production_readiness_problems(settings)
+    if problems:
+        joined = "\n  - ".join(problems)
+        raise RuntimeError(f"Refusing to start in production mode:\n  - {joined}")
 
 
 @lru_cache

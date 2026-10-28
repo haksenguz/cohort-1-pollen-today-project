@@ -22,7 +22,7 @@ from app.api import (
     triage,
     users,
 )
-from app.core.config import get_settings
+from app.core.config import assert_production_ready, get_settings
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
@@ -36,6 +36,13 @@ def _scheduler_disabled() -> bool:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # First, and outside the try blocks below: an unsafe production config has
+    # to stop the process, not warn about it. A container that starts with the
+    # example JWT secret serves every request happily and signs every session
+    # token with a value that is published in this repository. The check is a
+    # no-op outside production.
+    assert_production_ready(settings)
+
     # Tables are created by db/init/01_schema.sql in docker; init_db() is a
     # convenience for local runs without the SQL init. Import lazily so the app
     # still imports when no database is reachable (e.g. unit tests). Any
