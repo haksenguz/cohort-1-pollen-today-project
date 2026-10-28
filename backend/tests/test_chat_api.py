@@ -5,9 +5,9 @@ could post as any user. These tests pin the identity to the bearer token and
 pin conversation ownership.
 
 The SSE body is exercised below, but persistence is not: a real turn writes to
-`messages` / `symptom_events`, whose JSONB columns SQLite cannot compile. The
-streaming tests therefore stub `_load_state` / `_persist_turn` and drive the
-real generator with a scripted model. Agent behaviour is covered in
+`messages` and `symptom_events`, and the streaming tests stub `_load_state` /
+`_persist_turn` so they drive the real generator against a scripted model
+rather than a database. Agent behaviour is covered in
 `test_symptom_agent.py`.
 """
 
@@ -152,9 +152,10 @@ async def test_missing_conversation_is_404(chat_client: AsyncClient) -> None:
 # Rate limiting. Every chat turn is a real model call, so the endpoint has to
 # be bounded; auth alone does not bound a signed-up client.
 #
-# These assert status and headers, not a completed turn: a successful turn
-# writes to `symptom_events`, whose JSONB column SQLite cannot compile. The
-# 429 path returns before any of that, which is exactly what is under test.
+# These assert status and headers, not a completed turn: the 429 path returns
+# before the turn is persisted, so nothing writes to the conversation tables.
+# The persisted turn is covered in test_symptom_agent.py and in the Postgres
+# gate, where the whole schema exists.
 # ---------------------------------------------------------------------------
 
 

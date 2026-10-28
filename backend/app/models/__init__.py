@@ -3,7 +3,7 @@
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import CheckConstraint, Column, DateTime
+from sqlalchemy import JSON, CheckConstraint, Column, DateTime
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlmodel import Field, SQLModel
 
@@ -15,6 +15,20 @@ def _now() -> datetime:
 # Every timestamp column is TIMESTAMPTZ. `_now()` returns an aware datetime, and
 # asyncpg refuses to write one into a naive column, so the two have to agree.
 _TS = DateTime(timezone=True)
+
+
+# JSONB on Postgres, plain JSON everywhere else.
+#
+# The ERD says JSONB and the generated DDL says JSONB, so Postgres gets JSONB.
+# SQLite cannot compile it, which is why the test schema used to leave out
+# every table that has one. That was not a neutral simplification: the privacy
+# export and delete paths query those tables, so on SQLite they raised "no such
+# table" and the tests that covered them either failed or were skipped. The
+# behaviour that only CI ever exercised was the behaviour that mattered.
+#
+# A variant is the same column to Postgres and a text column holding JSON to
+# SQLite, which is all JSONB adds over JSON.
+_JSON = JSON().with_variant(JSONB, "postgresql")
 
 
 def _ts_field() -> Any:
@@ -104,7 +118,7 @@ class Message(SQLModel, table=True):
     # These are written ONLY by the rule engine's output. No tool may set
     # them — see the ADR 0001 guard in the tests.
     triage_level: str | None = Field(default=None, max_length=12)
-    triage_reasons: list[str] = Field(default_factory=list, sa_column=Column(JSONB))
+    triage_reasons: list[str] = Field(default_factory=list, sa_column=Column(_JSON))
     created_at: datetime = _ts_field()
 
 
@@ -113,7 +127,7 @@ class SymptomEvent(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     user_id: int = Field(foreign_key="users.id", index=True)
     conversation_id: int | None = Field(default=None, foreign_key="conversations.id")
-    symptoms: list[str] = Field(default_factory=list, sa_column=Column(JSONB))
+    symptoms: list[str] = Field(default_factory=list, sa_column=Column(_JSON))
     severity: int | None = None
     duration: str | None = Field(default=None, max_length=50)
     possible_trigger: str | None = Field(default=None, max_length=50)

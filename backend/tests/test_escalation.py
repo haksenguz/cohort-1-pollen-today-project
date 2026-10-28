@@ -13,7 +13,6 @@ that fires on "my eyes itch" does not protect anyone: it refuses everything and
 the app stops working, which is its own safety failure.
 """
 
-import os
 from collections.abc import AsyncGenerator
 
 import pytest
@@ -26,12 +25,9 @@ from app.main import app
 from app.services import escalation
 
 # The end-to-end case runs the real request path, which calls _load_state and so
-# needs the `conversations` table. SQLite's in-memory fixture does not create
-# it, so this one runs on the Postgres gate like the privacy tests do.
-requires_full_schema = pytest.mark.skipif(
-    not os.environ.get("TEST_DATABASE_URL", "").startswith("postgresql"),
-    reason="Needs the conversations table; run the Postgres gate.",
-)
+# needs the `conversations` table. It used to run on the Postgres gate only,
+# because the local SQLite fixture did not create that table. The schema is now
+# whole on both engines, so this one runs locally too.
 
 
 async def _register(client: AsyncClient, email: str) -> str:
@@ -171,7 +167,6 @@ async def chat_client(session: AsyncSession) -> AsyncGenerator[AsyncClient, None
     app.dependency_overrides.clear()
 
 
-@requires_full_schema
 @pytest.mark.asyncio
 async def test_a_crisis_turn_never_calls_the_model(chat_client: AsyncClient) -> None:
     """The end-to-end proof: the model object must never be asked anything.

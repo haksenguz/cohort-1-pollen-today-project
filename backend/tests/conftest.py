@@ -5,10 +5,12 @@ Default: an in-memory SQLite DB standing in for Postgres. Set
 against a real Postgres, the way CI does. This is the only way to catch
 dialect-specific bugs like the TIMESTAMPTZ one that reached ``main``.
 
-Only the tables auth/users/allergies/notifications touch are created on
-SQLite — ``symptom_events`` uses a Postgres-only JSONB column that
-SQLite's dialect can't compile, and this suite has no business creating
-tables outside its own scope.
+The schema is the whole schema on both engines. It used to be a reduced one on
+SQLite, with every table carrying a JSONB column left out, and that quietly
+removed the privacy export and delete paths from local coverage: both query
+those tables, so on SQLite they raised "no such table" and the tests covering
+them either failed or were skipped. CI ran Postgres and stayed green, so the
+gap only ever showed on the machine running the gate.
 """
 
 import os
@@ -61,15 +63,6 @@ _ALL_TABLES = [
     User.__table__,
 ]
 
-# Tables the SQLite in-memory engine can compile (no JSONB).
-_SQLITE_TABLES = [
-    User.__table__,
-    UserAllergy.__table__,
-    EnvironmentSnapshot.__table__,
-    Alert.__table__,
-    NotificationPreference.__table__,
-]
-
 
 def _is_postgres(url: str) -> bool:
     return url.startswith("postgresql")
@@ -89,11 +82,8 @@ def _build_test_engine():
 @pytest_asyncio.fixture
 async def session() -> AsyncGenerator[AsyncSession, None]:
     engine = _build_test_engine()
-    tables = None if _is_postgres(str(engine.url)) else _SQLITE_TABLES
     async with engine.begin() as conn:
-        await conn.run_sync(
-            lambda sync_conn: SQLModel.metadata.create_all(sync_conn, tables=tables)
-        )
+        await conn.run_sync(SQLModel.metadata.create_all)
 
     # Postgres tests share a real DB across cases, so wipe before each
     # test to start from a known state. SQLite in-memory starts fresh.

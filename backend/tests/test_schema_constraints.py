@@ -21,7 +21,7 @@ from uuid import uuid4
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import JSON, CheckConstraint, MetaData
+from sqlalchemy import CheckConstraint, MetaData
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
@@ -54,16 +54,14 @@ async def _seed_conversation(session) -> int:
 
 
 def _sqlite_metadata() -> MetaData:
-    """users/conversations/messages with JSONB swapped for SQLite-compilable JSON.
+    """users/conversations/messages, as the models declare them.
 
-    Same substitution test_conversations_api.py uses: conftest's own SQLite path
-    deliberately skips these tables because `messages.triage_reasons` is JSONB,
-    so it cannot hand us a schema containing the constraint under test.
+    The JSON columns are JSONB on Postgres and plain JSON on SQLite, so both
+    dialects compile the real table definitions, constraints included.
     """
     metadata = MetaData()
     for table in (User.__table__, Conversation.__table__, Message.__table__):
         table.to_metadata(metadata)
-    metadata.tables["messages"].c.triage_reasons.type = JSON()
     return metadata
 
 
@@ -238,9 +236,9 @@ async def test_the_model_constraint_rejects_a_bad_role_for_real(
 ) -> None:
     """Behaviour, not file content: write a row the application would never write.
 
-    Runs on both engines. conftest substitutes JSON for JSONB so SQLite can
-    create the table, and SQLite enforces CHECK, so this is real coverage
-    locally as well as on the Postgres 17 service in CI.
+    Runs on both engines. The JSON columns compile on SQLite as well as on
+    Postgres, and SQLite enforces CHECK, so this is real coverage locally as
+    well as on the Postgres 17 service in CI.
     """
     conversation_id = await _seed_conversation(message_session)
 

@@ -12,9 +12,6 @@ behind after "delete everything", or leaking one account's health data into
 another account's export are all bugs that pass a happy-path smoke test.
 """
 
-import os
-
-import pytest
 from httpx import AsyncClient
 from sqlalchemy import func
 from sqlalchemy import select as sa_select
@@ -33,15 +30,14 @@ from app.models import (
 )
 
 # These exercise `symptom_events`, `triage_results` and the `hospital_*`
-# tables. The SQLite in-memory engine behind the default `session` fixture
-# cannot compile `symptom_events` — it is JSONB — and conftest deliberately
-# creates only a subset there, so on SQLite there is nothing to assert against.
-# Postgres is where the schema is real and where the FK order inside the delete
-# actually matters, which is the point of most of these.
-requires_full_schema = pytest.mark.skipif(
-    not os.environ.get("TEST_DATABASE_URL", "").startswith("postgresql"),
-    reason="Needs the JSONB and enforced-FK behaviour only Postgres has; run the Postgres gate.",
-)
+# tables. They used to be skipped on SQLite, because the local fixture created
+# only a subset of the schema and the export raised "no such table". The
+# schema is now whole on both engines, so the export, the summary and the
+# delete run locally as well as on the Postgres gate.
+#
+# What still needs Postgres is enforced foreign keys: SQLite ignores FK
+# enforcement by default, so a test that proves a cascade cannot be proved
+# there. That one lives in the Postgres-only file next door.
 
 
 async def _register(client: AsyncClient, email: str) -> str:
@@ -110,7 +106,6 @@ async def _seed(session: AsyncSession, *, email: str, needle: str) -> int:
     return user.id
 
 
-@requires_full_schema
 async def test_the_export_never_carries_the_password_hash(
     client: AsyncClient, session: AsyncSession
 ):
@@ -129,7 +124,6 @@ async def test_the_export_never_carries_the_password_hash(
     assert "hashed-not-exported" not in res.text
 
 
-@requires_full_schema
 async def test_the_export_is_a_download_named_for_the_day(
     client: AsyncClient, session: AsyncSession
 ):
@@ -147,7 +141,6 @@ async def test_the_export_is_a_download_named_for_the_day(
     assert res.headers.get("cache-control") == "no-store"
 
 
-@requires_full_schema
 async def test_the_export_contains_the_health_data_and_nests_it_readably(
     client: AsyncClient, session: AsyncSession
 ):
@@ -175,7 +168,6 @@ async def test_the_export_contains_the_health_data_and_nests_it_readably(
     assert body["allergies"][0]["allergen"] == "birch"
 
 
-@requires_full_schema
 async def test_one_account_can_never_export_another_accounts_health_data(
     client: AsyncClient, session: AsyncSession
 ):
@@ -195,7 +187,6 @@ async def test_one_account_can_never_export_another_accounts_health_data(
     assert body["account"]["email"] == "mine@example.com"
 
 
-@requires_full_schema
 async def test_deleting_removes_the_orphans_too_not_just_the_rows_keyed_on_user(
     client: AsyncClient, session: AsyncSession
 ):
@@ -228,7 +219,6 @@ async def test_deleting_removes_the_orphans_too_not_just_the_rows_keyed_on_user(
     assert await session.get(User, user_id) is None
 
 
-@requires_full_schema
 async def test_deleting_one_account_leaves_the_others_data_alone(
     client: AsyncClient, session: AsyncSession
 ):
@@ -251,7 +241,6 @@ async def test_deleting_one_account_leaves_the_others_data_alone(
     assert remaining == 1, "deleting one account took another account's messages with it"
 
 
-@requires_full_schema
 async def test_after_deletion_the_data_cannot_be_read_back(
     client: AsyncClient, session: AsyncSession
 ):
