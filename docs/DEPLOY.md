@@ -61,11 +61,10 @@ openssl rand -hex 32
 
 That last command prints the value for `JWT_SECRET`. It signs every session
 token, so it has to be random, and it has to differ from every other
-deployment. Fill in at least these four:
+deployment. Fill in at least these three:
 
 ```
 PUBLIC_ORIGIN=https://your-domain
-CORS_ORIGINS=["https://your-domain"]
 JWT_SECRET=<the value from openssl rand -hex 32>
 POSTGRES_PASSWORD=<a password of your own>
 ```
@@ -75,8 +74,17 @@ time and handed to Caddy as its site address. A wrong value here shows up as a
 request to the wrong origin in the browser's network tab, so it has to be
 right before the build, not after.
 
-`CORS_ORIGINS` is the same value in JSON array form. The app is served from
-one origin and calls its own API, so the list has one entry.
+`CORS_ORIGINS` is optional. The app is served from one origin and calls its
+own API, so the browser never asks about cross-origin access. The API adds
+`PUBLIC_ORIGIN` to the allowlist by itself, which means a wrong `CORS_ORIGINS`
+cannot break a working deployment. Set it only when you serve the API from a
+different origin than the site.
+
+`OPERATOR_NAME` and `OPERATOR_REGISTRATION_NUMBER` name who runs the app in
+the published privacy policy. Korean law wants a business name and a
+사업자등록번호 in it. With them blank the policy says that no operator is
+named yet and that it cannot be published, which is honest but not
+deployable to real users.
 
 ### 4. Build and start
 
@@ -213,10 +221,12 @@ credential rather than a mismatched host.
 | `docker compose up` exits with `set POSTGRES_USER` | `.env` is missing or incomplete | `cp .env.example .env` and fill in every required value |
 | The `api` container restarts in a loop, the log says `Refusing to start in production mode` | `JWT_SECRET` is the example value or shorter than 32 characters | `openssl rand -hex 32`, put it in `.env`, restart |
 | The chat answers with a canned breathing question | `OPENAI_BASE_URL` does not match the provider that issued the key | set the base URL for that provider and restart `api` |
+| The chat is refused with `sensitive_consent_required` | the account has not agreed to 민감정보 processing | the app asks on the first run, or set the agreement in Settings |
+| The privacy policy says no operator is named | `OPERATOR_NAME` and `OPERATOR_REGISTRATION_NUMBER` are blank | fill them in and restart `api` |
 | The site loads but the answer appears all at once | something between the browser and the API is buffering the event stream | `edge` needs `flush_interval -1` and nginx needs `proxy_buffering off` for `/api/` |
 | The PWA will not install | the site is not served over HTTPS, or the browser is holding an old service worker | a secure origin is required, then hard reload |
 | `Pollen: Unavailable` | no key, out of season, or the provider contract moved | `docker compose exec api python scripts/verify_live_pollen.py` prints the provider's own answer |
-| The API answers a CORS error in the browser | `CORS_ORIGINS` does not match the origin the page was served from | set it to the public origin and restart `api` |
+| The API answers a CORS error in the browser | the page is served from an origin the API does not allow | `PUBLIC_ORIGIN` is added to the allowlist automatically, so the page is being served from a different origin than `PUBLIC_ORIGIN`. Fix the origin, or list it in `CORS_ORIGINS` |
 | Every user shares one rate limit bucket | the client IP is not reaching the API | nginx must forward `X-Forwarded-For` |
 | `429` on the chat | the per-user limit, 20 turns a minute by default | raise `CHAT_RATE_LIMIT_PER_MINUTE` in `.env` |
 
@@ -227,8 +237,9 @@ credential rather than a mismatched host.
   migration step is not safe from several replicas at once either. One host,
   one `api` container, for now.
 - **No alert delivery.** The pipeline generates and stores alerts and sends
-  nothing, so a high pollen alert reaches the user only when they open the
-  Alerts tab. That is tracked as B-010.
+  nothing. The app checks for new alerts while it is open and shows them as a
+  toast, so an alert reaches the user only while the app is running. That is
+  tracked as B-010.
 - **The database is one volume.** No replication, no failover, no point in time
   recovery. The dump in the backup section is the whole recovery story.
 - **The policy is a draft.** `GET /api/privacy/policy` returns

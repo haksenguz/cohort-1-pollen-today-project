@@ -292,6 +292,18 @@ def test_the_dev_credential_route_is_off_in_the_container(compose: dict) -> None
     assert api_env["DEV_SETTINGS_ENABLED"] == "false"
 
 
+def test_the_operator_reaches_the_container(compose: dict) -> None:
+    """제30조: the published policy has to name who runs the app.
+
+    The operator comes from the environment, and the container's environment
+    is what compose passes. Left out, every deployment published a policy
+    that said nobody was named.
+    """
+    api_env = compose["services"]["api"]["environment"]
+    assert "OPERATOR_NAME" in api_env
+    assert "OPERATOR_REGISTRATION_NUMBER" in api_env
+
+
 # --- the env template -----------------------------------------------------
 
 

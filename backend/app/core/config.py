@@ -1,6 +1,6 @@
 from functools import lru_cache
 
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Where the app believes it is running. "production" turns on the boot guard
@@ -25,6 +25,15 @@ INSECURE_JWT_SECRETS = frozenset(
 )
 
 MIN_JWT_SECRET_LENGTH = 32
+
+# The origins a local run needs. A deploy serves the site and the API from one
+# origin, so it needs none of these.
+DEV_CORS_ORIGINS = (
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+)
 
 
 class Settings(BaseSettings):
@@ -65,7 +74,14 @@ class Settings(BaseSettings):
     # the test suite use.
     chat_rate_limit_per_minute: int = 20
 
-    cors_origins: list[str] = ["http://localhost:3000"]
+    cors_origins: list[str] = []
+
+    # The origin the site is served from. The shipped stack serves the PWA and
+    # the API from one origin, so this value only matters when the two are
+    # split. It joins the allowlist by itself: a deploy that sets
+    # CORS_ORIGINS to the wrong origin would otherwise fail every browser
+    # request with an error nobody reads.
+    public_origin: str = ""
 
     # ADR 0003: when DEMO_MODE is on, requests without a bearer token are
     # resolved to a seeded demo user instead of 401'ing. The frontend's
@@ -91,6 +107,17 @@ class Settings(BaseSettings):
                 "An unknown value must not be read as 'no production guard'."
             )
         return normalised
+
+    @model_validator(mode="after")
+    def _allow_the_public_origin(self) -> "Settings":
+        origins = list(self.cors_origins)
+        origin = self.public_origin.strip().rstrip("/")
+        if origin and origin not in origins:
+            origins.append(origin)
+        if not origins and self.environment == "development":
+            origins = list(DEV_CORS_ORIGINS)
+        self.cors_origins = origins
+        return self
 
 
 def production_readiness_problems(settings: Settings) -> list[str]:

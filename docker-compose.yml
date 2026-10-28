@@ -57,7 +57,12 @@ services:
       # until 2026-10-28, so every container ran on the code default
       # "change-me" - a value published in this repository.
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET to a random value, e.g. openssl rand -hex 32}
-      CORS_ORIGINS: ${CORS_ORIGINS:?set CORS_ORIGINS to your public site origin}
+      # The origin the site is served from. The API adds it to the CORS
+      # allowlist by itself, so a deploy that gets CORS_ORIGINS wrong still
+      # talks to the browser. The stack serves the PWA and the API from one
+      # origin, so the list can stay empty.
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:?set PUBLIC_ORIGIN, e.g. https://your-host}
+      CORS_ORIGINS: ${CORS_ORIGINS:-[]}
       # Never :? these three. Absent keys must degrade honestly, not crash:
       # no LLM key means the agent cannot run, and no POLLEN_API_KEY means the
       # backend serves a flagged sample rather than a real reading.
@@ -67,6 +72,10 @@ services:
       NAVER_CLIENT_ID: ${NAVER_CLIENT_ID:-}
       NAVER_CLIENT_SECRET: ${NAVER_CLIENT_SECRET:-}
       POLLEN_API_KEY: ${POLLEN_API_KEY:-}
+      # 제30조: the operator named in the published privacy policy. Blank
+      # means the policy says plainly that nobody is named yet.
+      OPERATOR_NAME: ${OPERATOR_NAME:-}
+      OPERATOR_REGISTRATION_NUMBER: ${OPERATOR_REGISTRATION_NUMBER:-}
       DEV_SETTINGS_ENABLED: "false"
     depends_on:
       db:
