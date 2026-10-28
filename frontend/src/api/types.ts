@@ -176,7 +176,11 @@ export interface EnvironmentResponse {
     wind: number | null;
   };
   points: number;
-  risk: RiskLevel;
+  // null when there was nothing real to score, so the screen must not show
+  // a level. `risk_available` says the same thing for readers that prefer
+  // an explicit flag.
+  risk: RiskLevel | null;
+  risk_available: boolean;
   pollen_is_sample: boolean;
 }
 

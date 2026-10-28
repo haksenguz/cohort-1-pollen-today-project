@@ -5,7 +5,8 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import userEvent from "@testing-library/user-event";
+import { MemoryRouter, useLocation } from "react-router-dom";
 
 import type { EnvironmentResponse, HospitalNearbyResponse, UserResponse } from "../api/types";
 
@@ -33,6 +34,20 @@ const renderPage = () =>
     </MemoryRouter>,
   );
 
+/** Renders the page next to a probe, so a navigation can be observed. */
+function LocationProbe() {
+  const location = useLocation();
+  return <span data-testid="pathname">{`${location.pathname}${location.search}`}</span>;
+}
+
+const renderPageWithProbe = () =>
+  render(
+    <MemoryRouter>
+      <TodayPage />
+      <LocationProbe />
+    </MemoryRouter>,
+  );
+
 const user = (overrides: Partial<UserResponse> = {}): UserResponse => ({
   id: 1,
   email: "a@example.com",
@@ -51,6 +66,7 @@ const env = (overrides: Partial<EnvironmentResponse> = {}): EnvironmentResponse 
   weather: { temperature: 18, humidity: 60, wind: 2.4 },
   points: 42,
   risk: "HIGH",
+  risk_available: true,
   pollen_is_sample: false,
   ...overrides,
 });
@@ -206,6 +222,32 @@ describe("TodayPage — degraded paths", () => {
     expect(screen.queryByText("Unavailable")).not.toBeInTheDocument();
   });
 
+  it("shows no risk level at all when no provider answered", async () => {
+    // Every provider down. A score built from nothing is zero points, which
+    // is LOW, and "Low" on a day the app could not ask anybody is a false
+    // all-clear. The card has to say it has nothing to show.
+    vi.mocked(getCurrentEnvironment).mockResolvedValue(
+      env({
+        risk: null,
+        risk_available: false,
+        points: 0,
+        pollen: { tree: null, grass: null, weed: null },
+        air_quality: { pm25: null, pm10: null },
+        weather: { temperature: null, humidity: null, wind: null },
+      }),
+    );
+    vi.mocked(getNearbyHospitals).mockResolvedValue(hospitals());
+
+    renderPage();
+
+    await waitFor(() =>
+      expect(screen.getByText(/no risk score to show/i)).toBeInTheDocument(),
+    );
+    const card = screen.getByLabelText("Current risk");
+    expect(card).toHaveTextContent("Unavailable");
+    expect(card).not.toHaveTextContent("pts");
+  });
+
   it("tells the user to add a location when none is set", () => {
     vi.mocked(useAuth).mockReturnValue({
       user: user({ latitude: null, longitude: null }),
@@ -219,6 +261,53 @@ describe("TodayPage — degraded paths", () => {
     renderPage();
     expect(screen.getByText(/add a location/i)).toBeInTheDocument();
     expect(getCurrentEnvironment).not.toHaveBeenCalled();
+  });
+
+  it("offers the location screen instead of a dead end", async () => {
+    // The note told the user to add a location and gave them nothing to
+    // press. The button opens the screen that actually takes one.
+    vi.mocked(useAuth).mockReturnValue({
+      user: user({ latitude: null, longitude: null }),
+      status: "authenticated",
+      login: vi.fn(),
+      register: vi.fn(),
+      logout: vi.fn(),
+      updateUser: vi.fn(),
+    });
+
+    renderPageWithProbe();
+
+    await userEvent.click(screen.getByRole("button", { name: "Set your location" }));
+    expect(screen.getByTestId("pathname")).toHaveTextContent("/settings?screen=location");
+  });
+
+  it("keeps nearby care when the environment provider fails", async () => {
+    // Two different providers. A dead pollen feed must not take the clinic
+    // list with it, because that is when the user needs a clinic.
+    vi.mocked(getCurrentEnvironment).mockRejectedValue(
+      new ApiError(500, "Environment unavailable"),
+    );
+    vi.mocked(getNearbyHospitals).mockResolvedValue(
+      hospitals({
+        count: 1,
+        results: [
+          {
+            name: "Seoul ENT Clinic",
+            address: "12 Sejong-daero",
+            distance_m: 420,
+            specialty: "ENT",
+            category: "hospital",
+            phone: "02-1234-5678",
+            rank: 1,
+          },
+        ],
+      }),
+    );
+
+    renderPage();
+
+    await waitFor(() => expect(screen.getByText(/environment unavailable/i)).toBeInTheDocument());
+    expect(screen.getByText("Seoul ENT Clinic")).toBeInTheDocument();
   });
 
   it("renders an error state when the environment endpoint fails", async () => {

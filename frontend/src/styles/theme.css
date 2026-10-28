@@ -285,6 +285,30 @@ input {
   flex: none;
 }
 
+/* The colour classes the dot is given by `riskClass()`. They were missing,
+   so the dot rendered with no background at all and the risk chip had no
+   colour signal on the Today and Alerts screens. */
+.risk-dot.low {
+  background: var(--low);
+}
+
+.risk-dot.moderate {
+  background: var(--moderate);
+}
+
+.risk-dot.high {
+  background: var(--high);
+}
+
+.risk-dot.emergency {
+  background: var(--emergency);
+}
+
+/* No provider answered, so there is no level to colour. */
+.risk-dot.unavailable {
+  background: var(--ink-soft);
+}
+
 .envstrip .lbl {
   font-size: 12px;
   color: var(--ink-soft);
