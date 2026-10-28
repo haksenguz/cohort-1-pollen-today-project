@@ -23,7 +23,13 @@ import { Skeleton } from "./ui/skeleton";
 export type ConversationListState =
   | { status: "loading" }
   | { status: "error"; message: string; onRetry: () => void }
-  | { status: "ready"; conversations: ConversationSummary[]; activeId?: number };
+  | {
+      status: "ready";
+      conversations: ConversationSummary[];
+      activeId?: number;
+      /** The search the list was filtered by, if any. */
+      query?: string;
+    };
 
 export function ChatHistoryList({ state }: { state: ConversationListState }) {
   if (state.status === "loading") {
@@ -58,6 +64,22 @@ export function ChatHistoryList({ state }: { state: ConversationListState }) {
   }
 
   if (state.conversations.length === 0) {
+    const query = state.query?.trim();
+    /* A search that matched nothing is not the same fact as having no
+       conversations. One means the word was wrong, the other means the
+       history is empty, and only one of them is worth a retry. */
+    if (query) {
+      return (
+        <Alert>
+          <AlertTitle>{`No conversations match "${query}"`}</AlertTitle>
+          <AlertDescription>
+            The search looks at conversation titles and at the messages inside
+            them.
+          </AlertDescription>
+        </Alert>
+      );
+    }
+
     return (
       <Alert>
         <AlertTitle>No conversations yet</AlertTitle>

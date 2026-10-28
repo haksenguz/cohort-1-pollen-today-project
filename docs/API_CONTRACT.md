@@ -346,13 +346,16 @@ auditor can trace a response back to what was stored.
 
 | field | type | notes |
 | --- | --- | --- |
-| `message` | `str` | 1–2000 chars |
-| `conversation_id` | `int \| null` | omit to start a new conversation |
+| `message` | `str` | 1–2000 chars. Optional when `regenerate` is true, and ignored then. |
+| `conversation_id` | `int \| null` | omit to start a new conversation. Required when `regenerate` is true. |
+| `regenerate` | `bool` | default `false`. Re-ask the last user turn and replace the last assistant message in place. |
 
 A `user_id` in the body is ignored. The user is the token holder.
 
 **Status codes:** `401` without a valid token. `404` when `conversation_id`
-does not exist or belongs to someone else.
+does not exist or belongs to someone else. `422` when neither `message` nor
+`regenerate` is given, and when `regenerate` is true without a
+`conversation_id`. `409` when the conversation has no user turn to regenerate.
 
 ```json
 { "message": "I've had itchy eyes and sneezing since this morning", "conversation_id": null }
@@ -361,8 +364,10 @@ does not exist or belongs to someone else.
 ### Response: this is Server-Sent Events, not a plain JSON body
 
 `chat()` returns `StreamingResponse(..., media_type="text/event-stream")`.
-Read `backend/app/api/chat.py` for the exact generator (`_run_chat`). It is
-**not** token-by-token streaming.
+Read `backend/app/api/chat.py` for the exact generator (`_run_chat`). The reply
+arrives as `message` events carrying one piece each, in order, so a client
+appends them as they arrive. The pieces concatenate to exactly the `message`
+field of the `done` event.
 
 ### `status` events (added 2026-10-14)
 
@@ -394,7 +399,7 @@ would misstate where the safety decision comes from.
 After the status events come exactly one of these two sequences, then the
 stream closes:
 
-**Normal turn**: one `message` event, then one `done` event:
+**Normal turn**: one or more `message` events, then one `done` event:
 
 ```
 event: message
@@ -405,9 +410,11 @@ data: {"message": "Are you having any...", "conversation_id": 42, "symptoms": ["
 
 ```
 
-`message.delta` is the field name, but it carries the **full assistant
-reply as one string**, not an incremental chunk. The frontend must not treat
-it as a token stream. The `done` event's `data` is the complete
+`message.delta` carries one piece of the assistant reply, and the pieces arrive
+as the model produces them. A client appends them in order. When the provider
+cannot stream, the whole reply is sent as several `message` events instead, and
+the concatenation still matches the `done` event's `message` field exactly. The
+`done` event's `data` is the complete
 `ChatResponse` (field names and types below), including whatever the
 extraction filled in so far. `triage_level`/`triage_reasons`/
 `triage_rule_version` stay `null`/`[]` until the agent's `triage_node` has

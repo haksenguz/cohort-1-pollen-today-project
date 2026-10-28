@@ -21,13 +21,19 @@ import {
 } from "@assistant-ui/react";
 import { useEffect, useSyncExternalStore } from "react";
 import { useNavigate } from "react-router-dom";
+import { ArrowDown } from "lucide-react";
 import { AgentActivity } from "./agentActivity";
 import { getActivity, subscribeActivity } from "./activity";
 import { allergyChatAdapter, adoptConversation } from "./allergyChatAdapter";
 import { ChatAgentStatus } from "./ChatAgentStatus";
+import { ChatOfflineNotice } from "./ChatOfflineNotice";
 import { useComposerHistory } from "./composerHistory";
+import { Markdown } from "./Markdown";
+import { CopyMessageButton, RegenerateButton } from "./MessageActions";
+import { MessageTimestamp } from "./MessageTimestamp";
 import { ToolResult } from "./ToolResult";
 import { AssistantTriage } from "./TriageVerdict";
+import { useOnlineStatus } from "./useOnlineStatus";
 import { ChatHistorySheet } from "../components/ChatHistorySheet";
 import {
   ConversationResumeLoading,
@@ -40,10 +46,23 @@ import {
 } from "./sessions";
 
 const UserMessage = () => (
-  <MessagePrimitive.Root className="aui-msg aui-msg-me">
-    <MessagePrimitive.Content />
+  /* The root is a column so the time can sit under the bubble. The bubble
+     keeps its own right alignment. */
+  <MessagePrimitive.Root className="flex w-full flex-col items-end gap-2">
+    <div className="aui-msg aui-msg-me">
+      <MessagePrimitive.Content />
+    </div>
+    <div className="aui-msg-meta aui-msg-meta-end">
+      <MessageTimestamp />
+    </div>
   </MessagePrimitive.Root>
 );
+
+/* The model writes markdown, so its text is parsed into HTML. The user's own
+   text is left alone: what someone typed is what they should see. */
+function MarkdownText({ text }: { text: string }) {
+  return <Markdown text={text} />;
+}
 
 const AssistantMessage = () => (
   /* The root is a column, not the bubble: the safety verdict sits above the
@@ -63,7 +82,14 @@ const AssistantMessage = () => (
     <div className="aui-msg aui-msg-bot">
       {/* The verdict part is rendered above, not here, so the in-bubble
           fallback is suppressed rather than drawing it twice. */}
-      <MessagePrimitive.Content components={{ data: { Fallback: () => null } }} />
+      <MessagePrimitive.Content
+        components={{ Text: MarkdownText, data: { Fallback: () => null } }}
+      />
+    </div>
+    <div className="aui-msg-meta">
+      <MessageTimestamp />
+      <CopyMessageButton />
+      <RegenerateButton />
     </div>
   </MessagePrimitive.Root>
 );
@@ -71,6 +97,7 @@ const AssistantMessage = () => (
 function Composer() {
   const aui = useAui();
   const { recall, forget, isWalking } = useComposerHistory();
+  const online = useOnlineStatus();
 
   /* Land the caret at the end after a recall. Deferred by a tick so it runs
      after the controlled textarea has re-rendered with the new value. */
@@ -87,7 +114,16 @@ function Composer() {
   };
 
   return (
-    <ComposerPrimitive.Root className="aui-composer">
+    <ComposerPrimitive.Root
+      className="aui-composer"
+      /* Offline means the socket is dead. The send is refused here rather
+         than left to fail on the network, because a message that appears in
+         the thread and then disappears is a message the user believes was
+         sent. */
+      onSubmit={(event) => {
+        if (!online) event.preventDefault();
+      }}
+    >
       <ComposerPrimitive.Input
         className="aui-composer-input"
         placeholder="Describe how you feel, in any language"
@@ -131,7 +167,11 @@ function Composer() {
       />
       {/* Send and Cancel manage their own visibility from composer state, so
           both are rendered and only the relevant one shows. */}
-      <ComposerPrimitive.Send className="aui-send" aria-label="Send message">
+      <ComposerPrimitive.Send
+        className="aui-send"
+        aria-label="Send message"
+        disabled={!online}
+      >
         Send
       </ComposerPrimitive.Send>
       <ComposerPrimitive.Cancel className="aui-cancel" aria-label="Stop generating">
@@ -168,7 +208,7 @@ function LatestToolResult() {
         result={latest.result}
         summary={latest.summary}
         code={latest.code}
-        onAction={() => navigate("/settings")}
+        onAction={() => navigate("/settings?screen=location")}
       />
     </div>
   );
@@ -211,11 +251,21 @@ function Thread() {
           <SuggestedPrompts />
         </div>
       </ThreadPrimitive.Empty>
+      {/* The library keeps this control mounted and disables it while the
+          viewport is already at the bottom, where there is nowhere to jump to.
+          The auto-scroll reads the same state, so the two never fight. */}
+      <ThreadPrimitive.ScrollToBottom
+        className="aui-jump"
+        aria-label="Jump to latest message"
+      >
+        <ArrowDown aria-hidden="true" className="aui-jump-icon" />
+      </ThreadPrimitive.ScrollToBottom>
     </ThreadPrimitive.Viewport>
 
     <ChatAgentStatus />
     <AgentActivity />
     <LatestToolResult />
+    <ChatOfflineNotice />
     <Composer />
     <p className="aui-disclaimer">
       Not a diagnosis. If you have trouble breathing or swelling of the

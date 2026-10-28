@@ -269,6 +269,23 @@ describe("listConversations", () => {
     expect(conversation.title).toBeNull();
     expect(conversation.last_message).toBeNull();
   });
+
+  it("sends the search as q and leaves it off when there is none", async () => {
+    vi.mocked(getToken).mockReturnValue("tkn-abc");
+    const fetchSpy = mockFetch({ conversations: [] });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    await listConversations("pollen");
+    await listConversations("   ");
+    await listConversations();
+
+    const [searched] = fetchSpy.mock.calls[0];
+    expect(String(searched)).toBe(`${API_BASE_URL}/api/conversations?q=pollen`);
+    const [blank] = fetchSpy.mock.calls[1];
+    expect(String(blank)).toBe(`${API_BASE_URL}/api/conversations`);
+    const [plain] = fetchSpy.mock.calls[2];
+    expect(String(plain)).toBe(`${API_BASE_URL}/api/conversations`);
+  });
 });
 
 describe("getConversation", () => {
@@ -664,5 +681,41 @@ describe("streamChat tool events", () => {
     const [event] = onTool.mock.calls[0] as [Record<string, unknown>];
     expect(Object.keys(event)).not.toContain("triage_level");
     expect(Object.keys(event)).not.toContain("triage_verdict");
+  });
+});
+
+describe("streamChat regenerate", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  const bodyOf = (fetchSpy: ReturnType<typeof mockSseFetch>) =>
+    JSON.parse((fetchSpy.mock.calls[0][1] as RequestInit).body as string);
+
+  it("marks the turn as a regeneration when asked", async () => {
+    vi.mocked(getToken).mockReturnValue("tkn-abc");
+    const fetchSpy = mockSseFetch([sse("message", { delta: "Another answer." })]);
+    vi.stubGlobal("fetch", fetchSpy);
+
+    await streamChat("my eyes are itchy", 42, {}, undefined, { regenerate: true });
+
+    expect(bodyOf(fetchSpy)).toEqual({
+      message: "my eyes are itchy",
+      conversation_id: 42,
+      regenerate: true,
+    });
+  });
+
+  it("leaves a normal turn without the field", async () => {
+    vi.mocked(getToken).mockReturnValue("tkn-abc");
+    const fetchSpy = mockSseFetch([sse("message", { delta: "An answer." })]);
+    vi.stubGlobal("fetch", fetchSpy);
+
+    await streamChat("my eyes are itchy", 42, {});
+
+    expect(bodyOf(fetchSpy)).toEqual({
+      message: "my eyes are itchy",
+      conversation_id: 42,
+    });
   });
 });

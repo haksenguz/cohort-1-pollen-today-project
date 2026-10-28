@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Literal, Protocol
 
@@ -128,6 +128,17 @@ class ToolCallingLLMClient(Protocol):
     ) -> ToolTurn: ...
 
 
+class StreamingLLMClient(Protocol):
+    """OPTIONAL capability: a client that hands back its answer as it arrives.
+
+    Separate from `LLMClient` for the same reason tool calling is. A client
+    that has never heard of streaming still satisfies `LLMClient` unchanged,
+    and the caller falls back to one complete answer.
+    """
+
+    def stream_complete(self, messages: Sequence[ChatMessageLike]) -> Iterator[str]: ...
+
+
 def function_tool_spec(name: str, description: str, parameters: Mapping[str, Any]) -> ToolSpec:
     """Build one OpenAI `tools` entry from a JSON-schema parameter block."""
     return {
@@ -165,6 +176,20 @@ def _message_payload(message: ChatMessageLike) -> dict[str, Any]:
         if key in message:
             payload[key] = message[key]
     return payload
+
+
+def _delta_text(chunk: Any) -> str:
+    """The text in one streamed chunk, or "" when the chunk carries none.
+
+    A chunk can carry a role, a finish reason or a tool call instead of text,
+    and the first chunk of a stream usually carries only the role.
+    """
+    choices = getattr(chunk, "choices", None) or []
+    if not choices:
+        return ""
+    delta = getattr(choices[0], "delta", None)
+    content = getattr(delta, "content", None)
+    return content if isinstance(content, str) else ""
 
 
 def _import_openai_sdk():
@@ -264,6 +289,45 @@ class OpenAIChatClient:
         if content is None and not tool_calls:
             raise LLMCallError("malformed", "model returned no content")
         return ToolTurn(content=content, tool_calls=tool_calls)
+
+    def stream_complete(self, messages: Sequence[ChatMessageLike]) -> Iterator[str]:
+        """The answer, piece by piece, as the provider writes it.
+
+        The provider is asked for a stream, so the first words arrive while the
+        model is still writing them instead of after it has finished. The
+        pieces are the answer exactly: they are handed over untouched, so what
+        the caller appends is what the reply is.
+
+        A failure at any point of the stream, including halfway through, is
+        raised as an `LLMCallError`, the same way a failed complete call is.
+        """
+        payload = [_message_payload(m) for m in messages]
+        try:
+            stream = self._client.chat.completions.create(
+                model=self._model,
+                messages=payload,
+                temperature=0,
+                max_tokens=self._max_tokens,
+                stream=True,
+            )
+        except Exception as exc:  # noqa: BLE001 — normalized immediately below
+            err = _classify(exc)
+            logger.warning("openai_client: %s", err.detail)
+            raise err from exc
+
+        try:
+            for chunk in stream:
+                text = _delta_text(chunk)
+                if text:
+                    yield text
+        except Exception as exc:  # noqa: BLE001 — normalized immediately below
+            err = _classify(exc)
+            logger.warning("openai_client: %s", err.detail)
+            raise err from exc
+        finally:
+            close = getattr(stream, "close", None)
+            if callable(close):
+                close()
 
     def _create(self, messages: Sequence[ChatMessageLike], tools: Sequence[ToolSpec] | None = None):
         # Rebuild each turn as a fresh dict. `symptom_agent` passes TypedDicts,

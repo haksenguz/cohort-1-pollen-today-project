@@ -139,6 +139,11 @@ class AllergyState(TypedDict, total=False):
 
     assistant_reply: str | None
 
+    # True when the reply was handed over by a streaming client, piece by
+    # piece, as the model wrote it. The caller uses it to know that the text is
+    # already on the wire and must not be sent a second time.
+    reply_from_stream: bool
+
     # Set only by triage_node, only from a TriageOutcome. Never by the LLM.
     triage_level: str | None
     triage_recommendation: str | None
@@ -479,6 +484,7 @@ def initial_state(history: Sequence[ChatMessage] | None = None) -> AllergyState:
         tool_observations=[],
         llm_error_kind=None,
         assistant_reply=None,
+        reply_from_stream=False,
         triage_level=None,
         triage_recommendation=None,
         triage_reasons=[],
@@ -661,16 +667,7 @@ def make_ask_question_node(
             ]
             if progress is not None:
                 progress("asking")
-            try:
-                question = (llm.complete(prompt) or "").strip()
-            except LLMCallError as exc:
-                # J4: same degradation for the question call — fall back to the
-                # generic question rather than failing the turn.
-                logger.warning("symptom_agent: question call failed (%s)", exc.kind)
-                question = ""
-            except Exception:
-                logger.warning("symptom_agent: question call to LLM failed", exc_info=True)
-                question = ""
+            question = _ask_the_model(llm, prompt, state)
             if not question:
                 question = FALLBACK_QUESTION
 
@@ -679,6 +676,50 @@ def make_ask_question_node(
         return state
 
     return _ask_question
+
+
+def _ask_the_model(llm: LLMClient, prompt: list[ChatMessage], state: AllergyState) -> str:
+    """The model's own follow-up question, streamed when the client can stream.
+
+    A client that offers `stream_complete` hands the question over in pieces
+    as the model writes it, so the caller can show the first words long before
+    the last one. A client without that capability gets the whole answer in
+    one call, which is what every offline fake does.
+
+    The pieces are used exactly as they arrive. Trimming them would break the
+    promise the client relies on: what it appended is what the reply is.
+    """
+    streamer = getattr(llm, "stream_complete", None)
+    if callable(streamer):
+        pieces: list[str] = []
+        try:
+            for piece in streamer(prompt):
+                if not piece.strip():
+                    continue
+                pieces.append(piece)
+        except LLMCallError as exc:
+            logger.warning("symptom_agent: streamed question failed (%s)", exc.kind)
+            state["llm_error_kind"] = exc.kind
+            return ""
+        except Exception:
+            logger.warning("symptom_agent: streamed question failed", exc_info=True)
+            state["llm_error_kind"] = "unavailable"
+            return ""
+        if not pieces:
+            return ""
+        state["reply_from_stream"] = True
+        return "".join(pieces)
+
+    try:
+        return (llm.complete(prompt) or "").strip()
+    except LLMCallError as exc:
+        logger.warning("symptom_agent: question call failed (%s)", exc.kind)
+        state["llm_error_kind"] = exc.kind
+        return ""
+    except Exception:
+        logger.warning("symptom_agent: question call to LLM failed", exc_info=True)
+        state["llm_error_kind"] = "unavailable"
+        return ""
 
 
 def _observe(registry: ToolRegistry, call: ToolCall) -> str:
@@ -895,6 +936,10 @@ def run_turn(
 
     `registry` is optional and defaults to None, meaning no tools are offered
     and the pass costs exactly the two model calls it always did.
+
+    A client that can stream hands the reply over piece by piece, and the
+    caller sees each piece as it arrives. A client that cannot gets the whole
+    answer in one call.
     """
     next_state: AllergyState = dict(state)  # type: ignore[assignment]
     next_state["messages"] = [

@@ -201,6 +201,17 @@ export interface TriageResponse {
 export interface ChatRequest {
   message: string;
   conversation_id?: number | null;
+  /**
+   * Re-run the assistant turn for the last user message and replace the last
+   * assistant message in place. The stream is the same as a normal turn.
+   */
+  regenerate?: boolean;
+}
+
+/** Per-turn options for `streamChat`. */
+export interface ChatSendOptions {
+  /** Send the turn as a regeneration of the last assistant reply. */
+  regenerate?: boolean;
 }
 
 export interface ChatResponse {
