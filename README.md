@@ -12,15 +12,21 @@ Full product spec: [`docs/pollen_documentation.md`](docs/pollen_documentation.md
 ## Architecture
 
 ```
-Mobile PWA (frontend)  ──HTTPS──▶  FastAPI (backend)  ──▶  Postgres / Redis
-                                        │
-                          ┌─────────────┼─────────────┐
-                    Environmental    LangGraph      Hospital
-                       service       AI agents       service
+Phone browser  ──HTTPS──▶  edge (Caddy)  ──▶  web (nginx + PWA)
+                                                    │
+                                          /api/*    ▼
+                                               api (FastAPI)
+                                                    │
+                                      ┌─────────────┼─────────────┐
+                                Environmental    LangGraph      Hospital
+                                   service       AI agents       service
+                                                    │
+                                                 Postgres / Redis
 ```
 
-Frontend is a phone-first **PWA**, designed separately (Ismoiljon). This repo is
-the backend + data model; the API is the contract the PWA consumes.
+The frontend is a phone-first **PWA** built with Vite, React and Tailwind v4
+(ADR 0002, ADR 0003). It ships as static files behind nginx, which proxies
+`/api` to the backend, so the browser talks to one origin.
 
 The core design rule: the **LLM does conversation + extraction only**; a
 **deterministic rule engine** owns every safety decision
@@ -33,37 +39,57 @@ The core design rule: the **LLM does conversation + extraction only**; a
 - DDL: [`backend/db/init/01_schema.sql`](backend/db/init/01_schema.sql) (also
   runs on first `docker compose up` via `backend/db/init/`)
 - Regenerate both from one spec: `python docs/erd/gen_dmm.py`
+- Migrations: Alembic, applied on every API container boot
 
 ## Run
 
+The whole stack, in the shape it takes in production:
+
 ```bash
-cp .env.example .env         # fill in API keys
-docker compose up            # postgres + redis + api on :8000
+cp .env.example .env         # fill in the values it asks for
+docker compose up -d --build
 ```
 
-API docs at http://localhost:8000/docs.
+The site comes up on `http://localhost`. A real deployment uses
+`https://your-domain` and Caddy obtains the certificate on its own.
 
-Frontend (mobile PWA) is designed and built separately; it talks to this API.
-
-## Backend dev
+Backend on its own, for development:
 
 ```bash
 cd backend
-uv run fastapi dev app/main.py
-uv run pytest                 # safety-critical: triage + risk
+uv run fastapi dev app/main.py   # API on :8000, OpenAPI at /docs
+uv run pytest                    # safety-critical: triage + risk
 ```
+
+Frontend on its own:
+
+```bash
+cd frontend
+pnpm install
+pnpm dev                        # Vite on :5173
+```
+
+Deploying to a host, upgrading it, backups and the failure modes are all in
+[`docs/DEPLOY.md`](docs/DEPLOY.md).
 
 ## Layout
 
 ```
 backend/    FastAPI + SQLModel + rule engines + agents, plus db/init DDL
-frontend/   phone-first PWA — HTML prototype now, Vite + React later (ADR 0002)
+frontend/   phone-first PWA, Vite + React + Tailwind v4 (ADR 0002, ADR 0003)
+deploy/     Caddyfile for the TLS edge
 docs/       spec, ERD (.dmm, generator), ADRs, research/, headache/, governance
 ```
 
 ## Roadmap
 
-Phases 1–7 in `docs/pollen_documentation.md` §21. Done so far: ERD, backend
-scaffold, deterministic risk scoring, rule-based triage, environment endpoint.
-Next: real pollen/AQI/weather providers, auth, LangGraph symptom agent, hospital
-finder.
+Phases 1–7 in `docs/pollen_documentation.md` §21. Shipped: ERD and migrations,
+auth, deterministic risk scoring, rule-based triage, the LangGraph symptom
+agent over SSE, the real pollen, air quality, weather and hospital providers,
+the agent tool loop, chat history, privacy export and deletion, consent
+records, and the deployment stack.
+
+Open work is tracked in [`TASKS.md`](TASKS.md) and [`bugs.md`](bugs.md). The
+biggest gap between the code and a finished product is that alert delivery
+does not exist yet: the pipeline generates and stores alerts and sends
+nothing.

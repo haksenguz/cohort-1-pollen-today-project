@@ -16,20 +16,35 @@
  */
 import { useEffect, useState } from "react";
 import { Dialog } from "radix-ui";
-import { History, MessageSquarePlus, X } from "lucide-react";
+import { History, MessageSquarePlus, Search, X } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 import { listConversations } from "../api/client";
 import type { ConversationSummary } from "../api/types";
 import { ChatHistoryList, type ConversationListState } from "./ChatHistoryList";
 import { Button } from "./ui/button";
+import { Input } from "./ui/input";
 
 const NEW_CHAT_PATH = "/chat";
+
+/** How long the typing has to pause before the list is searched. */
+const SEARCH_DELAY_MS = 250;
 
 export function ChatHistorySheet({ activeId }: { activeId?: number }) {
   const [open, setOpen] = useState(false);
   const [state, setState] = useState<ConversationListState>({ status: "loading" });
+  const [query, setQuery] = useState("");
+  const [search, setSearch] = useState("");
   const navigate = useNavigate();
+
+  // Wait for a pause in typing before asking the server. One request per
+  // keystroke is a request per letter.
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setSearch(query.trim());
+    }, SEARCH_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [query]);
 
   // Fetch on open, not on mount: the trigger sits on the chat screen, which is
   // the default route of an installed PWA, so an unreachable backend must not
@@ -42,10 +57,10 @@ export function ChatHistorySheet({ activeId }: { activeId?: number }) {
     setState({ status: "loading" });
 
     const load = () => {
-      listConversations()
+      listConversations(search || undefined)
         .then((conversations: ConversationSummary[]) => {
           if (cancelled) return;
-          setState({ status: "ready", conversations, activeId });
+          setState({ status: "ready", conversations, activeId, query: search });
         })
         .catch((error: unknown) => {
           if (cancelled) return;
@@ -64,7 +79,7 @@ export function ChatHistorySheet({ activeId }: { activeId?: number }) {
     return () => {
       cancelled = true;
     };
-  }, [open, activeId]);
+  }, [open, activeId, search]);
 
   return (
     <>
@@ -118,6 +133,20 @@ export function ChatHistorySheet({ activeId }: { activeId?: number }) {
               <MessageSquarePlus />
               New chat
             </Button>
+
+            <div className="relative">
+              <Search aria-hidden="true" className="search-field-icon" />
+              <Input
+                type="search"
+                className="min-h-11 pl-9"
+                placeholder="Search conversations"
+                aria-label="Search conversations"
+                value={query}
+                onChange={(event) => {
+                  setQuery(event.target.value);
+                }}
+              />
+            </div>
 
             <div className="-mx-1 flex-1 overflow-y-auto px-1 pb-6">
               <ChatHistoryList state={state} />

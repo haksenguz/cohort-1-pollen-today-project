@@ -1,0 +1,29 @@
+# Line endings for files a Linux container has to parse.
+#
+# Scoped deliberately rather than `* text=auto eol=lf` repo-wide. Everything
+# below fails *silently* at runtime on the wrong endings and passes every local
+# check: a shell script with CRLF dies at CMD with '\r: not found', and an nginx
+# config with CRLF is rejected at startup for a directive it read correctly.
+#
+# Git normalises line endings when diffing, so a CRLF working-tree file can sit
+# there looking clean in `git status` and `git diff` while being broken in the
+# image. It happened here: a script that rewrote these files with Python's
+# default text mode converted frontend/nginx.conf to CRLF, and nothing in the
+# repo said so.
+#
+# The Caddyfile is here for the same reason as nginx.conf. It is mounted into
+# the edge container as the site configuration, and Caddy rejects a config
+# file with a stray carriage return: the container dies on boot with a parse
+# error that names neither the file nor the line.
+#
+# Deliberately NOT listed: *.yml, *.sql, *.ini and the Python sources. CRLF is
+# harmless in all of them - YAML and INI parsers strip it, and Python handles
+# universal newlines - so forcing it would create diff noise for no benefit.
+
+*.sh    text eol=lf
+Dockerfile      text eol=lf
+**/Dockerfile   text eol=lf
+nginx.conf      text eol=lf
+**/nginx.conf   text eol=lf
+Caddyfile      text eol=lf
+**/Caddyfile   text eol=lf

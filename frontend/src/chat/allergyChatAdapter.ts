@@ -55,6 +55,20 @@ export function currentConversationId(): number | null {
   return conversationId;
 }
 
+/**
+ * Marks the next run as a regeneration of the last assistant turn.
+ *
+ * assistant-ui hands the adapter the messages of the thread and nothing that
+ * says why the run started. A regeneration and a normal turn look the same
+ * there: both end in a user message. The control that asked for the
+ * regeneration sets this flag, and the adapter consumes it on the next run.
+ */
+let nextRunIsRegeneration = false;
+
+export function markNextRunAsRegeneration(): void {
+  nextRunIsRegeneration = true;
+}
+
 interface TextPart {
   type: "text";
   text: string;
@@ -126,6 +140,11 @@ export const allergyChatAdapter: ChatModelAdapter = {
       streamError: string | null;
     } = { reply: "", result: null, streamError: null };
 
+    // Read and clear the flag before the request goes out, so a later turn
+    // does not inherit it.
+    const regenerate = nextRunIsRegeneration;
+    nextRunIsRegeneration = false;
+
     // Show something immediately rather than waiting for the first `status`
     // event, which cannot arrive until the backend has opened the stream.
     setActivity("starting");
@@ -151,6 +170,7 @@ export const allergyChatAdapter: ChatModelAdapter = {
           },
         },
         options.abortSignal,
+        { regenerate },
       );
     } catch (error) {
       // A rejected token used to surface as an inline "Could not validate

@@ -5,18 +5,23 @@ Default: an in-memory SQLite DB standing in for Postgres. Set
 against a real Postgres, the way CI does. This is the only way to catch
 dialect-specific bugs like the TIMESTAMPTZ one that reached ``main``.
 
-Only the tables auth/users/allergies/notifications touch are created on
-SQLite — ``symptom_events`` uses a Postgres-only JSONB column that
-SQLite's dialect can't compile, and this suite has no business creating
-tables outside its own scope.
+The schema is the whole schema on both engines. It used to be a reduced one on
+SQLite, with every table carrying a JSONB column left out, and that quietly
+removed the privacy export and delete paths from local coverage: both query
+those tables, so on SQLite they raised "no such table" and the tests covering
+them either failed or were skipped. CI ran Postgres and stayed green, so the
+gap only ever showed on the machine running the gate.
 """
 
 import os
 from collections.abc import AsyncGenerator
+from pathlib import Path
 
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import text
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 from sqlmodel import SQLModel
@@ -61,18 +66,58 @@ _ALL_TABLES = [
     User.__table__,
 ]
 
-# Tables the SQLite in-memory engine can compile (no JSONB).
-_SQLITE_TABLES = [
-    User.__table__,
-    UserAllergy.__table__,
-    EnvironmentSnapshot.__table__,
-    Alert.__table__,
-    NotificationPreference.__table__,
-]
-
 
 def _is_postgres(url: str) -> bool:
     return url.startswith("postgresql")
+
+
+def _database_name(url: str) -> str:
+    """The database part of a URL, without the driver or the query."""
+    path = url.split("://", 1)[-1]
+    return path.rsplit("/", 1)[-1].split("?", 1)[0]
+
+
+def _app_database_name() -> str | None:
+    """The database the app itself runs on, when this machine says which one.
+
+    Read from the environment first and from `backend/.env` second, because a
+    local run configures the app through the file.
+    """
+    from_env = os.environ.get("DATABASE_URL")
+    if from_env:
+        return _database_name(from_env)
+
+    env_file = Path(__file__).resolve().parents[1] / ".env"
+    if not env_file.exists():
+        return None
+    for line in env_file.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if stripped.startswith("DATABASE_URL="):
+            value = stripped.split("=", 1)[1].strip().strip("\"'")
+            return _database_name(value)
+    return None
+
+
+def _refuse_to_wipe_the_app_database(test_url: str) -> None:
+    """Stop the suite before it touches the database the app is running on.
+
+    The fixture empties every table before each test, and it rebuilds the
+    schema as well. Pointing `TEST_DATABASE_URL` at the app's own database
+    would delete the real conversations and the real users, so the two names
+    are compared first and the run stops with a plain message when they are
+    the same.
+    """
+    app_database = _app_database_name()
+    if app_database is None:
+        return
+    test_database = _database_name(test_url)
+    if test_database == app_database:
+        raise RuntimeError(
+            f"TEST_DATABASE_URL points at '{test_database}', which is the same database "
+            "the app runs on. The test suite empties and rebuilds that database, so it "
+            "would delete the app's own data. Point TEST_DATABASE_URL at a disposable "
+            "test database."
+        )
 
 
 def _build_test_engine():
@@ -89,15 +134,31 @@ def _build_test_engine():
 @pytest_asyncio.fixture
 async def session() -> AsyncGenerator[AsyncSession, None]:
     engine = _build_test_engine()
-    tables = None if _is_postgres(str(engine.url)) else _SQLITE_TABLES
+    test_url = str(engine.url)
+    if _is_postgres(test_url):
+        _refuse_to_wipe_the_app_database(test_url)
+
     async with engine.begin() as conn:
-        await conn.run_sync(
-            lambda sync_conn: SQLModel.metadata.create_all(sync_conn, tables=tables)
-        )
+        if _is_postgres(test_url):
+            # The schema is rebuilt, not merged into whatever is already there.
+            # `create_all` only creates the tables that are missing, so a
+            # database left over from before a migration keeps its old columns
+            # and the suite then fails on every new field with "column does not
+            # exist", which reads like a defect in the code rather than a stale
+            # test database. This one is disposable by contract, and the
+            # fixture below empties every table before each test anyway.
+            try:
+                await conn.execute(text("DROP SCHEMA public CASCADE"))
+                await conn.execute(text("CREATE SCHEMA public"))
+            except DBAPIError:
+                # The role does not own the schema. Fall back to the old
+                # behaviour rather than failing the whole run.
+                pass
+        await conn.run_sync(SQLModel.metadata.create_all)
 
     # Postgres tests share a real DB across cases, so wipe before each
     # test to start from a known state. SQLite in-memory starts fresh.
-    if _is_postgres(str(engine.url)):
+    if _is_postgres(test_url):
         async with engine.begin() as conn:
             for tbl in _ALL_TABLES:
                 await conn.execute(tbl.delete())

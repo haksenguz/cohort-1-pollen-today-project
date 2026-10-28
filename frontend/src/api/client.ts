@@ -9,6 +9,7 @@ import type {
   AllergyResponse,
   ChatResponse,
   ChatErrorEvent,
+  ChatSendOptions,
   ChatStatusEvent,
   ConversationDetail,
   ConversationListResponse,
@@ -41,13 +42,53 @@ export const API_BASE_URL: string =
 export class ApiError extends Error {
   status: number;
   detail: string;
+  /** Machine-readable code, when the server sent one. */
+  code: string | null;
 
-  constructor(status: number, detail: string) {
+  constructor(status: number, detail: string, code: string | null = null) {
     super(detail);
     this.name = "ApiError";
     this.status = status;
     this.detail = detail;
+    this.code = code;
   }
+}
+
+/**
+ * Turns an error body into a sentence a user can act on.
+ *
+ * FastAPI sends `detail` as a string, as a list of validation errors, or as
+ * an object carrying a code and a message. The 민감정보 refusal is the third
+ * shape. `String(detail)` on an object reads "[object Object]", which tells
+ * the user nothing and hides the reason the request was refused.
+ */
+export function readErrorDetail(
+  payload: unknown,
+  fallback: string,
+): { message: string; code: string | null } {
+  if (!payload || typeof payload !== "object" || !("detail" in payload)) {
+    return { message: fallback, code: null };
+  }
+  const detail = (payload as { detail: unknown }).detail;
+  if (typeof detail === "string") return { message: detail, code: null };
+  if (Array.isArray(detail)) {
+    const messages = detail
+      .map((item) =>
+        item && typeof item === "object" && "msg" in item
+          ? String((item as { msg: unknown }).msg)
+          : String(item),
+      )
+      .filter((text) => text.length > 0);
+    return { message: messages.join(" ") || fallback, code: null };
+  }
+  if (detail && typeof detail === "object") {
+    const record = detail as { code?: unknown; message?: unknown };
+    return {
+      message: typeof record.message === "string" ? record.message : fallback,
+      code: typeof record.code === "string" ? record.code : null,
+    };
+  }
+  return { message: fallback, code: null };
 }
 
 interface RequestOptions {
@@ -96,11 +137,11 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   const payload = isJson ? await response.json() : undefined;
 
   if (!response.ok) {
-    const detail =
-      (payload && typeof payload === "object" && "detail" in payload
-        ? String((payload as { detail: unknown }).detail)
-        : response.statusText) || "Request failed";
-    throw new ApiError(response.status, detail);
+    const { message, code } = readErrorDetail(
+      payload,
+      response.statusText || "Request failed",
+    );
+    throw new ApiError(response.status, message, code);
   }
 
   return payload as T;
@@ -227,10 +268,14 @@ export function saveDevLlmSettings(
 // conversation owned by somebody else rather than 403, so a 404 here means
 // "gone or never yours", never "ask again later".
 
-export function listConversations(): Promise<ConversationSummary[]> {
-  return request<ConversationListResponse>("/api/conversations", { auth: true }).then(
-    (response) => response.conversations,
-  );
+export function listConversations(query?: string): Promise<ConversationSummary[]> {
+  const search = query?.trim();
+  return request<ConversationListResponse>("/api/conversations", {
+    auth: true,
+    // An empty search means no filter, so the query parameter is left off
+    // entirely rather than sent blank.
+    ...(search ? { query: { q: search } } : {}),
+  }).then((response) => response.conversations);
 }
 
 export function getConversation(conversationId: number): Promise<ConversationDetail> {
@@ -266,6 +311,7 @@ export async function streamChat(
   conversationId: number | null,
   handlers: ChatStreamHandlers,
   signal?: AbortSignal,
+  options?: ChatSendOptions,
 ): Promise<void> {
   const token = getToken();
   const response = await fetch(buildUrl("/api/chat"), {
@@ -274,21 +320,28 @@ export async function streamChat(
       "Content-Type": "application/json",
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
-    body: JSON.stringify({ message, conversation_id: conversationId }),
+    body: JSON.stringify({
+      message,
+      conversation_id: conversationId,
+      // Only sent when the turn is a regeneration, so a normal turn keeps the
+      // request body it always had.
+      ...(options?.regenerate ? { regenerate: true } : {}),
+    }),
     signal,
   });
 
   if (!response.ok || !response.body) {
-    let detail = response.statusText || "chat request failed";
+    let message = response.statusText || "chat request failed";
+    let code: string | null = null;
     try {
       const payload = await response.json();
-      if (payload && typeof payload === "object" && "detail" in payload) {
-        detail = String((payload as { detail: unknown }).detail);
-      }
+      const read = readErrorDetail(payload, message);
+      message = read.message;
+      code = read.code;
     } catch {
       // body wasn't JSON — keep statusText
     }
-    throw new ApiError(response.status, detail);
+    throw new ApiError(response.status, message, code);
   }
 
   const reader = response.body.getReader();

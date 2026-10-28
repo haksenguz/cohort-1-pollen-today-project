@@ -10,7 +10,7 @@
  * anything.
  */
 import { useCallback, useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { ChevronRight } from "lucide-react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -36,8 +36,17 @@ import type {
   PreferenceUpdateRequest,
   UserResponse,
 } from "../api/types";
+import {
+  readEmergencyContact,
+  saveEmergencyContact,
+  type EmergencyContact,
+} from "../api/emergencyContact";
+import { deleteMyAccount, exportMyData } from "../api/privacy";
 import { useAuth } from "../auth/AuthContext";
+import { useConsent } from "../auth/ConsentContext";
 import { clearToken } from "../auth/token";
+import { toast } from "sonner";
+import { useTextSize } from "../prefs/textSize";
 import { formatRisk } from "../utils/format";
 import { DevLlmSettingsCard } from "./DevLlmSettingsCard";
 import {
@@ -46,14 +55,20 @@ import {
   SettingsCard,
   SettingsGroup,
   SettingsRow,
-  type SettingsScreenId,
 } from "./settings/SettingsRows";
+import { isSettingsScreenId, type SettingsScreenId } from "./settings/settingsScreenIds";
 import {
+  EmergencyContactScreen,
+  DeleteDataScreen,
+  ExportDataScreen,
   HealthScreen,
   LocationScreen,
   NotificationsScreen,
+  PrivacyScreen,
   ProfileScreen,
   SettingsSubScreen,
+  StoredDataScreen,
+  TextSizeScreen,
 } from "./settings/Screens";
 
 const SCREEN_TITLE: Record<SettingsScreenId, string> = {
@@ -61,6 +76,12 @@ const SCREEN_TITLE: Record<SettingsScreenId, string> = {
   health: "Health",
   location: "Location",
   notifications: "Notifications",
+  textsize: "Text size",
+  privacy: "Privacy and data",
+  stored: "What is stored",
+  export: "Export my data",
+  delete: "Delete my data",
+  emergency: "Emergency contact",
 };
 
 function errorText(error: unknown, fallback: string): string {
@@ -98,17 +119,45 @@ function prefValue(
   return failed ? "Could not load" : "Loading…";
 }
 
+function consentValue(granted: boolean, withdrawnAt: string | null): string {
+  if (granted) return "Agreed";
+  if (withdrawnAt) return "Withdrawn";
+  return "Not agreed yet";
+}
+
+function contactValue(contact: EmergencyContact | null, failed: boolean): string {
+  if (contact === null) return failed ? "Could not load" : "Loading…";
+  return contact.name ?? "Not set";
+}
+
 export function SettingsPage() {
   const navigate = useNavigate();
   const { logout } = useAuth();
+  const { consent, policy, granted, setGranted, refresh, status } = useConsent();
+  // The consent context reads the policy next to the consent and keeps going
+  // when the policy fails, so a missing policy with a ready consent state
+  // means the policy call failed rather than that it was never asked for.
+  const policyError =
+    policy === null && status === "ready" ? "The policy could not be loaded." : null;
   const [user, setUser] = useState<UserResponse | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [allergies, setAllergies] = useState<AllergyResponse[] | null>(null);
   const [allergyLoadError, setAllergyLoadError] = useState<string | null>(null);
   const [prefs, setPrefs] = useState<PreferenceResponse | null>(null);
   const [prefsLoadError, setPrefsLoadError] = useState<string | null>(null);
-  const [screen, setScreen] = useState<SettingsScreenId | null>(null);
+  const [contact, setContact] = useState<EmergencyContact | null>(null);
+  const [contactLoadError, setContactLoadError] = useState<string | null>(null);
+  // The open subscreen lives in the URL, so another screen can send the user
+  // straight to it ("/settings?screen=location") and the back button works.
+  const [params, setParams] = useSearchParams();
+  const requested = params.get("screen");
+  const screen: SettingsScreenId | null =
+    requested !== null && isSettingsScreenId(requested) ? requested : null;
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const { step: textSize, setStep: setTextSize } = useTextSize();
+
+  const openScreen = (id: SettingsScreenId) => setParams({ screen: id }, { replace: true });
+  const closeScreen = () => setParams({}, { replace: true });
 
   const loadAllergies = useCallback(async () => {
     setAllergyLoadError(null);
@@ -125,6 +174,15 @@ export function SettingsPage() {
       setPrefs(await readPreferences());
     } catch (e) {
       setPrefsLoadError(errorText(e, "Could not load your notification preferences."));
+    }
+  }, []);
+
+  const loadContact = useCallback(async () => {
+    setContactLoadError(null);
+    try {
+      setContact(await readEmergencyContact());
+    } catch (e) {
+      setContactLoadError(errorText(e, "Could not load your emergency contact."));
     }
   }, []);
 
@@ -154,7 +212,8 @@ export function SettingsPage() {
   useEffect(() => {
     void loadAllergies();
     void loadPrefs();
-  }, [loadAllergies, loadPrefs]);
+    void loadContact();
+  }, [loadAllergies, loadPrefs, loadContact]);
 
   async function addAllergy(body: AllergyCreateRequest) {
     const created = await createAllergy(body);
@@ -168,6 +227,28 @@ export function SettingsPage() {
 
   async function changePrefs(body: PreferenceUpdateRequest) {
     setPrefs(await updatePreferences(body));
+  }
+
+  async function changeContact(next: {
+    name: string | null;
+    phone: string | null;
+    note: string | null;
+  }) {
+    setContact(await saveEmergencyContact(next));
+  }
+
+  async function runExport() {
+    const name = await exportMyData();
+    toast.success(`Your data was downloaded as ${name}.`);
+  }
+
+  async function runDelete() {
+    await deleteMyAccount();
+    // The account is gone, so the token is worthless and the local copy of it
+    // should not stay on the device.
+    clearToken();
+    toast.success("Your account and your data were deleted.");
+    navigate("/login", { replace: true });
   }
 
   function renderScreen(id: SettingsScreenId, user: UserResponse) {
@@ -195,6 +276,42 @@ export function SettingsPage() {
             onChange={changePrefs}
           />
         );
+      case "textsize":
+        return <TextSizeScreen step={textSize} onChange={setTextSize} />;
+      case "privacy":
+        return (
+          <PrivacyScreen
+            granted={granted}
+            grantedAt={consent?.granted_at ?? null}
+            operator={policy?.operator ?? null}
+            noticeItems={policy?.required_notice_items ?? []}
+            onSetGranted={setGranted}
+          />
+        );
+      case "emergency":
+        return (
+          <EmergencyContactScreen
+            // The contact arrives after the screen opens, so the key gives the
+            // form a fresh start once there is something to fill it with.
+            key={contact === null ? "loading" : "loaded"}
+            contact={contact}
+            loadError={contactLoadError}
+            onRetry={() => void loadContact()}
+            onSave={changeContact}
+          />
+        );
+      case "stored":
+        return (
+          <StoredDataScreen
+            policy={policy}
+            policyError={policyError}
+            onRetry={() => void refresh()}
+          />
+        );
+      case "export":
+        return <ExportDataScreen onExport={runExport} />;
+      case "delete":
+        return <DeleteDataScreen onDelete={runDelete} />;
     }
   }
 
@@ -230,7 +347,7 @@ export function SettingsPage() {
   if (screen !== null) {
     return (
       <div className="stage flex flex-col gap-4">
-        <SettingsSubScreen title={SCREEN_TITLE[screen]} onBack={() => setScreen(null)}>
+        <SettingsSubScreen title={SCREEN_TITLE[screen]} onBack={closeScreen}>
           {renderScreen(screen, user)}
         </SettingsSubScreen>
       </div>
@@ -256,25 +373,32 @@ export function SettingsPage() {
       </Card>
 
       <SettingsCard>
-        <SettingsRow label="Profile" value={user.email} onSelect={() => setScreen("profile")} />
+        <SettingsRow label="Profile" value={user.email} onSelect={() => openScreen("profile")} />
       </SettingsCard>
 
       <SettingsGroup title="Health">
         <SettingsRow
           label="Allergies"
           value={allergyValue(allergies, allergyLoadError !== null)}
-          onSelect={() => setScreen("health")}
+          onSelect={() => openScreen("health")}
         />
         <ComingSoonRow label="Medications" />
       </SettingsGroup>
 
-      <ComingSoonGroup title="Emergency" rows={["Emergency contact", "Medical card"]} />
+      <SettingsGroup title="Emergency">
+        <SettingsRow
+          label="Emergency contact"
+          value={contactValue(contact, contactLoadError !== null)}
+          onSelect={() => openScreen("emergency")}
+        />
+        <ComingSoonRow label="Medical card" />
+      </SettingsGroup>
 
       <SettingsCard>
         <SettingsRow
           label="Location"
           value={locationValue(user)}
-          onSelect={() => setScreen("location")}
+          onSelect={() => openScreen("location")}
         />
       </SettingsCard>
 
@@ -282,12 +406,12 @@ export function SettingsPage() {
         <SettingsRow
           label="Categories"
           value={prefValue(prefs, prefsLoadError !== null, categoriesOn)}
-          onSelect={() => setScreen("notifications")}
+          onSelect={() => openScreen("notifications")}
         />
         <SettingsRow
           label="Minimum risk"
           value={prefValue(prefs, prefsLoadError !== null, (p) => formatRisk(p.min_risk_level))}
-          onSelect={() => setScreen("notifications")}
+          onSelect={() => openScreen("notifications")}
         />
         <ComingSoonRow label="Quiet hours" />
         <ComingSoonRow label="Notification permission" />
@@ -298,15 +422,38 @@ export function SettingsPage() {
         rows={["Agent language", "Voice input", "Keep chat history"]}
       />
 
-      <ComingSoonGroup
-        title="Accessibility"
-        rows={["Text size", "Reduce motion", "High contrast"]}
-      />
+      <SettingsGroup title="Accessibility">
+        <SettingsRow
+          label="Text size"
+          value={textSize.label}
+          onSelect={() => openScreen("textsize")}
+        />
+        <ComingSoonRow label="Reduce motion" />
+        <ComingSoonRow label="High contrast" />
+      </SettingsGroup>
 
-      <ComingSoonGroup
-        title="Privacy and data"
-        rows={["What is stored", "Export my data", "Delete my data"]}
-      />
+      <SettingsGroup title="Privacy and data">
+        <SettingsRow
+          label="Health information consent"
+          value={consentValue(granted, consent?.withdrawn_at ?? null)}
+          onSelect={() => openScreen("privacy")}
+        />
+        <SettingsRow
+          label="What is stored"
+          value={policy?.version ? `Policy v${policy.version}` : "Not loaded"}
+          onSelect={() => openScreen("stored")}
+        />
+        <SettingsRow
+          label="Export my data"
+          value="JSON file"
+          onSelect={() => openScreen("export")}
+        />
+        <SettingsRow
+          label="Delete my data"
+          value="Permanent"
+          onSelect={() => openScreen("delete")}
+        />
+      </SettingsGroup>
 
       <section aria-label="Advanced" className="flex flex-col gap-2">
         <h2 className="text-xs font-bold tracking-[0.12em] text-muted-foreground uppercase">
@@ -364,10 +511,13 @@ export function SettingsPage() {
         <div className="flex flex-col gap-2 rounded-xl bg-card px-4 py-3 ring-1 ring-foreground/10">
           <p className="text-sm font-medium">Delete account</p>
           <p className="text-xs text-muted-foreground">
-            Not built yet. The server has no delete endpoint, so this button is
-            turned off rather than pretending to work.
+            Removes your account and everything in it, with no recovery period.
           </p>
-          <Button variant="destructive" className="min-h-11" disabled>
+          <Button
+            variant="destructive"
+            className="min-h-11"
+            onClick={() => openScreen("delete")}
+          >
             Delete account
           </Button>
         </div>

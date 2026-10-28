@@ -44,6 +44,64 @@ def test_current_returns_populated_response_when_all_providers_succeed(monkeypat
     assert body["pollen"]["tree"] == "HIGH"
     assert body["pollen_is_sample"] is False
     assert body["risk"] in ("LOW", "MODERATE", "HIGH")
+    assert body["risk_available"] is True
+
+
+def test_current_reports_no_risk_when_every_provider_is_silent(monkeypatch):
+    """Nothing answered, so there is nothing to score.
+
+    The score of that state is zero points, which is LOW. Reporting LOW says
+    "you are fine today" on a day the app could not ask anybody.
+    """
+
+    async def _empty_weather(lat, lon, http_client):
+        return WeatherData()
+
+    async def _empty_air(lat, lon, http_client):
+        return AirQualityData()
+
+    async def _empty_pollen(lat, lon, http_client, api_key=""):
+        return PollenData()
+
+    monkeypatch.setattr(environment.ws, "fetch_weather", _empty_weather)
+    monkeypatch.setattr(environment.aqs, "fetch_air_quality", _empty_air)
+    monkeypatch.setattr(environment.ps, "fetch_pollen", _empty_pollen)
+
+    resp = client.get("/api/environment/current", params={"lat": 37.5, "lon": 127.0})
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["risk"] is None
+    assert body["risk_available"] is False
+
+
+def test_current_does_not_score_the_sample_pollen(monkeypatch):
+    """The unkeyed sample must not push the score up.
+
+    The sample says tree pollen is HIGH, so a scorer that counted it reported
+    "moderate" while the UI said the pollen was being withheld.
+    """
+
+    async def _ok_weather(lat, lon, http_client):
+        return WeatherData(temperature=22, humidity=50, wind_speed=1.0)
+
+    async def _empty_air(lat, lon, http_client):
+        return AirQualityData()
+
+    async def _sample_pollen(lat, lon, http_client, api_key=""):
+        return PollenData(tree=PollenLevel.HIGH, is_sample=True)
+
+    monkeypatch.setattr(environment.ws, "fetch_weather", _ok_weather)
+    monkeypatch.setattr(environment.aqs, "fetch_air_quality", _empty_air)
+    monkeypatch.setattr(environment.ps, "fetch_pollen", _sample_pollen)
+
+    resp = client.get("/api/environment/current", params={"lat": 37.5, "lon": 127.0})
+
+    body = resp.json()
+    assert body["pollen_is_sample"] is True
+    assert body["points"] == 0
+    assert body["risk"] == "LOW"
+    assert body["risk_available"] is True
 
 
 def test_current_degrades_instead_of_500_when_a_provider_raises(monkeypatch):

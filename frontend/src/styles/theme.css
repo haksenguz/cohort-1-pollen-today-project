@@ -285,6 +285,30 @@ input {
   flex: none;
 }
 
+/* The colour classes the dot is given by `riskClass()`. They were missing,
+   so the dot rendered with no background at all and the risk chip had no
+   colour signal on the Today and Alerts screens. */
+.risk-dot.low {
+  background: var(--low);
+}
+
+.risk-dot.moderate {
+  background: var(--moderate);
+}
+
+.risk-dot.high {
+  background: var(--high);
+}
+
+.risk-dot.emergency {
+  background: var(--emergency);
+}
+
+/* No provider answered, so there is no level to colour. */
+.risk-dot.unavailable {
+  background: var(--ink-soft);
+}
+
 .envstrip .lbl {
   font-size: 12px;
   color: var(--ink-soft);
@@ -783,7 +807,7 @@ h2.vt {
 
 .aui-composer-input {
   flex: 1;
-  min-height: 42px;
+  min-height: 44px;
   max-height: 120px;
   resize: none;
   border: 1px solid var(--line);
@@ -802,6 +826,12 @@ h2.vt {
 
 .aui-send,
 .aui-cancel {
+  /* 44px is the target size, not a preference: at 11px padding these buttons
+     measured 38px tall, which fails the tap target floor on a phone. */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
   border: none;
   border-radius: 999px;
   padding: 11px 16px;
@@ -885,4 +915,187 @@ h2.vt {
 @media (prefers-reduced-motion: reduce) {
   /* Keep the text, drop the movement. The label alone still reports progress. */
   .aui-activity-dot { animation: none; opacity: 0.7; }
+}
+
+/* ---------- Chat screen: markdown, message actions, jump, offline ---------- */
+
+/* The model's markdown. The bubble already sets the type and the spacing, so
+   this only covers the blocks markdown adds: links, code, quotes and lists. */
+.aui-prose > :first-child {
+  margin-top: 0;
+}
+
+.aui-prose > :last-child {
+  margin-bottom: 0;
+}
+
+.aui-prose a {
+  color: var(--brand-ink);
+  text-decoration: underline;
+  overflow-wrap: anywhere;
+}
+
+.aui-prose code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.92em;
+  background: var(--surface-2);
+  border-radius: 6px;
+  padding: 1px 4px;
+}
+
+.aui-prose pre {
+  background: var(--surface-2);
+  border-radius: 10px;
+  padding: 10px 12px;
+  overflow-x: auto;
+}
+
+.aui-prose pre code {
+  background: none;
+  padding: 0;
+}
+
+.aui-prose blockquote {
+  margin: 6px 0;
+  padding-left: 10px;
+  border-left: 3px solid var(--line);
+  color: var(--ink-soft);
+}
+
+/* The description of an image the model asked for. The image itself is never
+   fetched, so this text is all the user gets of it. */
+.aui-prose-alt {
+  color: var(--ink-soft);
+  font-style: italic;
+}
+
+/* The row under a reply: when it was sent, and what to do with it. */
+.aui-msg-meta {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+/* The same row under a message the user sent, lined up with their bubble. */
+.aui-msg-meta-end {
+  justify-content: flex-end;
+}
+
+.aui-msg-time {
+  font-size: 11.5px;
+  color: var(--ink-soft);
+  padding: 0 6px 0 2px;
+}
+
+/* Small controls under a reply. 44px tall so they stay a tap target on a
+   phone, and quiet so they do not compete with the reply itself. */
+.aui-msg-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 44px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink-soft);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.aui-msg-action:hover:not(:disabled) {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+
+.aui-msg-action:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.aui-msg-action:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 1px;
+}
+
+.aui-msg-action-icon {
+  width: 14px;
+  height: 14px;
+}
+
+/* Jump back to the bottom of the thread. It only exists while the viewport is
+   away from the bottom, and it sticks to the bottom edge while it does. */
+.aui-jump {
+  position: sticky;
+  bottom: 6px;
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: 0 4px 14px rgba(20, 36, 29, 0.12);
+  cursor: pointer;
+}
+
+.aui-jump:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+/* The library keeps the control mounted and disables it while the viewport is
+   already at the bottom. Hiding it then is what makes it appear only when
+   there is somewhere to jump back to. */
+.aui-jump:disabled {
+  display: none;
+}
+
+.aui-jump-icon {
+  width: 18px;
+  height: 18px;
+}
+
+/* The chat says so when the network is gone. A toast fades, and this is the
+   one thing the user has to know before they type a symptom. */
+.aui-offline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 12px 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-2);
+  color: var(--ink-soft);
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+
+.aui-offline-icon {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+}
+
+.aui-offline-text {
+  margin: 0;
+}
+
+/* The magnifier inside the history search field. Eight utility classes for one
+   icon is too much to read inline. */
+@utility search-field-icon {
+  pointer-events: none;
+  position: absolute;
+  top: 50%;
+  left: 0.75rem;
+  width: 1rem;
+  height: 1rem;
+  transform: translateY(-50%);
+  color: var(--muted-foreground);
 }

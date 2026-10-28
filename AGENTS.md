@@ -50,6 +50,13 @@ other way round.
    `backend/db/init/01_schema.sql`). Never hand-edit the generated files.
 9. Read `TASKS.md` before non-trivial work. Two tasks whose `Touches` overlap do
    not run in parallel.
+10. **`bugs.md` has two lanes editing it in one checkout.** Regions carry
+    `owner:` markers — `backend` owns groups A, B, D, E, the header, the
+    Progress and Suggested order paragraphs, and every numbered `B-0xx` entry;
+    `frontend` owns groups C and F only. Edit only inside a region you own. If
+    your change belongs in the other lane's region, send it as a message and let
+    that lane apply it — do not widen the edit. This has no conflict-prevention
+    behind it, only the markers, so treat them as binding.
 10. Backend Python uses `uv`. Web uses `pnpm`, never `npm`/`yarn`.
 11. Don't hardcode regions, thresholds, URLs, coordinates, or channel names.
     They come from config or the spec.

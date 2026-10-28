@@ -16,11 +16,22 @@ message.
 from dataclasses import dataclass
 from datetime import datetime
 
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
 from app.models import Conversation, Message
+
+
+def _like_pattern(query: str) -> str:
+    """The user's text as a LIKE pattern that matches it literally.
+
+    `%` and `_` mean something to LIKE and nothing to the user, so they are
+    escaped. A search for "itchy_eyes" has to find "itchy_eyes" and not
+    "itchyXeyes".
+    """
+    escaped = query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return f"%{escaped}%"
 
 
 @dataclass(frozen=True)
@@ -55,7 +66,9 @@ class ConversationDetail:
     messages: list[Message]
 
 
-async def list_conversations(session: AsyncSession, *, user_id: int) -> list[ConversationSummary]:
+async def list_conversations(
+    session: AsyncSession, *, user_id: int, query: str | None = None
+) -> list[ConversationSummary]:
     """This user's conversations, most recently active first.
 
     `message_count` counts message *rows*, so three exchanges that each wrote
@@ -64,12 +77,10 @@ async def list_conversations(session: AsyncSession, *, user_id: int) -> list[Con
     the user just started it.
 
     `updated_at` is DERIVED from the newest message, not read off the column.
-    Nothing in the write path ever sets `conversations.updated_at`: `_persist_turn`
-    returns an existing conversation untouched, so the column stays frozen at
-    whatever INSERT put there and drifts further from reality with every message.
-    Sorting by it ordered the list by creation time and dated it by creation
-    time, which happened to look right only because a conversation is normally
-    messaged seconds after it is opened.
+    The column is now written on every turn, so the two agree; deriving it
+    still means the list is right even for a row written before that, and it
+    keeps the ordering correct for a conversation whose newest message is not
+    the newest thing that happened in it.
 
     Derived rather than maintained by a BEFORE UPDATE trigger on purpose. Tests
     build their schema from SQLModel metadata on SQLite, not from
@@ -81,10 +92,14 @@ async def list_conversations(session: AsyncSession, *, user_id: int) -> list[Con
     A conversation with no messages has no newest message, so it coalesces to
     its own created_at. Without that it would sort on NULL, and NULL ordering
     is engine-dependent - the same class of divergence this avoids.
+
+    `query` filters by title or by message content, case-insensitively. An
+    empty query means no filter. The filter is ANDed with the owner check, so
+    a search can never reach another user's conversation.
     """
     last_activity = func.coalesce(func.max(Message.created_at), Conversation.created_at)
 
-    result = await session.execute(
+    statement = (
         select(
             Conversation.id,
             Conversation.title,
@@ -101,6 +116,22 @@ async def list_conversations(session: AsyncSession, *, user_id: int) -> list[Con
         .group_by(Conversation.id)
         .order_by(last_activity.desc(), Conversation.id.desc())
     )
+
+    needle = query.strip() if query else ""
+    if needle:
+        pattern = _like_pattern(needle)
+        statement = statement.where(
+            or_(
+                Conversation.title.ilike(pattern, escape="\\"),
+                Conversation.id.in_(
+                    select(Message.conversation_id).where(
+                        Message.content.ilike(pattern, escape="\\")
+                    )
+                ),
+            )
+        )
+
+    result = await session.execute(statement)
     rows = result.all()
 
     # One extra round trip for the previews, instead of a correlated subquery

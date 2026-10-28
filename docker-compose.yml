@@ -1,36 +1,128 @@
+# Production-shaped stack. `docker compose up` brings up the same five things
+# everywhere, so "works on my machine" and "works in prod" stop being different
+# claims.
+#
+# Only `edge` is published. The previous version mapped 5432 and 6379 to the
+# host, which on a public machine is an open database and an open Redis.
+#
+# The request path is browser -> edge (Caddy, TLS) -> web (nginx, PWA + /api
+# proxy) -> api (FastAPI) -> db / redis. The database and Redis never leave the
+# internal network.
+
+name: allergy-ai
+
 services:
   db:
     image: postgres:16
+    restart: unless-stopped
     environment:
-      POSTGRES_USER: allergy
-      POSTGRES_PASSWORD: allergy
-      POSTGRES_DB: allergy_ai
-    ports:
-      - "5432:5432"
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB}
     volumes:
       - pgdata:/var/lib/postgresql/data
+      # Runs once, on an empty volume only. Safe to drop if the app's own
+      # init_db() already creates the schema - which it does, from SQLModel
+      # metadata, so the constraints declared in __table_args__ are applied.
       - ./backend/db/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U allergy -d allergy_ai"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 5s
       timeout: 3s
       retries: 10
+    # Deliberately no `ports:`. Reachable only as `db:5432` inside the network.
 
   redis:
-    image: redis:7
-    ports:
-      - "6379:6379"
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    # Deliberately no `ports:`.
 
   api:
     build: ./backend
+    restart: unless-stopped
     environment:
-      DATABASE_URL: postgresql+asyncpg://allergy:allergy@db:5432/allergy_ai
+      # Turns on the boot guard in app/core/config.py. A deployment with the
+      # example JWT secret, with the dev credential route on, or with demo mode
+      # on refuses to start instead of serving traffic.
+      ENVIRONMENT: ${ENVIRONMENT:-production}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       REDIS_URL: redis://redis:6379
-    ports:
-      - "8000:8000"
+      # Signs every session token. It was missing from this file entirely
+      # until 2026-10-28, so every container ran on the code default
+      # "change-me" - a value published in this repository.
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET to a random value, e.g. openssl rand -hex 32}
+      # The origin the site is served from. The API adds it to the CORS
+      # allowlist by itself, so a deploy that gets CORS_ORIGINS wrong still
+      # talks to the browser. The stack serves the PWA and the API from one
+      # origin, so the list can stay empty.
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:?set PUBLIC_ORIGIN, e.g. https://your-host}
+      CORS_ORIGINS: ${CORS_ORIGINS:-[]}
+      # Never :? these three. Absent keys must degrade honestly, not crash:
+      # no LLM key means the agent cannot run, and no POLLEN_API_KEY means the
+      # backend serves a flagged sample rather than a real reading.
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-}
+      NAVER_CLIENT_ID: ${NAVER_CLIENT_ID:-}
+      NAVER_CLIENT_SECRET: ${NAVER_CLIENT_SECRET:-}
+      POLLEN_API_KEY: ${POLLEN_API_KEY:-}
+      # 제30조: the operator named in the published privacy policy. Blank
+      # means the policy says plainly that nobody is named yet.
+      OPERATOR_NAME: ${OPERATOR_NAME:-}
+      OPERATOR_REGISTRATION_NUMBER: ${OPERATOR_REGISTRATION_NUMBER:-}
+      DEV_SETTINGS_ENABLED: "false"
     depends_on:
       db:
         condition: service_healthy
+      redis:
+        condition: service_healthy
+    # No `ports:` on the public interface either - nginx reaches it as `api:8000`.
+
+  web:
+    build:
+      context: ./frontend
+      args:
+        # Baked into the bundle. Absolute origin, because client.ts does
+        # `new URL(path, API_BASE_URL)`.
+        VITE_API_BASE_URL: ${PUBLIC_ORIGIN:?set PUBLIC_ORIGIN, e.g. https://your-host}
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_started
+    # No `ports:`. `edge` is the only way in.
+
+  edge:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    environment:
+      # PUBLIC_ORIGIN, handed to Caddy as a site address.
+      #   https://allergy.example.com -> automatic HTTPS, HTTP redirects
+      #   http://localhost             -> plain HTTP, no certificate
+      SITE_ADDRESS: ${PUBLIC_ORIGIN:?set PUBLIC_ORIGIN, e.g. https://your-host}
+    ports:
+      - "${PUBLIC_BIND:-0.0.0.0}:80:80"
+      - "${PUBLIC_BIND:-0.0.0.0}:443:443"
+      # HTTP/3 over QUIC. A phone on a flaky network falls back to TCP, so this
+      # is additive rather than a requirement.
+      - "${PUBLIC_BIND:-0.0.0.0}:443:443/udp"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      # The ACME account and the issued certificates. Without these volumes the
+      # container asks Let's Encrypt for a new certificate on every restart,
+      # and the rate limit for that is a handful per week.
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      web:
+        condition: service_started
 
 volumes:
   pgdata:
+  caddy_data:
+  caddy_config:

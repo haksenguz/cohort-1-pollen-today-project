@@ -150,12 +150,80 @@ only a supplied field changes.
 | `latitude` | `float \| null` | -90..90 |
 | `longitude` | `float \| null` | -180..180 |
 
+**An explicit `null` clears the field; omitting the field leaves it alone.**
+The two are different and only the distinction makes the endpoint usable:
+`{"latitude": null, "longitude": null}` removes a saved location, while
+`{"email": "..."}` does not touch it. A saved location you cannot clear is a
+location you cannot correct, and the chat's `no_location` card tells people to
+go and fix theirs.
+
 ```json
 { "latitude": 37.5, "longitude": 127.0 }
 ```
 
 **200**: `UserResponse` (same shape as `GET /api/users/me`).
 **409** if the new email is already taken by another user.
+
+---
+
+## `/api/privacy/*`
+
+Personal-data rights under 개인정보 보호법. All three are behind the same bearer
+token the user already has: **제38조④** requires that asking for access or
+deletion be no harder than signing up was, and sign-up is one form. No email
+round-trip, no support ticket.
+
+| endpoint | law | what it does |
+| --- | --- | --- |
+| `GET /api/privacy/summary` | 제4조1, 제30조 | what is held, and what is never collected |
+| `GET /api/privacy/export` | 제4조3, 제35조 | a complete copy, as a file download |
+| `DELETE /api/privacy/account` | 제36조 | hard delete of the account and all its rows |
+| `GET /api/privacy/health-note` | 제23조 | states that symptom data is 민감정보 |
+
+**`GET /api/privacy/export`** → `application/json`, with
+`Content-Disposition: attachment; filename="my-data-<stamp>.json"` and
+`Cache-Control: no-store`.
+
+**`password_hash` is never included**, anywhere, in any shape. An export that
+carries it is a credential-disclosure bug wearing a privacy feature's clothes.
+
+The document is nested rather than flat — messages sit inside their
+conversation, the triage verdict inside its symptom event, clinic results
+inside their search — because the point of an export is that a person can read
+it and recognise it. A flat dump of eleven tables is not checkable. Each
+section carries a `counts` block alongside it.
+
+```json
+{
+  "format": "allergy-ai/personal-data/v1",
+  "account": { "email": "...", "latitude": 37.5, "longitude": 127.0 },
+  "conversations": [ { "id": 1, "title": "...", "messages": [ { "role": "USER", "content": "..." } ] } ],
+  "symptom_events": [ { "symptoms": ["itchy eyes"], "triage_result": { "risk_level": "LOW" } } ],
+  "hospital_searches": [ { "latitude": 37.5, "results": [ { "name": "..." } ] } ],
+  "counts": { "conversations": 1, "messages": 4, "triage_results": 1 }
+}
+```
+
+**`DELETE /api/privacy/account`** → 200 with a receipt of rows removed per
+table:
+
+```json
+{ "deleted": { "account": 1, "messages": 4, "triage_results": 1, "conversations": 1 },
+  "note": "Permanently deleted. This cannot be undone and there is no recovery period." }
+```
+
+Deletion is a **hard delete**, in one commit, children first. `messages`,
+`triage_results` and `hospital_results` carry no `user_id` of their own, so a
+delete written table-by-table on `user_id` leaves them behind as orphans
+pointing at a user that no longer exists. There is no soft-delete column and no
+tombstone row, because **제36조③** requires that deletion leave nothing that
+can be recovered or regenerated. A half-deleted account is worse than a failed
+delete: the user believes their data is gone and it is not.
+
+`environment_snapshots` is deliberately **not** deleted. It has no `user_id`
+and holds observed pollen and air quality for a *location*, not a person — it
+is shared cache, and removing it on one account's exit would destroy data
+other accounts still read.
 
 ---
 
@@ -278,13 +346,16 @@ auditor can trace a response back to what was stored.
 
 | field | type | notes |
 | --- | --- | --- |
-| `message` | `str` | 1–2000 chars |
-| `conversation_id` | `int \| null` | omit to start a new conversation |
+| `message` | `str` | 1–2000 chars. Optional when `regenerate` is true, and ignored then. |
+| `conversation_id` | `int \| null` | omit to start a new conversation. Required when `regenerate` is true. |
+| `regenerate` | `bool` | default `false`. Re-ask the last user turn and replace the last assistant message in place. |
 
 A `user_id` in the body is ignored. The user is the token holder.
 
 **Status codes:** `401` without a valid token. `404` when `conversation_id`
-does not exist or belongs to someone else.
+does not exist or belongs to someone else. `422` when neither `message` nor
+`regenerate` is given, and when `regenerate` is true without a
+`conversation_id`. `409` when the conversation has no user turn to regenerate.
 
 ```json
 { "message": "I've had itchy eyes and sneezing since this morning", "conversation_id": null }
@@ -293,8 +364,10 @@ does not exist or belongs to someone else.
 ### Response: this is Server-Sent Events, not a plain JSON body
 
 `chat()` returns `StreamingResponse(..., media_type="text/event-stream")`.
-Read `backend/app/api/chat.py` for the exact generator (`_run_chat`). It is
-**not** token-by-token streaming.
+Read `backend/app/api/chat.py` for the exact generator (`_run_chat`). The reply
+arrives as `message` events carrying one piece each, in order, so a client
+appends them as they arrive. The pieces concatenate to exactly the `message`
+field of the `done` event.
 
 ### `status` events (added 2026-10-14)
 
@@ -326,7 +399,7 @@ would misstate where the safety decision comes from.
 After the status events come exactly one of these two sequences, then the
 stream closes:
 
-**Normal turn**: one `message` event, then one `done` event:
+**Normal turn**: one or more `message` events, then one `done` event:
 
 ```
 event: message
@@ -337,9 +410,11 @@ data: {"message": "Are you having any...", "conversation_id": 42, "symptoms": ["
 
 ```
 
-`message.delta` is the field name, but it carries the **full assistant
-reply as one string**, not an incremental chunk. The frontend must not treat
-it as a token stream. The `done` event's `data` is the complete
+`message.delta` carries one piece of the assistant reply, and the pieces arrive
+as the model produces them. A client appends them in order. When the provider
+cannot stream, the whole reply is sent as several `message` events instead, and
+the concatenation still matches the `done` event's `message` field exactly. The
+`done` event's `data` is the complete
 `ChatResponse` (field names and types below), including whatever the
 extraction filled in so far. `triage_level`/`triage_reasons`/
 `triage_rule_version` stay `null`/`[]` until the agent's `triage_node` has

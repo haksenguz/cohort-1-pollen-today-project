@@ -26,13 +26,15 @@ import logging
 import queue
 import re
 from collections.abc import AsyncIterator
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from functools import partial
 from typing import Annotated, Any, Literal
 from weakref import WeakSet
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
@@ -43,15 +45,38 @@ from app.core.enums import ConversationStatus, MessageRole
 from app.core.rate_limit import get_limiter
 from app.core.security import CurrentUser
 from app.models import Conversation, Message, SymptomEvent, TriageResult, User
-from app.services import triage
+from app.services import conversation_title, escalation, triage
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 logger = logging.getLogger(__name__)
 
 
 class ChatRequest(BaseModel):
-    message: str = Field(min_length=1, max_length=2000)
+    """One turn of the chat.
+
+    `message` is what the user wants to say. `regenerate` asks for the last
+    answer to be done again, and then `message` is not needed: the last thing
+    the user said is what gets answered again.
+    """
+
+    message: str | None = Field(default=None, max_length=2000)
     conversation_id: int | None = None
+    regenerate: bool = False
+
+    @model_validator(mode="after")
+    def _a_turn_needs_a_message_or_a_regenerate(self) -> "ChatRequest":
+        if self.regenerate:
+            if self.conversation_id is None:
+                raise ValueError(
+                    "`regenerate` needs the `conversation_id` of the conversation to redo"
+                )
+            return self
+        if not self.message:
+            raise ValueError(
+                "send `message` with what you want to say, or set `regenerate` to true "
+                "to have the last answer done again"
+            )
+        return self
 
 
 ToolStatus = Literal["running", "done", "error"]
@@ -314,6 +339,15 @@ class _ToolActivityLLM:
             )
         return turn
 
+    def __getattr__(self, name: str):
+        """Anything this wrapper does not define belongs to the client it wraps.
+
+        A capability the inner client has, streaming, stays available through
+        the wrapper. One it does not have stays absent, so the agent can still
+        tell that a client cannot stream.
+        """
+        return getattr(self.__dict__["_inner"], name)
+
 
 def _with_tool_activity(llm: symptom_agent.LLMClient, announce) -> symptom_agent.LLMClient:
     """Wrap `llm` so its tool calls are announced, but only if it can make any.
@@ -325,6 +359,40 @@ def _with_tool_activity(llm: symptom_agent.LLMClient, announce) -> symptom_agent
     if not hasattr(llm, "complete_with_tools"):
         return llm
     return _ToolActivityLLM(llm, announce)
+
+
+class _StreamingLLM:
+    """Hands every piece of a streamed reply to a callback as it arrives.
+
+    The agent asks the client for the reply and gets it in pieces; this
+    wrapper is what puts those pieces on the wire. It defines nothing but the
+    streaming call, so every other capability of the client it wraps, tools
+    included, is exactly what it was.
+    """
+
+    def __init__(self, inner: symptom_agent.LLMClient, on_delta) -> None:
+        self._inner = inner
+        self._on_delta = on_delta
+
+    def stream_complete(self, messages):
+        for piece in self._inner.stream_complete(messages):
+            self._on_delta(piece)
+            yield piece
+
+    def __getattr__(self, name: str):
+        return getattr(self.__dict__["_inner"], name)
+
+
+def _with_deltas(llm: symptom_agent.LLMClient, on_delta) -> symptom_agent.LLMClient:
+    """Wrap `llm` so the pieces of a streamed reply reach the client.
+
+    A client that cannot stream is returned untouched. Giving it the
+    capability anyway would make the agent believe it can stream, and every
+    offline fake would take a path that does not exist there.
+    """
+    if not hasattr(llm, "stream_complete"):
+        return llm
+    return _StreamingLLM(llm, on_delta)
 
 
 async def _get_or_create_conversation(
@@ -400,6 +468,53 @@ def _verdict(result: symptom_agent.AllergyState) -> tuple[str | None, list[str],
     return outcome.level.value, list(outcome.reasons), outcome.rule_version
 
 
+@dataclass(frozen=True)
+class _Replay:
+    """What a regenerate re-runs.
+
+    `history` is the transcript up to the last thing the user said, so the
+    model does not start from the answer that is being replaced. `replaced` is
+    that answer, or None when the last user turn was never answered.
+    """
+
+    message: str
+    history: list[symptom_agent.ChatMessage]
+    replaced: Message | None
+
+
+async def _replay_target(session: AsyncSession, conversation: Conversation) -> _Replay | None:
+    """The last user turn of a conversation, and the answer it produced.
+
+    None when the conversation holds no user message, so there is nothing to
+    do again.
+    """
+    rows = await session.execute(
+        select(Message).where(Message.conversation_id == conversation.id).order_by(Message.id)
+    )
+    messages = list(rows.scalars().all())
+
+    last_user_index = None
+    for index, message in enumerate(messages):
+        if message.role == MessageRole.USER:
+            last_user_index = index
+    if last_user_index is None:
+        return None
+
+    replaced = None
+    for index, message in enumerate(messages):
+        if index > last_user_index and message.role == MessageRole.ASSISTANT:
+            replaced = message
+
+    return _Replay(
+        message=messages[last_user_index].content,
+        history=[
+            {"role": message.role.lower(), "content": message.content}
+            for message in messages[:last_user_index]
+        ],
+        replaced=replaced,
+    )
+
+
 async def _persist_turn(
     session: AsyncSession,
     conversation: Conversation,
@@ -407,24 +522,46 @@ async def _persist_turn(
     user_id: int,
     user_message: str,
     result: symptom_agent.AllergyState,
+    replace: Message | None = None,
 ) -> SymptomEvent | None:
-    session.add(
-        Message(conversation_id=conversation.id, role=MessageRole.USER, content=user_message)
-    )
+    # The column the history list reads for "last activity". It was frozen at
+    # the creation timestamp because nothing wrote it, so anyone reading it
+    # directly got a plausible wrong answer. The list itself derives its own
+    # ordering from the messages, which is correct and stays that way; this
+    # makes the column honest rather than replacing it.
+    conversation.updated_at = datetime.now(UTC)
+
     verdict_level, verdict_reasons, verdict_version = _verdict(result)
 
-    session.add(
-        Message(
-            conversation_id=conversation.id,
-            role=MessageRole.ASSISTANT,
-            content=result.get("assistant_reply") or "",
-            # Re-derived by `_verdict`, not copied out of the state dict. Stored
-            # on the message so a reloaded conversation can render its verdict
-            # without reconstructing the symptom_events -> triage_results join.
-            triage_level=verdict_level,
-            triage_reasons=verdict_reasons,
+    if replace is None:
+        session.add(
+            Message(conversation_id=conversation.id, role=MessageRole.USER, content=user_message)
         )
-    )
+        if conversation.title is None:
+            # The first message of the conversation names it. A second turn
+            # leaves the name alone: the thread is still the one the user
+            # started.
+            conversation.title = conversation_title.derive_title(user_message)
+        session.add(
+            Message(
+                conversation_id=conversation.id,
+                role=MessageRole.ASSISTANT,
+                content=result.get("assistant_reply") or "",
+                # Re-derived by `_verdict`, not copied out of the state dict.
+                # Stored on the message so a reloaded conversation can render
+                # its verdict without reconstructing the symptom_events ->
+                # triage_results join.
+                triage_level=verdict_level,
+                triage_reasons=verdict_reasons,
+            )
+        )
+    else:
+        # A regenerate replaces the answer where it stands. The transcript keeps
+        # one user turn and one answer for it, so the thread does not grow a
+        # second copy of either.
+        replace.content = result.get("assistant_reply") or ""
+        replace.triage_level = verdict_level
+        replace.triage_reasons = verdict_reasons
 
     event = SymptomEvent(
         user_id=user_id,
@@ -477,8 +614,16 @@ async def _run_chat(
     llm: symptom_agent.LLMClient,
     user_id: int,
     conversation: Conversation,
+    replay: _Replay | None = None,
 ) -> AsyncIterator[str]:
     state = await _load_state(session, conversation)
+
+    # A regenerate answers the last thing the user said again, so that is the
+    # message this turn runs on, and the model reads the transcript as it was
+    # before the answer that is being replaced.
+    user_message = replay.message if replay is not None else (req.message or "")
+    if replay is not None:
+        state["messages"] = list(replay.history)
 
     # A turn is two sequential model calls plus the rule engine, and a tool
     # lookup in between — several seconds of silence otherwise, which reads as
@@ -501,7 +646,49 @@ async def _run_chat(
         announced.append(call)
         pending.put(("tool", call.model_dump(exclude_none=True)))
 
+    # The reply, as the model writes it. A piece goes on the queue the moment
+    # it arrives, so the user reads the answer while it is still being
+    # written instead of waiting for the whole thing.
+    def _delta(piece: str) -> None:
+        pending.put(("message", {"delta": piece}))
+
     yield _sse("status", {"stage": "starting"})
+
+    # Some messages must not reach the model at all (D11). A crisis disclosure
+    # answered with a pollen reading, or a dosage question answered with a
+    # plausible-sounding number, are the two ways this app could seriously hurt
+    # someone. The check is deterministic and it runs before anything else, so
+    # there is no phrasing of the question that gets past it and no prompt to
+    # talk the model past.
+    scope = escalation.assess(user_message)
+    if scope.blocks_the_model:
+        reply = (
+            escalation.crisis_reply(scope)
+            if scope.verdict == "crisis"
+            else escalation.out_of_scope_reply()
+        )
+        logger.warning("chat: model bypassed (%s) for user %s", scope.verdict, user_id)
+        yield _sse("message", {"delta": reply})
+        yield _sse(
+            "done",
+            {
+                "message": reply,
+                "conversation_id": conversation.id,
+                "symptoms": [],
+                "severity": None,
+                "duration": None,
+                "possible_trigger": None,
+                "breathing_difficulty": None,
+                "airway_swelling": None,
+                # No triage verdict: nothing was assessed, and a level here
+                # would be the one number in the turn that nobody computed.
+                "triage_level": None,
+                "triage_reasons": [],
+                "triage_rule_version": None,
+                "escalated": scope.verdict,
+            },
+        )
+        return
 
     # Where "nearby" means. Resolved here, from the user's own saved profile,
     # because the model cannot read the profile and must not be asked for
@@ -519,9 +706,9 @@ async def _run_chat(
                 # agent's decision about what exists and never this layer's.
                 registry=symptom_agent.default_tool_registry(origin),
             ),
-            _with_tool_activity(llm, _announce),
+            _with_deltas(_with_tool_activity(llm, _announce), _delta),
             state,
-            req.message,
+            user_message,
         )
     )
 
@@ -569,26 +756,30 @@ async def _run_chat(
         session,
         conversation,
         user_id=user_id,
-        user_message=req.message,
+        user_message=user_message,
         result=result,
+        replace=replay.replaced if replay is not None else None,
     )
 
     reply = result.get("assistant_reply") or ""
 
-    # Incremental delivery of an already-complete string, not provider-side
-    # token streaming: `run_turn` is a blocking call that returns the whole
-    # reply at once, so nothing can be emitted before it returns. What this buys
-    # is that the client receives the text as separate `message` events it can
-    # append to, instead of a single payload it can only paint at the end.
+    # Two ways for the text to reach the client, never both.
     #
-    # Each fragment is its own SSE frame, and the loop yields control between
-    # them so each frame is written before the next one is produced instead of
-    # the server coalescing them back into one. No artificial delay is added —
-    # a fake typewriter would make every real turn slower for nothing.
-    for index, fragment in enumerate(_fragments(reply)):
-        if index:
-            await asyncio.sleep(0)
-        yield _sse("message", {"delta": fragment})
+    # A streamed reply was already sent, piece by piece, while the model was
+    # writing it. Sending it again here would double it on the client.
+    #
+    # Everything else, the rule engine's recommendation and the canned
+    # questions, arrives whole. It is cut into fragments so the client gets
+    # several `message` events it can append to, instead of one payload it can
+    # only paint at the end. Each fragment is its own SSE frame, and the loop
+    # yields control between them so each frame is written before the next one
+    # is produced. No artificial delay is added: a fake typewriter would make
+    # every real turn slower for nothing.
+    if not result.get("reply_from_stream"):
+        for index, fragment in enumerate(_fragments(reply)):
+            if index:
+                await asyncio.sleep(0)
+            yield _sse("message", {"delta": fragment})
 
     payload = ChatResponse(
         message=reply,
@@ -688,6 +879,19 @@ class _LazyLLMClient:
             self._client = get_openai_client_from_settings()
         return self._client.complete_with_tools(messages, tools)
 
+    def stream_complete(self, messages):
+        """Delegates the optional streaming capability.
+
+        The same reasoning as the tool capability: the agent looks for
+        `stream_complete` and falls back to one complete answer when it is
+        absent, so the wrapper has to pass it through rather than hide it.
+        """
+        if self._client is None:
+            from app.core.openai_client import get_openai_client_from_settings
+
+            self._client = get_openai_client_from_settings()
+        return self._client.stream_complete(messages)
+
 
 def get_llm() -> symptom_agent.LLMClient:
     """FastAPI dependency so tests can swap in a fake without a real API key."""
@@ -727,8 +931,24 @@ async def chat(
     conversation = await _get_or_create_conversation(
         session, conversation_id=req.conversation_id, user_id=user.id
     )
+
+    # A regenerate needs something to regenerate. Checked before the stream
+    # opens for the same reason as the 404 above: a rejection inside the
+    # generator would never reach the client as a status code.
+    replay: _Replay | None = None
+    if req.regenerate:
+        replay = await _replay_target(session, conversation)
+        if replay is None:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "This conversation has nothing to do again yet. "
+                    "Send a message first, then it can be answered again."
+                ),
+            )
+
     return StreamingResponse(
-        _run_chat(req, session, llm, user.id, conversation),
+        _run_chat(req, session, llm, user.id, conversation, replay),
         media_type="text/event-stream",
         headers=decision.headers,
     )

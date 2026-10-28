@@ -10,6 +10,9 @@
  *     instead of pretending there are zero results.
  */
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
+
+import { Button } from "@/components/ui/button";
 
 import { useAuth } from "../auth/AuthContext";
 import { ApiError, getCurrentEnvironment, getNearbyHospitals } from "../api/client";
@@ -24,6 +27,7 @@ import {
 
 export function TodayPage() {
   const { user, status } = useAuth();
+  const navigate = useNavigate();
   const [env, setEnv] = useState<EnvironmentResponse | null>(null);
   const [envError, setEnvError] = useState<string | null>(null);
   const [hospitals, setHospitals] = useState<HospitalNearbyResponse | null>(null);
@@ -82,6 +86,15 @@ export function TodayPage() {
         <p className="vsub">Pollen, air quality and your risk score for today.</p>
         <div className="note">
           <span>Add a location to your profile to see your daily risk.</span>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="min-h-11 shrink-0"
+            onClick={() => navigate("/settings?screen=location")}
+          >
+            Set your location
+          </Button>
         </div>
       </>
     );
@@ -106,6 +119,10 @@ export function TodayPage() {
       env.pollen.weed === null);
 
   if (envError && !env) {
+    // The environment and the hospital lookup are separate providers, so one
+    // of them being down must not take the other with it. Nearby care is the
+    // part you need most when the pollen feed is broken, so the error goes in
+    // the page and the hospital section still renders below it.
     return (
       <>
         <h2 className="vt">Today</h2>
@@ -113,6 +130,7 @@ export function TodayPage() {
         <div className="note">
           <span>Could not load environment: {envError}</span>
         </div>
+        <HospitalSection hospitals={hospitals} error={hospitalsError} />
       </>
     );
   }
@@ -127,16 +145,27 @@ export function TodayPage() {
           <div className="risk-head">
             <span className={`risk-dot ${riskClass(env.risk)}`} aria-hidden="true" />
             <span className="risk-label">{formatRisk(env.risk)}</span>
-            <span className="risk-points">{formatPoints(env.points)} pts</span>
+            {env.risk !== null && (
+              <span className="risk-points">{formatPoints(env.points)} pts</span>
+            )}
           </div>
+
+          {env.risk === null && (
+            <div className="note">
+              <span>
+                None of the providers answered, so there is no risk score to
+                show. That is not the same as low risk.
+              </span>
+            </div>
+          )}
 
           {env.pollen_is_sample && (
             <div className="note">
               <span>
                 Live pollen data is not connected yet, so today&apos;s pollen
-                levels are withheld rather than shown as an estimate. Add the
-                data.go.kr pollen key in <code>backend/.env</code> to see real
-                values.
+                levels are withheld rather than shown as an estimate, and the
+                pollen is not part of the score above. Add the data.go.kr
+                pollen key in <code>backend/.env</code> to see real values.
               </span>
             </div>
           )}
@@ -187,45 +216,62 @@ export function TodayPage() {
         </section>
       ) : null}
 
-      <section className="hospital-section" aria-label="Nearby hospitals">
-        <h3 className="vsect">Nearby care</h3>
-        {hospitalsError && (
-          <div className="note">
-            <span>Could not load nearby hospitals: {hospitalsError}</span>
-          </div>
-        )}
-        {hospitals && !hospitals.provider_available && (
-          <div className="note">
-            <span>
-              Hospital search is offline — add the Naver client id and secret
-              in <code>backend/.env</code> to enable nearby results.
-            </span>
-          </div>
-        )}
-        {hospitals && hospitals.provider_available && hospitals.count === 0 && (
-          <div className="note">
-            <span>No hospitals found within range.</span>
-          </div>
-        )}
-        {hospitals && hospitals.results.length > 0 && (
-          <ul className="hospital-list">
-            {hospitals.results.map((h) => (
-              <li key={`${h.rank}-${h.name}`} className="hospital-row">
-                <div className="hospital-head">
-                  <b>{h.name}</b>
-                  <span className="hospital-dist">{formatDistance(h.distance_m)}</span>
-                </div>
-                {h.address && <div className="hospital-addr">{h.address}</div>}
-                <div className="hospital-meta">
-                  {h.specialty && <span>{h.specialty}</span>}
-                  {h.phone && <span> · {h.phone}</span>}
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+      <HospitalSection hospitals={hospitals} error={hospitalsError} />
     </>
+  );
+}
+
+/**
+ * Nearby care. It sits in its own component because the hospital lookup has to
+ * survive a broken environment provider: the user who cannot see a pollen
+ * count is the user who needs to know which clinic is close.
+ */
+function HospitalSection({
+  hospitals,
+  error,
+}: {
+  hospitals: HospitalNearbyResponse | null;
+  error: string | null;
+}) {
+  return (
+    <section className="hospital-section" aria-label="Nearby hospitals">
+      <h3 className="vsect">Nearby care</h3>
+      {error && (
+        <div className="note">
+          <span>Could not load nearby hospitals: {error}</span>
+        </div>
+      )}
+      {hospitals && !hospitals.provider_available && (
+        <div className="note">
+          <span>
+            Hospital search is offline — add the Naver client id and secret in{" "}
+            <code>backend/.env</code> to enable nearby results.
+          </span>
+        </div>
+      )}
+      {hospitals && hospitals.provider_available && hospitals.count === 0 && (
+        <div className="note">
+          <span>No hospitals found within range.</span>
+        </div>
+      )}
+      {hospitals && hospitals.results.length > 0 && (
+        <ul className="hospital-list">
+          {hospitals.results.map((h) => (
+            <li key={`${h.rank}-${h.name}`} className="hospital-row">
+              <div className="hospital-head">
+                <b>{h.name}</b>
+                <span className="hospital-dist">{formatDistance(h.distance_m)}</span>
+              </div>
+              {h.address && <div className="hospital-addr">{h.address}</div>}
+              <div className="hospital-meta">
+                {h.specialty && <span>{h.specialty}</span>}
+                {h.phone && <span> · {h.phone}</span>}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 

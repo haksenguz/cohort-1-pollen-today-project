@@ -176,7 +176,11 @@ export interface EnvironmentResponse {
     wind: number | null;
   };
   points: number;
-  risk: RiskLevel;
+  // null when there was nothing real to score, so the screen must not show
+  // a level. `risk_available` says the same thing for readers that prefer
+  // an explicit flag.
+  risk: RiskLevel | null;
+  risk_available: boolean;
   pollen_is_sample: boolean;
 }
 
@@ -201,6 +205,17 @@ export interface TriageResponse {
 export interface ChatRequest {
   message: string;
   conversation_id?: number | null;
+  /**
+   * Re-run the assistant turn for the last user message and replace the last
+   * assistant message in place. The stream is the same as a normal turn.
+   */
+  regenerate?: boolean;
+}
+
+/** Per-turn options for `streamChat`. */
+export interface ChatSendOptions {
+  /** Send the turn as a regeneration of the last assistant reply. */
+  regenerate?: boolean;
 }
 
 export interface ChatResponse {

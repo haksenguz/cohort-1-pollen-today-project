@@ -186,3 +186,87 @@ describe("ChatHistorySheet", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
   });
 });
+
+describe("searching conversations", () => {
+  const typeSearch = async (text: string) => {
+    fireEvent.change(screen.getByLabelText("Search conversations"), {
+      target: { value: text },
+    });
+  };
+
+  it("searches titles and message content through the list endpoint", async () => {
+    vi.mocked(listConversations).mockResolvedValue([conversation()]);
+    renderSheet();
+    await openHistory();
+    await screen.findByText("chest tightness after running");
+
+    await typeSearch("pollen");
+
+    await waitFor(() => {
+      expect(listConversations).toHaveBeenLastCalledWith("pollen");
+    });
+  });
+
+  it("asks for no filter when the search is empty", async () => {
+    vi.mocked(listConversations).mockResolvedValue([conversation()]);
+    renderSheet();
+    await openHistory();
+    await screen.findByText("chest tightness after running");
+
+    await typeSearch("pollen");
+    await waitFor(() => {
+      expect(listConversations).toHaveBeenLastCalledWith("pollen");
+    });
+
+    await typeSearch("");
+    await waitFor(() => {
+      expect(listConversations).toHaveBeenLastCalledWith(undefined);
+    });
+  });
+
+  it("shows the matches that came back", async () => {
+    vi.mocked(listConversations).mockResolvedValue([conversation()]);
+    renderSheet();
+    await openHistory();
+    await screen.findByText("chest tightness after running");
+
+    vi.mocked(listConversations).mockResolvedValue([
+      conversation({ id: 7, title: "pollen season" }),
+    ]);
+    await typeSearch("pollen");
+
+    expect(await screen.findByText("pollen season")).toBeInTheDocument();
+    expect(screen.queryByText("chest tightness after running")).not.toBeInTheDocument();
+  });
+
+  it("says a search matched nothing without saying the history is empty", async () => {
+    vi.mocked(listConversations).mockResolvedValue([conversation()]);
+    renderSheet();
+    await openHistory();
+    await screen.findByText("chest tightness after running");
+
+    vi.mocked(listConversations).mockResolvedValue([]);
+    await typeSearch("zzz");
+
+    const dialog = screen.getByRole("dialog");
+    expect(await within(dialog).findByText(/no conversations match/i)).toBeInTheDocument();
+    expect(within(dialog).queryByText(/no conversations yet/i)).not.toBeInTheDocument();
+  });
+
+  it("keeps a failed search apart from a search that matched nothing", async () => {
+    vi.mocked(listConversations).mockResolvedValue([conversation()]);
+    renderSheet();
+    await openHistory();
+    await screen.findByText("chest tightness after running");
+
+    vi.mocked(listConversations).mockRejectedValue(new ApiError(500, "Search offline"));
+    await typeSearch("pollen");
+
+    const dialog = screen.getByRole("dialog");
+    expect(
+      await within(dialog).findByText(/could not load your conversations/i),
+    ).toBeInTheDocument();
+    expect(within(dialog).queryByText(/no conversations match/i)).not.toBeInTheDocument();
+    expect(within(dialog).queryByText(/no conversations yet/i)).not.toBeInTheDocument();
+  });
+});
