@@ -1,0 +1,24 @@
+# Keeps the build context small and keeps local secrets out of the image.
+# The Dockerfile copies named paths (app, db, alembic, scripts, ...), so
+# nothing here may be a path the image needs.
+
+.venv
+venv
+__pycache__
+*.pyc
+*.pyo
+.pytest_cache
+.ruff_cache
+.mypy_cache
+
+# Local secrets and local overrides. The provider keys live in these files on
+# a developer machine and must never reach an image layer.
+.env
+.env.*
+!.env.example
+
+*.log
+.git
+.gitignore
+Dockerfile
+.dockerignore

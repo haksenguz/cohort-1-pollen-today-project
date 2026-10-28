@@ -1,9 +1,13 @@
-# Production-shaped stack. `docker compose up` brings up the same four things
+# Production-shaped stack. `docker compose up` brings up the same five things
 # everywhere, so "works on my machine" and "works in prod" stop being different
 # claims.
 #
-# Only `web` is published. The previous version mapped 5432 and 6379 to the
+# Only `edge` is published. The previous version mapped 5432 and 6379 to the
 # host, which on a public machine is an open database and an open Redis.
+#
+# The request path is browser -> edge (Caddy, TLS) -> web (nginx, PWA + /api
+# proxy) -> api (FastAPI) -> db / redis. The database and Redis never leave the
+# internal network.
 
 name: allergy-ai
 
@@ -43,8 +47,16 @@ services:
     build: ./backend
     restart: unless-stopped
     environment:
+      # Turns on the boot guard in app/core/config.py. A deployment with the
+      # example JWT secret, with the dev credential route on, or with demo mode
+      # on refuses to start instead of serving traffic.
+      ENVIRONMENT: ${ENVIRONMENT:-production}
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       REDIS_URL: redis://redis:6379
+      # Signs every session token. It was missing from this file entirely
+      # until 2026-10-28, so every container ran on the code default
+      # "change-me" - a value published in this repository.
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET to a random value, e.g. openssl rand -hex 32}
       CORS_ORIGINS: ${CORS_ORIGINS:?set CORS_ORIGINS to your public site origin}
       # Never :? these three. Absent keys must degrade honestly, not crash:
       # no LLM key means the agent cannot run, and no POLLEN_API_KEY means the
@@ -71,11 +83,37 @@ services:
         # `new URL(path, API_BASE_URL)`.
         VITE_API_BASE_URL: ${PUBLIC_ORIGIN:?set PUBLIC_ORIGIN, e.g. https://your-host}
     restart: unless-stopped
-    ports:
-      - "${PUBLIC_BIND:-0.0.0.0}:${PUBLIC_PORT:-8080}:80"
     depends_on:
       api:
+        condition: service_started
+    # No `ports:`. `edge` is the only way in.
+
+  edge:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    environment:
+      # PUBLIC_ORIGIN, handed to Caddy as a site address.
+      #   https://allergy.example.com -> automatic HTTPS, HTTP redirects
+      #   http://localhost             -> plain HTTP, no certificate
+      SITE_ADDRESS: ${PUBLIC_ORIGIN:?set PUBLIC_ORIGIN, e.g. https://your-host}
+    ports:
+      - "${PUBLIC_BIND:-0.0.0.0}:80:80"
+      - "${PUBLIC_BIND:-0.0.0.0}:443:443"
+      # HTTP/3 over QUIC. A phone on a flaky network falls back to TCP, so this
+      # is additive rather than a requirement.
+      - "${PUBLIC_BIND:-0.0.0.0}:443:443/udp"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      # The ACME account and the issued certificates. Without these volumes the
+      # container asks Let's Encrypt for a new certificate on every restart,
+      # and the rate limit for that is a handful per week.
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      web:
         condition: service_started
 
 volumes:
   pgdata:
+  caddy_data:
+  caddy_config:

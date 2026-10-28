@@ -11,6 +11,11 @@
 # default text mode converted frontend/nginx.conf to CRLF, and nothing in the
 # repo said so.
 #
+# The Caddyfile is here for the same reason as nginx.conf. It is mounted into
+# the edge container as the site configuration, and Caddy rejects a config
+# file with a stray carriage return: the container dies on boot with a parse
+# error that names neither the file nor the line.
+#
 # Deliberately NOT listed: *.yml, *.sql, *.ini and the Python sources. CRLF is
 # harmless in all of them - YAML and INI parsers strip it, and Python handles
 # universal newlines - so forcing it would create diff noise for no benefit.
@@ -20,3 +25,5 @@ Dockerfile      text eol=lf
 **/Dockerfile   text eol=lf
 nginx.conf      text eol=lf
 **/nginx.conf   text eol=lf
+Caddyfile      text eol=lf
+**/Caddyfile   text eol=lf
