@@ -29,6 +29,8 @@ Set your location, or accept the default for Seoul.
 
 - The risk chip reads LOW, MODERATE or EMERGENCY. It comes from
   `backend/app/services/risk.py`, a rule engine. The model never touches it.
+  It reads "unavailable" when no provider answered, because a day the app could
+  not ask anybody is not a calm day.
 - Air quality and weather are live from Open-Meteo.
 - Pollen is live from KMA. In spring it is trees, in late summer weeds, and
   in between it is honestly "no data" rather than a neighbour's reading.
@@ -67,8 +69,11 @@ Settings, privacy and data:
 
 - **Export** downloads a JSON file with everything held about the account.
 - **Delete account** is permanent and says so.
-- The policy names the operator and lists the four notice items, and it says
-  it was written from the code and not by a lawyer.
+- The policy lists the four notice items and says it was written from the code
+  and not by a lawyer. It names the operator once `OPERATOR_NAME` and
+  `OPERATOR_REGISTRATION_NUMBER` are set in `.env`, and until then it says
+  plainly that nobody is named yet. A policy that claims an operator nobody
+  has is not a policy.
 
 This is the section that makes the app credible to a Korean audience. Korean
 privacy law treats symptom data as 민감정보 and requires consent, a published
