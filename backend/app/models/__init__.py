@@ -53,6 +53,13 @@ class User(SQLModel, table=True):
     sensitive_consent_at: datetime | None = Field(default=None, sa_type=_TS)
     sensitive_consent_version: str | None = Field(default=None, max_length=32)
     sensitive_consent_withdrawn_at: datetime | None = Field(default=None, sa_type=_TS)
+    # The emergency contact. One contact, on the account row, because it is the
+    # user's own data about the user's own safety and it has to go when the
+    # account goes. The app cannot call this number: it is a number the person
+    # chooses to dial.
+    emergency_contact_name: str | None = Field(default=None, max_length=80)
+    emergency_contact_phone: str | None = Field(default=None, max_length=40)
+    emergency_contact_note: str | None = Field(default=None, max_length=200)
     created_at: datetime = _ts_field()
     updated_at: datetime = _ts_field()
 

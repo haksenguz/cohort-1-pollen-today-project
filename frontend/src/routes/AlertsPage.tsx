@@ -98,7 +98,10 @@ export function AlertsPage() {
 
       {alerts.length === 0 ? (
         <div className="note">
-          <span>No alerts yet. We will notify you when the environment crosses your threshold.</span>
+          <span>
+            No alerts yet. One is created when the environment crosses your
+            threshold, and the app picks it up while it is open.
+          </span>
         </div>
       ) : (
         <ul className="alert-list">

@@ -9,12 +9,7 @@
 import type { ReactNode } from "react";
 import { ChevronRight } from "lucide-react";
 
-export type SettingsScreenId =
-  | "profile"
-  | "health"
-  | "location"
-  | "notifications"
-  | "textsize";
+export type { SettingsScreenId } from "./settingsScreenIds";
 
 function RowText({ label, value }: { label: string; value: string }) {
   return (

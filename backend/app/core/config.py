@@ -75,6 +75,12 @@ class Settings(BaseSettings):
     demo_mode: bool = False
     demo_user_email: str = "demo@local"
 
+    # 제30조: the operator this app runs under. Both come from the
+    # environment. Empty means the policy says plainly that no operator is
+    # named yet, because a policy that names nobody is not a policy.
+    operator_name: str = ""
+    operator_registration_number: str = ""
+
     @field_validator("environment")
     @classmethod
     def _environment_is_known(cls, value: str) -> str:

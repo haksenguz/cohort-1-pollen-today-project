@@ -30,8 +30,11 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
+from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
+from app.core.security import CurrentUser
 from app.models import User
 
 # Bump when POLICY text changes in substance. Stored per user so "which text did
@@ -39,6 +42,10 @@ from app.models import User
 POLICY_VERSION = "2026-10-19-draft1"
 
 SENSITIVE_PURPOSE = "health_data_processing"
+
+# The machine-readable code a refusal carries. The frontend branches on it, so
+# it is a constant and not a sentence that gets reworded.
+SENSITIVE_CONSENT_REQUIRED_CODE = "sensitive_consent_required"
 
 # 제15조② requires these four be disclosed before 민감정보 consent is requested.
 REQUIRED_NOTICE_ITEMS = (
@@ -54,7 +61,7 @@ POLICY: dict[str, Any] = {
     "status": "draft",
     "requires_legal_review": True,
     "effective_from": None,
-    "operator": "allergy-ai (개인정보처리자 — 사업자 정보는 배포 전에 채워야 합니다)",
+    "operator": "사업자 정보 미정: 운영자 이름과 사업자등록번호가 설정되지 않았습니다.",
     "sections": [
         {
             "heading": "1. 개인정보의 처리 목적",
@@ -103,7 +110,7 @@ POLICY: dict[str, Any] = {
                 "계정 삭제 시 관련 데이터베이스 레코드를 물리적으로 삭제합니다. "
                 "복구 수단(소프트 삭제, 백업 보존)은 두지 않습니다.",
                 "삭제 대상: 대화와 메시지, 증상 이벤트, 판정 결과, 알레르기 목록, "
-                "기관 검색 기록, 알림, 알림 설정, 민감정보 동의 기록.",
+                "기관 검색 기록, 알림, 알림 설정, 민감정보 동의 기록, 비상 연락처.",
                 "위치별 공기질·꽃가루 관측값은 개인을 식별하지 않고 위치 기준으로 "
                 "공유 캐시되므로, 한 계정의 삭제로 제거되지 않습니다.",
             ],
@@ -186,9 +193,75 @@ def consent_state(user: User) -> dict[str, Any]:
 def has_sensitive_consent(user: User) -> bool:
     """True when 민감정보 may currently be processed for this user.
 
-    Not enforced on the write paths yet — see the open item in bugs.md. Enforcing
-    it partially would gate some writes and not others, which is worse than
-    gating none: it produces an app that half-works and a support question with
-    no good answer.
+    This is the single source of truth for that question, and it is asked on
+    every 민감정보 write path through `require_sensitive_consent`.
     """
     return user.sensitive_consent_at is not None
+
+
+def require_sensitive_consent(current_user: CurrentUser) -> None:
+    """Refuse a 민감정보 write when the user has not consented.
+
+    The refusal is a 403 with a machine-readable code, so the frontend can say
+    what to do instead of showing a generic failure. It is not a safety
+    decision: the deterministic engine still owns those, and a user without
+    consent gets a clear refusal rather than a different answer about their
+    symptoms.
+
+    Reads are not gated. A user keeps the right to see the data already held
+    about them (제35조), and the right to delete it (제36조) must never be
+    blocked by a consent check.
+    """
+    if has_sensitive_consent(current_user):
+        return
+
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail={
+            "code": SENSITIVE_CONSENT_REQUIRED_CODE,
+            "message": (
+                "This app cannot process health information until you agree to the "
+                "privacy notice. Open Settings, then Privacy, and agree to the notice."
+            ),
+            "policy_url": "/api/privacy/policy",
+        },
+    )
+
+
+def policy_document() -> dict[str, Any]:
+    """The policy as it is served, with the operator taken from the settings.
+
+    제30조 wants a named 사업자 and a 사업자등록번호. When the environment does
+    not carry them, the policy says so in plain words instead of naming a
+    placeholder: a policy that claims an operator nobody has is not a policy,
+    and this one is still a draft that a lawyer has to read.
+    """
+    settings = get_settings()
+    name = settings.operator_name.strip()
+    number = settings.operator_registration_number.strip()
+    named = bool(name and number)
+
+    if named:
+        operator = f"{name} (사업자등록번호: {number})"
+        operator_lines = [f"사업자명: {name}", f"사업자등록번호: {number}"]
+    else:
+        operator = "사업자 정보 미정: 운영자 이름과 사업자등록번호가 설정되지 않았습니다."
+        operator_lines = [
+            "이 앱을 운영할 사업자 정보가 아직 정해지지 않았습니다.",
+            "이 상태로는 제30조에 따른 개인정보 처리방침을 공개할 수 없습니다. "
+            "운영자 정보가 기재된 뒤에 공개할 수 있습니다.",
+        ]
+
+    sections = [dict(section) for section in POLICY["sections"]]
+    purpose = sections[0]
+    purpose["heading"] = "1. 개인정보처리자 및 처리 목적"
+    purpose["body"] = [*operator_lines, *purpose["body"]]
+
+    return {
+        **POLICY,
+        "operator": operator,
+        "operator_name": name or None,
+        "operator_registration_number": number or None,
+        "operator_named": named,
+        "sections": sections,
+    }

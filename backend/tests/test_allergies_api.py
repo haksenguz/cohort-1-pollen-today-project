@@ -5,7 +5,11 @@ async def _auth_headers(client: AsyncClient, email: str) -> dict:
     resp = await client.post(
         "/api/auth/register", json={"email": email, "password": "correcthorse123"}
     )
-    return {"Authorization": f"Bearer {resp.json()['access_token']}"}
+    headers = {"Authorization": f"Bearer {resp.json()['access_token']}"}
+    # An allergy is health information, so the 민감정보 gate asks for consent
+    # first. These tests are about the allergy record, not the gate.
+    await client.post("/api/privacy/consent", json={"granted": True}, headers=headers)
+    return headers
 
 
 async def test_create_and_list_allergy(client: AsyncClient):

@@ -144,7 +144,22 @@ async def export_user_data(session: AsyncSession, *, user_id: int) -> dict[str, 
     return {
         "exported_at": datetime.now().astimezone().isoformat(),
         "format": "allergy-ai/personal-data/v1",
-        "account": _row(user),
+        # The emergency contact is the user's own data about their own safety,
+        # so it travels with the export. It sits in its own section rather than
+        # in the account row, so it is read once and read clearly.
+        "account": _row(
+            user,
+            drop={
+                "emergency_contact_name",
+                "emergency_contact_phone",
+                "emergency_contact_note",
+            },
+        ),
+        "emergency_contact": {
+            "name": user.emergency_contact_name,
+            "phone": user.emergency_contact_phone,
+            "note": user.emergency_contact_note,
+        },
         "notification_preferences": _row(preferences) if preferences is not None else None,
         "allergies": [_row(a) for a in allergies],
         "conversations": conversations_out,

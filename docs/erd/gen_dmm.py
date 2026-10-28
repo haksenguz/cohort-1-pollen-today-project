@@ -26,6 +26,16 @@ SCHEMA = {
     C("password_hash", "character varying", "255"),
     C("latitude", "numeric", "9,6", nn=False),
     C("longitude", "numeric", "9,6", nn=False),
+    # 민감정보 (건강) consent. Nullable on purpose: a column that defaulted to
+    # "granted" would manufacture consent nobody gave.
+    C("sensitive_consent_at", "timestamp with time zone", nn=False),
+    C("sensitive_consent_version", "character varying", "32", nn=False),
+    C("sensitive_consent_withdrawn_at", "timestamp with time zone", nn=False),
+    # The emergency contact. One contact, on the account row, so it goes when
+    # the account goes.
+    C("emergency_contact_name", "character varying", "80", nn=False),
+    C("emergency_contact_phone", "character varying", "40", nn=False),
+    C("emergency_contact_note", "character varying", "200", nn=False),
     created(), updated(),
  ],
  "user_allergies": [

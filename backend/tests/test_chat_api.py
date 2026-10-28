@@ -94,7 +94,13 @@ async def _register_and_login(
         payload["longitude"] = longitude
     await client.post("/api/auth/register", json=payload)
     res = await client.post("/api/auth/login", json={"email": email, "password": "correcthorse123"})
-    return res.json()["access_token"]
+    token = res.json()["access_token"]
+    # A chat turn writes health information, so the 민감정보 gate asks for
+    # consent first. These tests are about the conversation, not the gate.
+    await client.post(
+        "/api/privacy/consent", json={"granted": True}, headers={"Authorization": f"Bearer {token}"}
+    )
+    return token
 
 
 @pytest.mark.asyncio

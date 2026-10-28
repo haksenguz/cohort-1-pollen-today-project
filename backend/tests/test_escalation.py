@@ -34,7 +34,11 @@ async def _register(client: AsyncClient, email: str) -> str:
     payload = {"email": email, "password": "correcthorse123"}
     await client.post("/api/auth/register", json=payload)
     res = await client.post("/api/auth/login", json=payload)
-    return res.json()["access_token"]
+    token = res.json()["access_token"]
+    # A chat turn writes health information, so the 민감정보 gate asks for
+    # consent first. The tests are about the conversation, not the gate.
+    await client.post("/api/privacy/consent", json={"granted": True}, headers=_auth(token))
+    return token
 
 
 def _auth(token: str) -> dict[str, str]:

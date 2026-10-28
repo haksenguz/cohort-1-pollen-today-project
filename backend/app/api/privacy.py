@@ -14,8 +14,9 @@ import json
 from datetime import datetime
 from typing import Any
 
-from fastapi import APIRouter, Response
+from fastapi import APIRouter, Depends, Response
 from fastapi.responses import JSONResponse
+from fastapi.routing import APIRoute
 from pydantic import BaseModel, Field
 
 from app.core.db import SessionDep
@@ -59,7 +60,7 @@ async def privacy_policy() -> dict[str, Any]:
     and the frontend can present it in whatever shape its locale needs.
     """
     return {
-        **consent_service.POLICY,
+        **consent_service.policy_document(),
         "required_notice_items": list(consent_service.REQUIRED_NOTICE_ITEMS),
     }
 
@@ -113,11 +114,12 @@ class PrivacySummary(BaseModel):
 # search history, which is why it is called out in the note.
 _SUMMARY_POINTS: list[StoredDataPoint] = [
     StoredDataPoint(
-        what="Account: email, password hash, optional saved location",
+        what="Account: email, password hash, optional saved location, emergency contact",
         table="users",
         note=(
             "Your saved coordinates are used to search for nearby clinics. They are "
-            "never sent to the LLM and never placed in a prompt."
+            "never sent to the LLM and never placed in a prompt. The emergency "
+            "contact is the number you chose to save; the app cannot call it."
         ),
     ),
     StoredDataPoint(
@@ -263,3 +265,50 @@ async def health_data_note() -> dict[str, Any]:
             "never used for advertising or profiling."
         ),
     }
+
+
+# ---------------------------------------------------------------------------
+# The 민감정보 gate.
+#
+# Consent is not a safety decision (ADR 0001). It decides whether health data
+# may be processed at all, and it is asked here, on every route that writes
+# such data.
+#
+# The three routers that write 민감정보 live in other parts of the app, so the
+# gate is installed from this module instead of from their route decorators.
+# One list of every 민감정보 write is easier to keep true than a gate copied
+# into three routers, and a route that starts writing 민감정보 without it shows
+# up as a failing test rather than as a silent leak.
+#
+# Reads are not gated. A user keeps the right to see what is held about them
+# (제35조), and the right to delete it (제36조) must never be blocked by a
+# consent check.
+# ---------------------------------------------------------------------------
+
+_SENSITIVE_WRITE_ROUTES: tuple[tuple[str, str], ...] = (
+    ("POST", "/api/chat"),
+    ("POST", "/api/triage"),
+    ("POST", "/api/allergies"),
+)
+
+
+def _install_sensitive_consent_gate() -> None:
+    """Put the consent gate on every 민감정보 write route."""
+    from app.api import allergies as allergies_api
+    from app.api import chat as chat_api
+    from app.api import triage as triage_api
+
+    routers = (chat_api.router, triage_api.router, allergies_api.router)
+    for router_to_gate in routers:
+        for route in router_to_gate.routes:
+            if not isinstance(route, APIRoute):
+                continue
+            methods = route.methods or set()
+            if not any(
+                method in methods and path == route.path for method, path in _SENSITIVE_WRITE_ROUTES
+            ):
+                continue
+            route.dependencies.append(Depends(consent_service.require_sensitive_consent))
+
+
+_install_sensitive_consent_gate()
