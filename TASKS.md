@@ -235,7 +235,7 @@ re-gated. The bugs.md entries are the record of each one.
 ## S2. What running the app for real exposed (2026-11-03)
 
 The app was started for real, with the real providers and the real database,
-and five things showed up that no test had caught. The bugs.md entries are
+and six things showed up that no test had caught. The bugs.md entries are
 the record of each one.
 
 - [x] **S1. The tool loop never sent the assistant turn that asked for the
@@ -256,6 +256,10 @@ the record of each one.
       reply.** The adapter replaced the text on every `message` event where the
       contract says to append, so a three-piece answer rendered as its last
       piece (B-026).
+- [x] **S6. A server that was down signed the user out.** The auth provider
+      treated an unreachable server and a refused token as the same thing and
+      threw the token away in both cases. An unreachable server now keeps the
+      session and offers a retry (B-027).
 
 ## Blocking the demo
 

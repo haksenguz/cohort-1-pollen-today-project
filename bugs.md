@@ -212,6 +212,54 @@ the case where the append alone would still show an empty bubble.
 
 ---
 
+## B-027: A server that was down signed the user out
+
+- **Reported:** 2026-11-04 (user-reported: *"why the fuck it gets logged out"*)
+- **Surface:** `frontend/src/auth/AuthContext.tsx`,
+  `frontend/src/auth/RequireAuth.tsx`
+- **Status:** fixed
+
+**Observed.** The backend was restarted. The app, which was open and signed in,
+went to the login screen. The token was gone, so the user had to type a password
+again to get back into an app they had never signed out of.
+
+**Cause.** `AuthContext` fetched the profile on boot and treated every failure
+the same way:
+
+```
+} catch {
+  clearToken();
+  setStatus("unauthenticated");
+}
+```
+
+A server that cannot be reached throws a `TypeError` from `fetch`. A server that
+answers and refuses the token throws an `ApiError` with a 401. The catch block
+could not tell them apart, so it treated both as "signed out" and threw the
+token away.
+
+That is two different facts, and they need opposite answers. A rejected token
+is dead and has to go. An unreachable server has said nothing about the token
+at all. Dropping it on a network blip, a tunnel, or a backend restart signs
+the user out for a reason that has nothing to do with their credentials.
+
+**Fixed.** The catch now branches on what actually failed. A 401 or 403 clears
+the token and lands on the login screen. Anything else keeps the token and
+moves the app to a third state, `unreachable`, which shows a screen that says
+the server is not answering, that the session is still signed in, and offers a
+retry. `RequireAuth` renders that screen instead of redirecting to `/login`, so
+a dead backend no longer asks for a password.
+
+Verified live: the backend was stopped, the app reloaded, and it stayed on
+`/chat` with the session intact. The backend was started again, the retry
+button was pressed, and the chat came back with no sign-in.
+
+Four tests pin it: a refused token signs out and clears the token, an
+unreachable server keeps both, a successful retry signs the user back in, and
+a good token still signs straight in.
+
+---
+
 ## B-014 — The agent is a chatbot, and the chat screen discards what the engine already decided
 
 - **Reported:** 2026-10-16 (user-reported: *"it's not an agent but it's just a chatbot"*)

@@ -90,6 +90,7 @@ beforeEach(() => {
     register: vi.fn(),
     logout: vi.fn(),
     updateUser: vi.fn(),
+    retry: vi.fn(),
   });
 });
 
@@ -153,6 +154,7 @@ describe("TodayPage — happy path", () => {
       register: vi.fn(),
       logout: vi.fn(),
       updateUser: vi.fn(),
+      retry: vi.fn(),
     });
     vi.mocked(getCurrentEnvironment).mockResolvedValue(env());
     vi.mocked(getNearbyHospitals).mockResolvedValue(hospitals());
@@ -257,6 +259,7 @@ describe("TodayPage — degraded paths", () => {
       register: vi.fn(),
       logout: vi.fn(),
       updateUser: vi.fn(),
+      retry: vi.fn(),
     });
 
     renderPage();
@@ -274,6 +277,7 @@ describe("TodayPage — degraded paths", () => {
       register: vi.fn(),
       logout: vi.fn(),
       updateUser: vi.fn(),
+      retry: vi.fn(),
     });
 
     renderPageWithProbe();
