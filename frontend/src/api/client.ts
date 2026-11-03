@@ -286,9 +286,10 @@ export function getConversation(conversationId: number): Promise<ConversationDet
 //
 // POST /api/chat is Bearer-protected and streams Server-Sent Events: a
 // `status` event per pipeline step, any number of `tool` events as the agent
-// acts, one `message` event, then one `done` event, or a single `error`
-// event. It is not a token-by-token stream — `message.delta` carries the full
-// assistant reply as one string. See docs/API_CONTRACT.md and docs/GOAL.md.
+// acts, one or more `message` events, then one `done` event, or a single
+// `error` event. Each `message` event carries one piece of the assistant
+// reply and the pieces concatenate to the `done` event's `message` field.
+// See docs/API_CONTRACT.md.
 //
 // The chat screen itself lives in frontend/src/chat/ (TASKS.md J5) — kept here
 // only so every endpoint in the contract has a typed client function.

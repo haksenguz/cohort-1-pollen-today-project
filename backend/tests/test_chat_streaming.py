@@ -149,6 +149,18 @@ class _StreamingLLM:
             yield piece
 
 
+class _RefusingLLM:
+    """A provider that refuses the request itself, the way an unknown model
+    name does. It never gets as far as a reply."""
+
+    def complete(self, messages) -> str:
+        raise LLMCallError("misconfigured", "model rejected the request")
+
+    def stream_complete(self, messages):
+        yield from ()
+        raise LLMCallError("misconfigured", "model rejected the request")
+
+
 async def _register_and_login(client: AsyncClient, email: str) -> tuple[str, int]:
     payload = {"email": email, "password": "correcthorse123"}
     await client.post("/api/auth/register", json=payload)
@@ -340,6 +352,50 @@ async def test_a_provider_failure_mid_stream_is_an_error_event_not_a_500(
         "the error comes after `done`, so the reply reaches the client first"
     )
     assert _only_done(events)["message"] == symptom_agent.FALLBACK_QUESTION
+
+
+@pytest.mark.asyncio
+async def test_a_refused_request_is_not_told_to_try_again(
+    chat_client: AsyncClient, monkeypatch
+) -> None:
+    """The wording has to match what happened.
+
+    A provider that refuses the request will refuse it again, every time, so
+    "try again" would be a false instruction that sends the user round the
+    same loop. The message says the service is not set up, which is the truth
+    and is something the person running the server can act on.
+    """
+    _install(monkeypatch, _RefusingLLM())
+    token, _ = await _register_and_login(chat_client, "refused@example.com")
+
+    res = await chat_client.post(
+        "/api/chat", json={"message": "my eyes itch"}, headers={"Authorization": f"Bearer {token}"}
+    )
+
+    assert res.status_code == 200, res.text
+    errors = [data for name, data in _parse_sse(res.text) if name == "error"]
+    assert errors, "the failure has to be reported"
+    assert errors[0]["kind"] == "misconfigured"
+    assert "not set up correctly" in errors[0]["detail"]
+    assert "try again" not in errors[0]["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_a_transient_failure_is_told_to_try_again(
+    chat_client: AsyncClient, monkeypatch
+) -> None:
+    """The other direction: a provider that is merely busy is worth another
+    attempt, so the message says so."""
+    _install(monkeypatch, _StreamingLLM(_QUESTION_EXTRACTION, _PIECES, fail_extraction=True))
+    token, _ = await _register_and_login(chat_client, "blip@example.com")
+
+    res = await chat_client.post(
+        "/api/chat", json={"message": "my eyes itch"}, headers={"Authorization": f"Bearer {token}"}
+    )
+
+    errors = [data for name, data in _parse_sse(res.text) if name == "error"]
+    assert errors, "the failure has to be reported"
+    assert "try again" in errors[0]["detail"].lower()
 
 
 @pytest.mark.asyncio

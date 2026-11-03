@@ -813,18 +813,42 @@ def make_tool_node(
             if not turn.tool_calls:
                 break
 
+            # The assistant turn that asked for the tools goes into the
+            # transcript before the results do. A provider matches a tool
+            # result to the tool call that asked for it by id, and without
+            # that assistant turn the id belongs to nothing: the provider
+            # answers 400 "tool result's tool id not found" and the turn dies
+            # with nothing to show for it.
+            assistant_turn: dict[str, Any] = {
+                "role": "assistant",
+                "content": turn.content or "",
+                "tool_calls": [
+                    {
+                        "id": call.id,
+                        "type": "function",
+                        "function": {
+                            "name": call.name,
+                            "arguments": json.dumps(call.arguments, ensure_ascii=False),
+                        },
+                    }
+                    for call in turn.tool_calls
+                ],
+            }
+
+            tool_results: list[dict[str, Any]] = []
             for call in turn.tool_calls:
                 observation = _observe(registry, call)
                 observations.append(observation)
-                transcript = [
-                    *transcript,
+                tool_results.append(
                     {
                         "role": "tool",
                         "tool_call_id": call.id,
                         "name": call.name,
                         "content": observation,
-                    },
-                ]
+                    }
+                )
+
+            transcript = [*transcript, assistant_turn, *tool_results]
 
         state["tool_steps"] = steps
         state["tool_observations"] = observations

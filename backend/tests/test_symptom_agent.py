@@ -558,10 +558,14 @@ class ToolCallingFakeLLM:
         self.tool_turns = list(tool_turns)
         self.extraction = extraction
         self.tool_calls_made = []
+        # Every transcript the tool-enabled call was given, so a test can see
+        # what the provider would actually receive.
+        self.transcripts = []
         self.complete_calls = 0
 
     def complete_with_tools(self, messages, tools):
         self.tool_calls_made.append(list(tools))
+        self.transcripts.append(list(messages))
         turn = self.tool_turns.pop(0)
         if isinstance(turn, str):
             return ToolTurn(content=turn)
@@ -647,6 +651,43 @@ def test_the_tool_loop_observes_a_result_and_then_continues_to_extraction():
     assert result["tool_steps"] == 2
     assert result["tool_observations"] == ['{"name": "Some Clinic", "distance_m": 800}']
     assert llm.complete_calls == 1, "extraction still runs exactly once"
+
+
+def test_the_assistant_turn_that_asked_for_the_tool_is_in_the_transcript():
+    """The tool result has to arrive with the assistant turn that asked for it.
+
+    A provider matches a tool result to the tool call that asked for it by id.
+    Without the assistant turn carrying that id, the id belongs to nothing, and
+    the provider answers 400 "tool result's tool id not found". The turn then
+    dies with nothing to show for it, which is what a real provider did.
+    """
+    llm = ToolCallingFakeLLM([(_tool_call(),), "There is a clinic 800 m away."])
+
+    symptom_agent.run_turn(
+        llm,
+        symptom_agent.initial_state(),
+        "is there a clinic near me? I am sneezing",
+        None,
+        ToolRegistry([_lookup_tool()]),
+    )
+
+    second_call = llm.transcripts[1]
+    assistant_index = next(
+        (i for i, m in enumerate(second_call) if m.get("role") == "assistant"), None
+    )
+    tool_index = next((i for i, m in enumerate(second_call) if m.get("role") == "tool"), None)
+
+    assert assistant_index is not None, "the assistant turn that called the tool is missing"
+    assert tool_index is not None, "the tool result is missing"
+    assert assistant_index < tool_index, "the result came before the call that asked for it"
+
+    assistant_turn = second_call[assistant_index]
+    assert assistant_turn["tool_calls"][0]["id"] == "call_1"
+    assert assistant_turn["tool_calls"][0]["type"] == "function"
+    assert assistant_turn["tool_calls"][0]["function"]["name"] == "lookup_clinic"
+
+    tool_result = second_call[tool_index]
+    assert tool_result["tool_call_id"] == "call_1", "the result must carry the id it answers"
 
 
 def test_the_model_is_offered_the_registry_schemas():

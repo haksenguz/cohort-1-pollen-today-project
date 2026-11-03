@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 
 from app.api import dev_settings
 from app.core.config import get_settings
+from app.core.openai_client import LLMCallError
 from app.main import app
 
 
@@ -77,6 +78,9 @@ def test_enabled_endpoint_never_echoes_the_key(
     # .env — not the tmp file the fixture redirects writes to. So the key has
     # to be visible to Settings for the post-write readback to see it.
     monkeypatch.setenv("OPENAI_API_KEY", "sk-super-secret-value-9999")
+    # The provider probe is stubbed: this test is about what the response
+    # carries, and `example.invalid` is not a provider that answers.
+    monkeypatch.setattr(dev_settings, "probe_model", lambda **kwargs: None)
     get_settings.cache_clear()
 
     response = client.put(
@@ -93,6 +97,57 @@ def test_enabled_endpoint_never_echoes_the_key(
     payload = response.json()
     assert payload["configured"] is True
     assert payload["key_hint"] == "...9999"
+
+
+def test_a_model_the_provider_refuses_is_not_saved(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The screen that lets a person type a model name is the one place a
+    wrong name can be entered, and a wrong name fails every chat turn with a
+    message that says nothing about the cause. The provider is asked first,
+    and a refusal is reported instead of saved.
+    """
+    _enable(monkeypatch)
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test-value-1234")
+    get_settings.cache_clear()
+    env = dev_settings._ENV_FILE
+
+    def _refuses(**kwargs) -> None:
+        raise LLMCallError("misconfigured", "unknown model 'minimax-m3.1'")
+
+    monkeypatch.setattr(dev_settings, "probe_model", _refuses)
+
+    response = client.put(
+        "/api/dev/llm",
+        json={"api_key": "", "base_url": "", "model": "minimax-m3.1"},
+    )
+
+    assert response.status_code == 422
+    assert "minimax-m3.1" in response.json()["detail"]
+    assert "minimax-m3.1" not in env.read_text(encoding="utf-8")
+
+
+def test_the_key_never_reaches_the_reason_the_user_is_shown(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The provider's message is not ours to trust about the key. It is cut
+    out before the reason goes anywhere near the browser."""
+    _enable(monkeypatch)
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-canary-secret-4321")
+    get_settings.cache_clear()
+
+    def _refuses(**kwargs) -> None:
+        raise LLMCallError("unavailable", "rejected sk-canary-secret-4321")
+
+    monkeypatch.setattr(dev_settings, "probe_model", _refuses)
+
+    response = client.put(
+        "/api/dev/llm",
+        json={"api_key": "sk-canary-secret-4321", "base_url": "", "model": "m"},
+    )
+
+    assert response.status_code == 422
+    assert "canary" not in response.text
 
 
 def test_oversized_key_is_rejected_without_echoing_it(

@@ -426,9 +426,24 @@ persisted for that turn):
 
 ```
 event: error
-data: {"detail": "the symptom agent failed to process this message"}
+data: {"detail": "The model did not answer in time. Try again in a moment.", "kind": "timeout"}
 
 ```
+
+`detail` is a sentence a user can act on, and it depends on `kind`, because
+the kind decides what can be done. Three kinds are worth another attempt
+(`timeout`, `rate_limit`, `unavailable`) and say so. `malformed` says the
+answer could not be read. `misconfigured` means the provider refused the
+request itself, so the same message will be refused again, and the detail
+says that instead of sending the user round the same loop.
+
+| `kind` | means | the user is told |
+| --- | --- | --- |
+| `timeout` | the provider did not answer in time | try again |
+| `rate_limit` | the provider is busy | try again |
+| `unavailable` | the provider could not be reached | try again |
+| `malformed` | the provider answered with something unreadable | try again |
+| `misconfigured` | the provider refused the request (unknown model, rejected parameters) | that the service is not set up, and that retrying will not help |
 
 `ChatResponse` fields:
 
@@ -717,4 +732,4 @@ Verified against `backend/app/services/*.py` and `backend/app/core/config.py`.
 | Air quality | Open-Meteo Air Quality (`air-quality-api.open-meteo.com`) | none used | No | Live, keyless, same pattern as weather. |
 | Pollen | KMA 꽃가루농도위험지수 (`apis.data.go.kr`, see `docs/research/pollen-providers.md`) | `pollen_api_key` (`POLLEN_API_KEY`) | Optional (graceful fallback) | `fetch_pollen()` calls the real KMA provider when `POLLEN_API_KEY` is set; on any provider failure it degrades to an all-`None` `PollenData` (`is_sample: false` — a real "no data" response, not the sample). With no key it returns `sample_pollen()`: a hardcoded, clearly-flagged (`is_sample: true` → `pollen_is_sample` in the response) sample. The two are never blended. The provider doesn't report a grass reading, so `pollen.grass` stays `null` even with a real key. |
 | Hospitals | Naver Local Search (`openapi.naver.com/v1/search/local.json`) | `naver_client_id` + `naver_client_secret` (`NAVER_CLIENT_ID`, `NAVER_CLIENT_SECRET`) | **Yes, both** | Live when both are set. If either is blank, `NaverLocalClient.search()` raises before any HTTP call and the endpoint degrades to `provider_available: false` (see above), not an error. |
-| LLM (chat agent) | OpenAI-compatible endpoint, model from `OPENAI_MODEL` (default `gpt-4o-mini`); `OPENAI_BASE_URL` points it at OpenRouter or any proxy | `openai_api_key` (`OPENAI_API_KEY`) | **Yes** | One client, `get_openai_client_from_settings()` in `app/core/openai_client.py`, built lazily so an unset key is not a 500 on unauthenticated requests. Every call is capped by `openai_max_tokens` (default 512) and `openai_timeout_seconds` (default 20). Provider failures are raised as `LLMCallError` with a `kind` (`timeout` / `rate_limit` / `unavailable` / `malformed`) and surface to the client as an SSE `error` event, never a 500. That event is emitted after `done` and only when the rule engine produced no verdict, so it can never mask an EMERGENCY recommendation. |
+| LLM (chat agent) | OpenAI-compatible endpoint, model from `OPENAI_MODEL` (default `gpt-4o-mini`); `OPENAI_BASE_URL` points it at OpenRouter or any proxy | `openai_api_key` (`OPENAI_API_KEY`) | **Yes** | One client, `get_openai_client_from_settings()` in `app/core/openai_client.py`, built lazily so an unset key is not a 500 on unauthenticated requests. Every call is capped by `openai_max_tokens` (default 512) and `openai_timeout_seconds` (default 20). Provider failures are raised as `LLMCallError` with a `kind` (`timeout` / `rate_limit` / `unavailable` / `malformed` / `misconfigured`) and surface to the client as an SSE `error` event, never a 500. That event is emitted after `done` and only when the rule engine produced no verdict, so it can never mask an EMERGENCY recommendation. `misconfigured` is the kind for a provider that read the request and refused it (an unknown model name, rejected parameters): that request will be refused again, so the message tells the user the service is not set up rather than telling them to try again. The local dev screen (`PUT /api/dev/llm`, off unless `DEV_SETTINGS_ENABLED`) checks the configuration with the provider before saving it, so a model name the provider has never heard of is refused where it was typed instead of failing every later chat turn. |

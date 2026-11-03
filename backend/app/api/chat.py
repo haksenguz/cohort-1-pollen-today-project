@@ -50,6 +50,26 @@ from app.services import conversation_title, escalation, triage
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 logger = logging.getLogger(__name__)
 
+# What the user is told when the model call failed. One line per failure kind,
+# because the failure kind decides what the user can do about it.
+#
+# Three of these say "try again", and that is honest: a timeout or a busy
+# provider is worth another attempt. The fourth is not. A provider that
+# refuses the request itself will refuse it again, every time, so telling the
+# user to try again would send them round the same loop with no way out. The
+# setup behind it is a model name, a key or a base URL, and the person who can
+# fix that is the one running the server.
+_ERROR_MESSAGES: dict[str, str] = {
+    "timeout": "The model did not answer in time. Try again in a moment.",
+    "rate_limit": "The model is busy right now. Try again in a moment.",
+    "malformed": "The model answered with something I could not read. Try again.",
+    "misconfigured": (
+        "The chat service is not set up correctly, so it cannot answer. "
+        "Sending the same message again will not help."
+    ),
+    "unavailable": "The chat service is not answering right now. Try again in a moment.",
+}
+
 
 class ChatRequest(BaseModel):
     """One turn of the chat.
@@ -814,11 +834,12 @@ async def _run_chat(
     # because the provider was flaky. So the error is only emitted when there
     # is no verdict to deliver.
     if result.get("llm_error_kind") and not result.get("triage_level"):
+        kind = result["llm_error_kind"]
         yield _sse(
             "error",
             {
-                "detail": "I could not process that message right now. Please try again.",
-                "kind": result["llm_error_kind"],
+                "detail": _ERROR_MESSAGES.get(kind, _ERROR_MESSAGES["unavailable"]),
+                "kind": kind,
             },
         )
 
