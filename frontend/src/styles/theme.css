@@ -562,6 +562,16 @@ h2.vt {
   margin: 4px 0 10px;
 }
 
+/* The qualifier after a section heading, e.g. the radius the list covers. */
+.vsect-note {
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: none;
+  color: var(--ink-soft);
+  opacity: 0.8;
+  margin-left: 8px;
+}
+
 /* Today screen — hospital list */
 .hospital-list {
   list-style: none;

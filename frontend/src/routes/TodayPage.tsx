@@ -235,7 +235,12 @@ function HospitalSection({
 }) {
   return (
     <section className="hospital-section" aria-label="Nearby hospitals">
-      <h3 className="vsect">Nearby care</h3>
+      <h3 className="vsect">
+        Nearby care
+        {hospitals && hospitals.radius_m > 0 ? (
+          <span className="vsect-note">within {Math.round(hospitals.radius_m / 1000)} km</span>
+        ) : null}
+      </h3>
       {error && (
         <div className="note">
           <span>Could not load nearby hospitals: {error}</span>

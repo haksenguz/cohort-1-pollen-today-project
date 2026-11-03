@@ -396,6 +396,9 @@ export interface HospitalNearbyResponse {
   provider_available: boolean;
   count: number;
   results: HospitalResult[];
+  /** The radius the results were filtered by. Wider than the requested one
+   * when the requested one held nothing. */
+  radius_m: number;
 }
 
 export interface HospitalNearbyParams {

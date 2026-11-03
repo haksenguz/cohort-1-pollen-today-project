@@ -43,6 +43,17 @@ NAVER_MAX_DISPLAY = 5
 DEFAULT_RADIUS_M = 5000
 DEFAULT_LIMIT = 5  # can't ask Naver for more than NAVER_MAX_DISPLAY anyway
 
+# Used when the preferred radius leaves nothing.
+#
+# Naver Local Search has no radius parameter, so the five results it returns
+# for a keyword are its own national top five, and the radius is applied here
+# as a post-filter. In a dense city those five are regularly all further
+# away than five kilometres, which left the panel saying "no hospitals found
+# within range" in the middle of Seoul while clinics sat nine kilometres
+# away. Every row carries its distance, so a clinic further out is more use
+# to someone who cannot breathe than an empty list.
+FALLBACK_RADIUS_M = 20_000
+
 _TAG_RE = re.compile(r"<[^>]+>")
 
 # WGS84 sanity bounds, used to defensively catch the legacy KATECH/TM128
@@ -131,6 +142,9 @@ class HospitalSearchOutcome:
     results: list[HospitalResultData] = field(default_factory=list)
     provider_available: bool = True
     error: str | None = None
+    # The radius the results were actually filtered by, which is not always the
+    # one that was asked for. See FALLBACK_RADIUS_M.
+    radius_m: int = DEFAULT_RADIUS_M
 
 
 def _haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> int:
@@ -244,11 +258,19 @@ async def find_nearby_hospitals(
         if (place := _parse_place(raw, latitude, longitude, specialty)) is not None
     ]
 
-    parsed = [p for p in parsed if p.distance_m is None or p.distance_m <= radius_m]
-
     parsed.sort(key=lambda p: (p.distance_m is None, p.distance_m or 0))
-    ranked = parsed[:limit]
+
+    within = [p for p in parsed if p.distance_m is None or p.distance_m <= radius_m]
+    applied_radius = radius_m
+    if not within and radius_m < FALLBACK_RADIUS_M:
+        # Nothing inside the radius the caller asked for. Widen it rather than
+        # hand back an empty list, and say in the response which radius was
+        # used so nobody reads it as "these are all within five kilometres".
+        within = [p for p in parsed if p.distance_m is None or p.distance_m <= FALLBACK_RADIUS_M]
+        applied_radius = FALLBACK_RADIUS_M
+
+    ranked = within[:limit]
     for i, place in enumerate(ranked, start=1):
         place.rank = i
 
-    return HospitalSearchOutcome(results=ranked, provider_available=True)
+    return HospitalSearchOutcome(results=ranked, provider_available=True, radius_m=applied_radius)

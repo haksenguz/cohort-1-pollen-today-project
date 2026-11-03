@@ -204,6 +204,7 @@ describe("getNearbyHospitals", () => {
       provider_available: true,
       count: 0,
       results: [],
+      radius_m: 5000,
     });
     vi.stubGlobal("fetch", fetchSpy);
 

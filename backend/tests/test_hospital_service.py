@@ -212,6 +212,60 @@ async def test_radius_m_filters_client_side_after_ranking():
     assert [r.name for r in outcome.results] == ["Near Clinic 이비인후과의원"]
 
 
+async def test_the_radius_widens_when_nothing_is_inside_it():
+    """Naver has no radius search, so the five results it returns for a keyword
+    can all be further out than the radius. The panel used to say "no hospitals
+    found within range" in the middle of a city while clinics sat nine
+    kilometres away, and a clinic with a distance on it is more use to someone
+    who cannot breathe than an empty list.
+    """
+    nine_km_away = _item("Nine KM Clinic", DAEGU_LAT + 0.081, DAEGU_LON)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=_naver_payload(nine_km_away))
+
+    async with _client(handler) as http:
+        naver = NaverLocalClient(http, client_id="id", client_secret="secret")
+        outcome = await find_nearby_hospitals(
+            naver, latitude=DAEGU_LAT, longitude=DAEGU_LON, radius_m=5000
+        )
+
+    assert [r.name for r in outcome.results] == ["Nine KM Clinic 이비인후과의원"]
+    assert outcome.radius_m == 20000
+
+
+async def test_the_requested_radius_is_kept_when_something_is_inside_it():
+    near = _item("Near Clinic", DAEGU_LAT + 0.001, DAEGU_LON)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=_naver_payload(near))
+
+    async with _client(handler) as http:
+        naver = NaverLocalClient(http, client_id="id", client_secret="secret")
+        outcome = await find_nearby_hospitals(
+            naver, latitude=DAEGU_LAT, longitude=DAEGU_LON, radius_m=5000
+        )
+
+    assert [r.name for r in outcome.results] == ["Near Clinic 이비인후과의원"]
+    assert outcome.radius_m == 5000
+
+
+async def test_a_wide_radius_is_never_widened_further():
+    thirty_km_away = _item("Thirty KM Clinic", DAEGU_LAT + 0.27, DAEGU_LON)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=_naver_payload(thirty_km_away))
+
+    async with _client(handler) as http:
+        naver = NaverLocalClient(http, client_id="id", client_secret="secret")
+        outcome = await find_nearby_hospitals(
+            naver, latitude=DAEGU_LAT, longitude=DAEGU_LON, radius_m=50000
+        )
+
+    assert [r.name for r in outcome.results] == ["Thirty KM Clinic 이비인후과의원"]
+    assert outcome.radius_m == 50000
+
+
 async def test_provider_http_failure_is_handled_gracefully():
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(500, text="upstream on fire")
