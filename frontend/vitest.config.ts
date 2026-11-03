@@ -21,5 +21,13 @@ export default defineConfig({
     globals: true,
     setupFiles: ["./src/test/setup.ts"],
     css: false,
+    // The default 5s timeout is too tight on a slow machine. This suite
+    // drives the chat screen through user-event, which types a message
+    // character by character, and that is CPU-bound. On an x64 laptop a
+    // typing test finishes in about a second; under x64 emulation on ARM it
+    // takes five, which is not a failure but it looks exactly like one. A
+    // test that genuinely hangs still fails, just later.
+    testTimeout: 30_000,
+    hookTimeout: 30_000,
   },
 });
