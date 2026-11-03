@@ -235,7 +235,7 @@ re-gated. The bugs.md entries are the record of each one.
 ## S2. What running the app for real exposed (2026-11-03)
 
 The app was started for real, with the real providers and the real database,
-and four things showed up that no test had caught. The bugs.md entries are
+and five things showed up that no test had caught. The bugs.md entries are
 the record of each one.
 
 - [x] **S1. The tool loop never sent the assistant turn that asked for the
@@ -252,6 +252,10 @@ the record of each one.
       ARM64 box running x64 Node under emulation, where a typing test takes
       five seconds instead of one and vitest's default five-second timeout
       turned that into sixteen failures that looked like real ones.
+- [x] **S5. The chat screen showed the last piece of a reply instead of the
+      reply.** The adapter replaced the text on every `message` event where the
+      contract says to append, so a three-piece answer rendered as its last
+      piece (B-026).
 
 ## Blocking the demo
 

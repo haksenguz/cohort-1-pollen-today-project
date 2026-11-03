@@ -8,9 +8,11 @@
  * that already parses the `message` / `done` / `error` events defined in
  * docs/API_CONTRACT.md.
  *
- * Note the backend sends the entire assistant reply in a single `message`
- * event rather than token by token, so there is nothing to yield
- * incrementally. We return one completed result.
+ * The backend sends a reply as a run of `message` events, one piece each,
+ * and the `done` event carries the whole reply again. The pieces are appended
+ * in the order they arrive and the finished turn is rendered from `done`, so
+ * a lost frame costs nothing. assistant-ui wants the finished message as one
+ * result, which is what we return.
  */
 import type {
   ChatModelAdapter,
@@ -160,7 +162,10 @@ export const allergyChatAdapter: ChatModelAdapter = {
           onStatus: (event) => setActivity(event.stage),
           onTool: (event) => setToolActivity(event),
           onMessage: (delta) => {
-            state.reply = delta;
+            // Append, never replace. The backend sends a reply in pieces (see
+            // `docs/API_CONTRACT.md`), so keeping only the last piece shows
+            // the user a few words where the whole answer should be.
+            state.reply += delta;
           },
           onDone: (response) => {
             state.result = response;
@@ -195,6 +200,11 @@ export const allergyChatAdapter: ChatModelAdapter = {
     if (state.streamError !== null) throw new Error(state.streamError);
     if (state.result !== null) conversationId = state.result.conversation_id;
 
-    return { content: assistantParts(state.reply, state.result) };
+    // `done` carries the whole reply, so it is what the turn is rendered
+    // from. The accumulated pieces are the fallback: for a turn that ended
+    // without a `done` event, and for a `done` event whose message is empty.
+    const reply = state.result?.message || state.reply;
+
+    return { content: assistantParts(reply, state.result) };
   },
 };

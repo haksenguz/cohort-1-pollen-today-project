@@ -25,9 +25,16 @@ import { ChatScreen } from "./ChatScreen";
 import { resetActivity } from "./activity";
 import { resetConversation } from "./allergyChatAdapter";
 
-function doneEvent(): ChatResponse {
+/**
+ * The `done` event, which carries the whole reply.
+ *
+ * The backend always puts the complete reply here, and the pieces it sent
+ * earlier concatenate to exactly this string. A mock that said one thing and
+ * meant another would test a stream the backend never sends.
+ */
+function doneEvent(reply = "I can help."): ChatResponse {
   return {
-    message: "I can help.",
+    message: reply,
     conversation_id: 7,
     symptoms: [],
     severity: null,
@@ -44,7 +51,7 @@ function doneEvent(): ChatResponse {
 function mockTurn(reply = "I can help.") {
   vi.mocked(streamChat).mockImplementation(async (_msg, _id, handlers) => {
     handlers.onMessage?.(reply);
-    handlers.onDone?.(doneEvent());
+    handlers.onDone?.(doneEvent(reply));
   });
 }
 
@@ -57,7 +64,7 @@ function mockHeldTurn(reply = "I can help.") {
   vi.mocked(streamChat).mockImplementation(async (_msg, _id, handlers) => {
     await held;
     handlers.onMessage?.(reply);
-    handlers.onDone?.(doneEvent());
+    handlers.onDone?.(doneEvent(reply));
   });
   return async () => {
     await act(async () => {

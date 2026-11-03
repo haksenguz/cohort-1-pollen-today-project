@@ -30,13 +30,13 @@ vi.mock("../auth/token", () => ({
   clearToken: vi.fn(),
 }));
 
-/** Build the SSE body the backend would send for one turn. */
-function sseBody(
+/** The `done` payload the backend sends at the end of a turn. */
+function donePayload(
   reply: string,
   conversationId: number,
   done: Record<string, unknown> = {},
-): string {
-  const donePayload = {
+): Record<string, unknown> {
+  return {
     message: reply,
     conversation_id: conversationId,
     symptoms: [],
@@ -50,9 +50,40 @@ function sseBody(
     triage_rule_version: "1",
     ...done,
   };
+}
+
+/** Build the SSE body the backend would send for one turn. */
+function sseBody(
+  reply: string,
+  conversationId: number,
+  done: Record<string, unknown> = {},
+): string {
   return (
     `event: message\ndata: ${JSON.stringify({ delta: reply })}\n\n` +
-    `event: done\ndata: ${JSON.stringify(donePayload)}\n\n`
+    `event: done\ndata: ${JSON.stringify(donePayload(reply, conversationId, done))}\n\n`
+  );
+}
+
+/**
+ * Build the SSE body for a turn whose reply arrived in several pieces.
+ *
+ * This is what a real turn looks like on the wire: the backend cuts a reply it
+ * could not stream into fragments, and `docs/API_CONTRACT.md` says a client
+ * appends them in order. One `message` event for the whole reply is the
+ * exception, not the rule.
+ */
+function sseBodyInPieces(
+  pieces: string[],
+  conversationId: number,
+  done: Record<string, unknown> = {},
+): string {
+  return (
+    pieces
+      .map((piece) => `event: message\ndata: ${JSON.stringify({ delta: piece })}\n\n`)
+      .join("") +
+    `event: done\ndata: ${JSON.stringify(
+      donePayload(pieces.join(""), conversationId, done),
+    )}\n\n`
   );
 }
 
@@ -99,6 +130,55 @@ describe("allergyChatAdapter", () => {
     const result = await runAdapter(runOptions("내 눈이 가려요"));
 
     expect(result.content?.[0]).toEqual({ type: "text", text: "I can help." });
+  });
+
+  it("joins the pieces of a reply the backend sent in several message events", async () => {
+    // The backend cuts a reply it could not stream into fragments. A client
+    // that keeps only the last fragment shows the user three words of the
+    // answer and leaves the rest of the sentence nowhere on the screen.
+    const reply =
+      "Are you having any difficulty breathing, or swelling of your lips, tongue, or throat?";
+    const pieces = [
+      "Are you having any difficulty ",
+      "breathing, or swelling of your lips, ",
+      "tongue, or throat?",
+    ];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(okResponse(sseBodyInPieces(pieces, 7))),
+    );
+
+    const result = await runAdapter(runOptions("내 눈이 가려요"));
+
+    expect(result.content?.[0]).toEqual({ type: "text", text: reply });
+  });
+
+  it("renders the done reply when no delta arrived at all", async () => {
+    // `done` carries the complete reply, so a lost frame must not cost the
+    // user the whole answer.
+    const reply = "Are you having any difficulty breathing?";
+    const body = `event: done\ndata: ${JSON.stringify(donePayload(reply, 7))}\n\n`;
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(okResponse(body)));
+
+    const result = await runAdapter(runOptions("내 눈이 가려요"));
+
+    expect(result.content?.[0]).toEqual({ type: "text", text: reply });
+  });
+
+  it("falls back to the pieces when the done event carries no message", async () => {
+    // An empty `done` message must not cost the user the text that already
+    // arrived. The pieces are the fallback, not the first choice.
+    const pieces = ["Your eyes look ", "irritated."];
+    const body =
+      pieces
+        .map((piece) => `event: message\ndata: ${JSON.stringify({ delta: piece })}\n\n`)
+        .join("") +
+      `event: done\ndata: ${JSON.stringify(donePayload("", 7))}\n\n`;
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(okResponse(body)));
+
+    const result = await runAdapter(runOptions("내 눈이 가려요"));
+
+    expect(result.content?.[0]).toEqual({ type: "text", text: "Your eyes look irritated." });
   });
 
   it("carries the triage verdict on the assistant message as a data part", async () => {

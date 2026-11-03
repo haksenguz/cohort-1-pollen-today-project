@@ -180,6 +180,38 @@ is more use to someone who cannot breathe than an empty list.
 
 ---
 
+## B-026: The chat screen kept only the last piece of the reply
+
+- **Reported:** 2026-11-03 (found while running the app for the demo)
+- **Surface:** `frontend/src/chat/allergyChatAdapter.ts`
+- **Status:** fixed
+
+**Observed.** The agent answered a full question and the chat bubble showed two
+words of it. "Are you having any difficulty breathing, or swelling of your lips,
+tongue, or throat?" rendered as "or throat?". The turn had clearly run: the
+backend had stored the whole sentence, and the card under it listed the five
+clinics the agent had found. The text was lost on the way to the screen.
+
+**Cause.** The backend sends a reply as a run of `message` events, one piece each,
+and `docs/API_CONTRACT.md` says a client appends them in order. The adapter took
+the last piece and dropped the rest: `state.reply = delta`, where the contract
+needs `state.reply += delta`. A reply of three pieces rendered as its third
+piece, and the screen showed a question with its subject cut off.
+
+The replace was deliberate rather than a slip. The adapter's header comment said
+the backend sends the whole reply in a single event, and the test fixture agreed
+with the comment and sent one event too, so nothing caught it.
+
+**Fixed.** The pieces are appended, and the finished turn is rendered from the
+`done` event, which carries the whole reply. A lost frame now costs nothing,
+because `done` alone is enough to render the turn.
+
+Two tests pin it. One sends a reply in three pieces and expects the whole
+sentence. The other sends no piece at all and expects the `done` reply, which is
+the case where the append alone would still show an empty bubble.
+
+---
+
 ## B-014 — The agent is a chatbot, and the chat screen discards what the engine already decided
 
 - **Reported:** 2026-10-16 (user-reported: *"it's not an agent but it's just a chatbot"*)
