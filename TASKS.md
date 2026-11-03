@@ -232,6 +232,27 @@ re-gated. The bugs.md entries are the record of each one.
       button, and a dead environment provider no longer takes the nearby-care
       list with it.
 
+## S2. What running the app for real exposed (2026-11-03)
+
+The app was started for real, with the real providers and the real database,
+and four things showed up that no test had caught. The bugs.md entries are
+the record of each one.
+
+- [x] **S1. The tool loop never sent the assistant turn that asked for the
+      tool**, so the provider refused every lookup with 400 and the agent
+      died whenever it tried to use a tool (B-024).
+- [x] **S2. A broken model name looked like a broken app.** The provider's
+      400 is now its own failure kind, the message says the service is not
+      set up instead of telling the user to try again, and the local dev
+      screen asks the provider before it saves a model name (B-023).
+- [x] **S3. "No hospitals within range" in central Seoul.** The radius is
+      widened when it holds nothing, and the screen says which radius it used
+      (B-025).
+- [x] **S4. The local frontend gate was unusable on this machine.** It is an
+      ARM64 box running x64 Node under emulation, where a typing test takes
+      five seconds instead of one and vitest's default five-second timeout
+      turned that into sixteen failures that looked like real ones.
+
 ## Blocking the demo
 
 Nothing in code and nothing in configuration. All three provider keys are

@@ -83,6 +83,103 @@ noticed. The classes are in `theme.css` now, and there is one for the
 
 ---
 
+## B-023: A broken model name looked like a broken app
+
+- **Reported:** 2026-11-03 (user-reported: *"agent is not working dude"*, with
+  the chat showing "I could not process that message right now")
+- **Surface:** `backend/app/core/openai_client.py`, `backend/app/api/chat.py`,
+  `backend/app/api/dev_settings.py`
+- **Status:** fixed
+
+**Observed.** Every chat turn failed. The app said to try again. The backend
+knew exactly what was wrong and said none of it: the provider had answered
+400, `unknown model 'minimax-m3.1'`, because the model name in
+`backend/.env` had been changed through the in-app dev screen to a name the
+provider has never heard of.
+
+Three things were wrong, and only the first was the cause.
+
+- The dev screen accepted a model name without asking the provider whether it
+  knew it. The name was saved, the page looked right, and every later turn
+  failed.
+- A provider that read the request and refused it was classified as
+  `unavailable`, the same kind as a dropped connection. The two need
+  opposite answers.
+- The message was one sentence for every failure, and it said "try again" for
+  a failure that retrying cannot fix. Sending the same message to the same
+  provider gets the same refusal, every time.
+
+**What changed.**
+
+- `LLMCallError` has a fifth kind, `misconfigured`, for a request the provider
+  refused. The 400 class and the wording the provider in front of MiniMax
+  uses both land on it.
+- The `error` event's `detail` depends on the kind. A timeout, a busy
+  provider and an unreachable provider are worth another attempt and say so.
+  A refused request says the service is not set up, and that sending the same
+  message again will not help.
+- The dev screen asks the provider before it saves. One short call settles a
+  model name at the point where it was typed, and the provider's own reason
+  comes back to the screen with the key cut out of it.
+
+The rule engine did not change. A provider failure still never swallows an
+EMERGENCY verdict: the `error` event is still emitted only when there is no
+verdict to deliver.
+
+---
+
+## B-024: The tool loop never sent the assistant turn, so every lookup failed
+
+- **Reported:** 2026-11-03 (user-reported: *"agent is not working dude"*)
+- **Surface:** `backend/app/agents/symptom_agent.py`,
+  `backend/app/core/openai_client.py`
+- **Status:** fixed
+
+**Observed.** When the model asked for a lookup, the provider answered 400:
+`invalid params, tool result's tool id(call_01a19...) not found`. The turn
+died on every attempt. The plain path, where the model answers without a
+tool, worked, which is why the app looked half-alive.
+
+**Cause.** The tool loop appended the tool result to the transcript but never
+appended the assistant turn that had asked for the tool. A provider matches a
+tool result to the tool call that asked for it by id, and with the assistant
+turn missing, that id belongs to nothing. The message builder had no way to
+carry an assistant turn with `tool_calls` at all, so the turn could not have
+been sent even if the loop had built one.
+
+**Fixed.** The loop now puts the assistant turn, with its tool calls, into the
+transcript before the results, and the payload builder carries `tool_calls`
+through. A live turn now calls `find_nearby_hospitals`, gets five results
+back, and answers.
+
+The rule engine did not change. The tool is a lookup and never reaches a
+verdict.
+
+---
+
+## B-025: "No hospitals within range" in the middle of Seoul
+
+- **Reported:** 2026-11-03 (found while running the app for the demo)
+- **Surface:** `backend/app/services/hospital_service.py`,
+  `backend/app/api/hospitals.py`, `frontend/src/routes/TodayPage.tsx`
+- **Status:** fixed
+
+**Observed.** The Today screen said "No hospitals found within range" for a
+point in central Seoul. The provider was answering, and it had five results.
+They were all further away than the radius.
+
+**Cause.** Naver Local Search has no radius parameter. It returns its own top
+five for a keyword, and the radius is applied afterwards as a distance filter.
+In a dense city those five are regularly all more than five kilometres out, so
+the filter emptied the list and the panel showed a confident nothing.
+
+**Fixed.** When the requested radius holds nothing, the search widens it and
+the response says which radius was used, and the screen shows it next to the
+heading. Every row carries its own distance, so a clinic nine kilometres away
+is more use to someone who cannot breathe than an empty list.
+
+---
+
 ## B-014 — The agent is a chatbot, and the chat screen discards what the engine already decided
 
 - **Reported:** 2026-10-16 (user-reported: *"it's not an agent but it's just a chatbot"*)
