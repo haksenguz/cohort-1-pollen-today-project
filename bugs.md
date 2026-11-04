@@ -260,6 +260,170 @@ a good token still signs straight in.
 
 ---
 
+## B-028: The header eats a seventh of the phone screen before any content
+
+- **Reported:** 2026-11-04 (user: *"kill the space waste of space"*)
+- **Surface:** `frontend/src/components/TopHeader.tsx`,
+  `frontend/src/styles/theme.css`
+- **Status:** open
+
+**Observed.** The header is two stacked rows: the brand block, then a full
+width strip that says "See today's pollen, air quality and risk". On a 393 by
+852 phone that is 114 pixels of chrome before the first message, and the strip
+repeats what the Today tab already says.
+
+**Cause.** `.top` is a column with a 10 pixel gap and puts `.brandrow` and
+`.envstrip` in two rows.
+
+**Planned.** One row. The brand on the left, a compact risk pill on the right
+that carries the same information as the strip, and nothing else. ChatGPT's
+mobile header is the same shape: slim, one line, actions on the right, and it
+never competes with the message area.
+
+---
+
+## B-029: "New chat" does nothing when you are already on the chat screen
+
+- **Reported:** 2026-11-04 (user: *"this is not working, does not open new chat
+  room"*)
+- **Surface:** `frontend/src/components/ChatHistorySheet.tsx`
+- **Status:** open
+
+**Observed.** The "New chat" button in the chat header does nothing. The
+messages stay on screen and no new room appears.
+
+**Cause.** The button calls `navigate("/chat")`. When the user is already on
+`/chat`, that is the path they are on, so the router has nowhere to go and
+nothing is remounted. The thread keeps the messages it had.
+
+It works from `/chat/:id`, because there the route really does change and the
+runtime key changes with it. On the default route, which is where an installed
+PWA opens and where most people will press the button, it is a no-op.
+
+**Planned.** A new chat action that resets the thread itself, not one that
+hopes a route change will do it. It has to work from every state.
+
+---
+
+## B-030: The history sheet replaces the app instead of opening over it
+
+- **Reported:** 2026-11-04 (user: *"also this does not work, no history page
+  opened"*)
+- **Surface:** `frontend/src/components/ChatHistorySheet.tsx`
+- **Status:** open
+
+**Observed.** Pressing "History" replaces the whole app with a bare panel. The
+phone frame, its rounded corners and its shadow are gone, and there is no
+scrim, so the screen reads as a crash rather than as a drawer opening over the
+app.
+
+**Cause.** The Radix `Dialog.Portal` renders into `document.body`, outside
+`.app-shell`. The sheet paints over the phone frame with the same background
+colour and no overlay, so the only thing that changes is the content.
+
+**Planned.** A drawer that reads as an overlay: a scrim behind it, a slide
+animation, and a sheet that stays inside the app frame. ChatGPT uses the same
+idea on mobile, where the conversation list is a drawer behind a button rather
+than a page of its own.
+
+---
+
+## B-031: The bottom nav scrolls away with the content
+
+- **Reported:** 2026-11-04 (user: *"this bottom navbar should stick no matter
+  how i scroll the above things!"*)
+- **Surface:** `frontend/src/styles/theme.css`
+- **Status:** open
+
+**Observed.** On a long page the tab bar scrolls out of view with the content
+and the user has to scroll back to reach it.
+
+**Cause.** `.app-shell` is `min-height: 100dvh` and `display: flex`, and
+`.stage` is `flex: 1; overflow-y: auto`. A `min-height` does not cap the shell,
+so the shell grows to fit its content, `.stage` never gets a height to scroll
+inside, and the whole document scrolls. The nav is a child of the shell, so it
+goes with it.
+
+The fix is the standard app shell: an exact height on the shell and
+`min-height: 0` on the scrolling region, so the scrollbar belongs to the
+content and the header and nav stay put.
+
+---
+
+## B-032: There is no Send button until you type
+
+- **Reported:** 2026-11-04 (user: *"not obvious to users, confuse UX issue"*)
+- **Surface:** `frontend/src/chat/ChatScreen.tsx`,
+  `frontend/src/styles/theme.css`
+- **Status:** open
+
+**Observed.** The composer is an empty rounded box. There is no visible send
+control, so a new user does not know how to send anything. The button appears
+only once there is text in the box.
+
+**Cause.** `ComposerPrimitive.Send` renders only when the composer is not
+empty, so the affordance appears and disappears with the content.
+
+**Planned.** Always show it, as ChatGPT does: a filled circular button on the
+right of the composer, grey while there is nothing to send, in the brand
+colour once there is, and a stop square while the answer is streaming. One
+control, three states, always in the same place.
+
+---
+
+## B-033: The empty chat screen does not follow ChatGPT's
+
+- **Reported:** 2026-11-04 (user: *"check and follow how openai designed this
+  and apply it, study it, research"*)
+- **Surface:** `frontend/src/chat/ChatScreen.tsx`,
+  `frontend/src/chat/sessions/SuggestedPrompts.tsx`
+- **Status:** open
+
+**Observed.** The empty screen is a serif headline, a paragraph of explanation
+and a row of suggestion chips that overflow sideways. The chips have a visible
+horizontal scrollbar, so half of the last chip is cut off.
+
+**Planned.** Follow the shape ChatGPT uses: one short greeting, a single line
+of guidance, and suggestions that wrap inside the screen instead of sliding.
+The screen should also animate in the way ChatGPT's does, a short fade and
+lift, rather than appearing flat.
+
+---
+
+## B-034: The alerts screen does not follow ChatGPT's list pattern
+
+- **Reported:** 2026-11-04 (user: *"check and follow how openai designed this
+  and apply it, study it, research"*)
+- **Surface:** `frontend/src/routes/AlertsPage.tsx`
+- **Status:** open
+
+**Observed.** Every alert is a card with its own border and shadow. Stacked
+down the page they read as separate objects rather than as one list, and the
+unread control sits in a row of its own.
+
+**Planned.** One flat list with hairline separators, a leading icon per row
+and the meta on one line, which is how ChatGPT draws its notifications and
+activity lists.
+
+---
+
+## B-035: The settings screen does not follow ChatGPT's settings pattern
+
+- **Reported:** 2026-11-04 (user: *"go open ai gpt how they designed their
+  settings and follow it"*)
+- **Surface:** `frontend/src/routes/SettingsPage.tsx`
+- **Status:** open
+
+**Observed.** The settings screen is a stack of bordered cards, some of them
+holding rows that say "Not built yet". A row that admits it does nothing is
+worse than no row, and the cards make the screen longer than it needs to be.
+
+**Planned.** Follow ChatGPT's settings: flat rows grouped under small grey
+labels, a leading icon on each row, the current value on the second line, a
+search field at the top, and nothing on screen that does not work yet.
+
+---
+
 ## B-014 — The agent is a chatbot, and the chat screen discards what the engine already decided
 
 - **Reported:** 2026-10-16 (user-reported: *"it's not an agent but it's just a chatbot"*)

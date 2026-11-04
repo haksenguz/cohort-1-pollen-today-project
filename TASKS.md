@@ -261,6 +261,51 @@ the record of each one.
       threw the token away in both cases. An unreachable server now keeps the
       session and offers a retry (B-027).
 
+## The interface should look like the product it is
+
+Ismoiljon went through the app screen by screen on 2026-11-04 and marked what
+was wrong. The findings are B-028 to B-035 in bugs.md. Two of them are broken
+controls, the rest are the app failing to look like the thing it is.
+
+The reference is ChatGPT's mobile app, because that is the product people
+already know how to read. Its rules, from what is on the screen today:
+
+- **The header is one slim row.** Left is the identity, the middle is the
+  model, the right is the actions. It never competes with the message area.
+- **History is a drawer, not a page.** On mobile the conversation list slides
+  in over a scrim from behind a button.
+- **The composer is one pill** with the send control inside it. The control is
+  always there: grey when there is nothing to send, black when there is, and a
+  stop square while the answer is streaming.
+- **Lists are flat.** One hairline between rows, a leading icon, the value on
+  the second line.
+- **Settings are flat rows** under small grey labels, with a search field, and
+  nothing on screen that does not work yet.
+
+Sources: [the ChatGPT mobile app design walkthrough](https://screensdesign.com/articles/chatgpt-mobile-app-design/)
+and the [anatomy of an AI chat interface](https://www.setproduct.com/blog/ai-chat-interface-ui-design)
+for the header, drawer and composer rules, and the
+[app shell with one scrolling region](https://www.modern-css-layouts.com/mastering-container-queries-responsive-layouts/flexbox-layout-patterns/sticky-footer-with-flexbox-and-grid/)
+for pinning the nav.
+
+### The plan, in three parts with no shared files
+
+- [ ] **A. The shell.** The header becomes one row with a compact risk pill
+      beside the brand, and the shell gets a definite height so the tab bar
+      stops scrolling away (B-028, B-031).
+- [ ] **B. The chat screen.** "New chat" resets the thread instead of hoping
+      a route change will do it, the history sheet becomes a drawer with a
+      scrim that stays inside the app frame, the send control is always
+      visible with three states, and the empty screen follows ChatGPT's
+      (B-029, B-030, B-032, B-033).
+- [ ] **C. The screens.** The alerts list and the settings rows become flat
+      ChatGPT-style lists, and the rows that said "Not built yet" are removed
+      rather than shown (B-034, B-035).
+
+The three parts run in parallel. `theme.css` belongs to A alone. B owns
+`styles/chat.css` and C owns `styles/screens.css`, both of which are already
+imported after `theme.css`, so no two workers write to one file.
+
 ## Blocking the demo
 
 Nothing in code and nothing in configuration. All three provider keys are
