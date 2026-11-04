@@ -1,6 +1,6 @@
 # TASKS — who owns what
 
-Updated: 2026-10-03. One person, one lane.
+Updated: 2026-10-28. One person, one lane.
 
 - **Ismoiljon** (tech lead) owns `feat/ismoiljon` and the whole repo. The
   two-lane split with Jack ended 2026-10-02: `origin/feat/jack` never got
@@ -172,12 +172,159 @@ returns. Both are covered by regression tests now.
       looking for a key that does nothing. The spec's own env-var list (§20) is
       left as written, since that is the historical document it is.
 
+## R1. Deployment readiness
+
+- [x] **R1. The stack starts with a real configuration.** The Compose file
+      requires `JWT_SECRET`, `POSTGRES_*` and `PUBLIC_ORIGIN`, and
+      `.env.example` is the template that supplies all of them. A test parses
+      the Compose file for every `${VAR:?...}` and fails when the template
+      misses one, so the two cannot drift apart again. `CORS_ORIGINS` is
+      optional: the API adds `PUBLIC_ORIGIN` to the allowlist by itself, so a
+      wrong value cannot break a working deployment.
+- [x] **R2. An unsafe configuration stops the boot.** `ENVIRONMENT=production`
+      makes the API refuse to start on a weak or example signing secret, with
+      the dev credential route on, or with demo mode on. The check runs before
+      the database is touched.
+- [x] **R3. TLS in front of the app.** `deploy/Caddyfile` terminates TLS and
+      forwards to nginx, which still serves the PWA and proxies `/api`. A PWA
+      service worker only registers on a secure origin, so without this the
+      install prompt never fires outside `localhost`.
+- [x] **R4. The build context is the repo, not the developer's machine.**
+      `.dockerignore` for both images keeps `node_modules`, `.venv` and the
+      local `.env` out of the image.
+- [x] **R5. A runbook.** `docs/DEPLOY.md`: first deploy, verification against
+      the live instance, upgrades, backups, restore, rollback, secret
+      rotation, troubleshooting, and the limits that are still true (one
+      instance, one database volume, no alert delivery).
+- [ ] **R6. The live deploy.** Needs a host and a domain, which are not
+      things the repository can supply. The stack, the template and the
+      runbook are ready for both.
+
+## S1. Product gaps closed before the handoff
+
+Worked in parallel by three workers on 2026-10-28, then integrated and
+re-gated. The bugs.md entries are the record of each one.
+
+- [x] **S1. The chat is a chat, not a transcript.** Real token streaming from
+      the provider (C1), markdown rendering (C2), regenerate (C3), copy (C4),
+      timestamps (C5), jump-to-latest (C7) and an offline state that refuses
+      the send instead of faking it (C10). The frontend worker also shipped
+      the history search field that C7's sibling B7 needed.
+- [x] **S2. The history list is usable.** Conversations are named from the
+      user's first message (B5), `updated_at` is written on every turn
+      (B-015a), and `GET /api/conversations?q=` searches the title and the
+      messages (B7).
+- [x] **S3. 민감정보 is consented to, not just described.** The gate refuses
+      the 민감정보 write paths with a 403 the frontend can act on, the chat
+      asks too, and the consent screen stands in front of the app (B-020d).
+      Reads, export and delete stay open so 제35조 and 제36조 survive a
+      withdrawal.
+- [x] **S4. The privacy rights are real.** The settings rows that said the
+      server had no delete endpoint now open a screen that exports a file and
+      deletes the account behind a two-step confirmation.
+- [x] **S5. The operator can be named.** `OPERATOR_NAME` and
+      `OPERATOR_REGISTRATION_NUMBER` reach the policy, and the emergency
+      contact has a screen (E8).
+- [x] **S6. The interface stopped making claims the backend does not back.**
+      The audit of the demo path is recorded as B-022: a sampled pollen level
+      no longer scores, a day with no measurement no longer reads as "Low",
+      the alert copy says what actually happens, a missing location has a
+      button, and a dead environment provider no longer takes the nearby-care
+      list with it.
+
+## S2. What running the app for real exposed (2026-11-03)
+
+The app was started for real, with the real providers and the real database,
+and six things showed up that no test had caught. The bugs.md entries are
+the record of each one.
+
+- [x] **S1. The tool loop never sent the assistant turn that asked for the
+      tool**, so the provider refused every lookup with 400 and the agent
+      died whenever it tried to use a tool (B-024).
+- [x] **S2. A broken model name looked like a broken app.** The provider's
+      400 is now its own failure kind, the message says the service is not
+      set up instead of telling the user to try again, and the local dev
+      screen asks the provider before it saves a model name (B-023).
+- [x] **S3. "No hospitals within range" in central Seoul.** The radius is
+      widened when it holds nothing, and the screen says which radius it used
+      (B-025).
+- [x] **S4. The local frontend gate was unusable on this machine.** It is an
+      ARM64 box running x64 Node under emulation, where a typing test takes
+      five seconds instead of one and vitest's default five-second timeout
+      turned that into sixteen failures that looked like real ones.
+- [x] **S5. The chat screen showed the last piece of a reply instead of the
+      reply.** The adapter replaced the text on every `message` event where the
+      contract says to append, so a three-piece answer rendered as its last
+      piece (B-026).
+- [x] **S6. A server that was down signed the user out.** The auth provider
+      treated an unreachable server and a refused token as the same thing and
+      threw the token away in both cases. An unreachable server now keeps the
+      session and offers a retry (B-027).
+
+## The interface should look like the product it is
+
+Ismoiljon went through the app screen by screen on 2026-11-04 and marked what
+was wrong. The findings are B-028 to B-035 in bugs.md. Two of them are broken
+controls, the rest are the app failing to look like the thing it is.
+
+The reference is ChatGPT's mobile app, because that is the product people
+already know how to read. Its rules, from what is on the screen today:
+
+- **The header is one slim row.** Left is the identity, the middle is the
+  model, the right is the actions. It never competes with the message area.
+- **History is a drawer, not a page.** On mobile the conversation list slides
+  in over a scrim from behind a button.
+- **The composer is one pill** with the send control inside it. The control is
+  always there: grey when there is nothing to send, black when there is, and a
+  stop square while the answer is streaming.
+- **Lists are flat.** One hairline between rows, a leading icon, the value on
+  the second line.
+- **Settings are flat rows** under small grey labels, with a search field, and
+  nothing on screen that does not work yet.
+
+Sources: [the ChatGPT mobile app design walkthrough](https://screensdesign.com/articles/chatgpt-mobile-app-design/)
+and the [anatomy of an AI chat interface](https://www.setproduct.com/blog/ai-chat-interface-ui-design)
+for the header, drawer and composer rules, and the
+[app shell with one scrolling region](https://www.modern-css-layouts.com/mastering-container-queries-responsive-layouts/flexbox-layout-patterns/sticky-footer-with-flexbox-and-grid/)
+for pinning the nav.
+
+### The plan, in three parts with no shared files
+
+- [x] **A. The shell.** The header becomes one row with a compact risk pill
+      beside the brand, and the shell gets a definite height so the tab bar
+      stops scrolling away (B-028, B-031).
+- [x] **B. The chat screen.** "New chat" resets the thread instead of hoping
+      a route change will do it, the history sheet becomes a drawer with a
+      scrim that stays inside the app frame, the send control is always
+      visible with three states, and the empty screen follows ChatGPT's
+      (B-029, B-030, B-032, B-033).
+- [x] **C. The screens.** The alerts list and the settings rows become flat
+      ChatGPT-style lists, and the rows that said "Not built yet" are removed
+      rather than shown (B-034, B-035).
+
+The three parts ran in parallel. `theme.css` belonged to A alone. B owned
+`styles/chat.css` and C owned `styles/screens.css`, both of which are already
+imported after `theme.css`, so no two workers wrote to one file.
+
+One thing the plan did not say: the drawer is portalled into the app frame
+rather than on the body. On a wide screen the app is a 412 pixel phone frame
+in the middle of the page, and a drawer on the body opens at the far left of
+the browser window, nowhere near the chat it belongs to.
+
 ## Blocking the demo
 
 Nothing in code and nothing in configuration. All three provider keys are
-issued and verified live. What remains is a decision, not a build: B-010, alert
-delivery. The pipeline generates and stores alerts, but nothing delivers them,
-so a high-pollen alert reaches the user only if they open the Alerts tab.
+issued and verified live, and the deployment path is ready to run
+(`docs/DEPLOY.md`). What remains is a host, a domain, and two decisions
+rather than a build:
+
+- **B-010, alert delivery.** The pipeline generates and stores alerts and
+  sends nothing. The app picks them up while it is open, so a high-pollen
+  alert reaches the user only while the app is running. A delivery channel
+  (SMTP, a webhook, push) is a decision about infrastructure and credentials.
+- **B-020e, the operator.** The privacy policy needs a 사업자 name and a
+  사업자등록번호 before it can be published, and a lawyer has to sign off on
+  the text. `requires_legal_review` stays `true` until a human says so.
 
 ## Verified working
 

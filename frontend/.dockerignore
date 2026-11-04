@@ -1,0 +1,23 @@
+# The frontend Dockerfile runs `COPY . .` after `pnpm install`, so everything
+# in this directory lands in the build image. Without this file the host's
+# node_modules goes with it: a 400 MB copy, built for a different platform,
+# and it overwrites the dependencies the image just installed with its own.
+# The image then fails at runtime with a module that exists but does not load.
+
+node_modules
+dist
+coverage
+.vite
+*.tsbuildinfo
+
+# Local secrets never belong in an image.
+.env
+.env.*
+!.env.example
+
+*.log
+.DS_Store
+.git
+.gitignore
+Dockerfile
+.dockerignore

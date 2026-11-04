@@ -59,6 +59,10 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
+
+  /* Scrim behind the history drawer. A dimmed layer is the same in both
+     themes, so it needs no dark-mode override. */
+  --color-overlay: var(--overlay);
 }
 
 :root {
@@ -80,6 +84,7 @@
   --me: #2f7d57;
   --me-ink: #ffffff;
   --shadow: 0 18px 50px rgba(20, 36, 29, 0.18);
+  --overlay: rgb(0 0 0 / 0.5);
   --font: "Hanken Grotesk", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --display: "Fraunces", Georgia, serif;
 }
@@ -138,9 +143,9 @@ body,
   height: 100%;
 }
 
-/* iOS PWA standalone: 100dvh incorrectly subtracts the safe area (there's
-   no URL bar in standalone, so the "large viewport" already equals the
-   full screen). Use 100vh and let safe-area-inset-* handle the notch. */
+/* The shell owns the viewport height, not the body. The body only carries the
+   page background and the colours, and safe-area-inset-* on .app-shell keeps
+   the notch and the home indicator clear of the header and the nav. */
 body {
   margin: 0;
   background: var(--bg);
@@ -162,11 +167,15 @@ input {
 .app-shell {
   width: 100%;
   max-width: 412px;
-  /* 100vh, not 100dvh — see the comment on `body` above for the iOS
-     standalone rationale. safe-area-inset-* handles the notch / home
-     indicator on notched devices. */
-  min-height: 100vh;
-  min-height: 100dvh; /* fallback for non-iOS PWAs where dvh IS correct */
+  /* `vh` first, `dvh` second, so the dynamic viewport wins where the browser
+     supports it: when the phone browser chrome collapses, the shell shrinks
+     with it instead of leaving a gap. The `vh` line is the fallback for
+     browsers that do not know `dvh`. */
+  /* An exact height, not a minimum (B-031). A `min-height` lets the shell
+     grow to fit its content, so `.stage` never gets a height to scroll
+     inside and the whole document scrolls, taking the nav with it. */
+  height: 100vh;
+  height: 100dvh;
   margin: 0 auto;
   background: var(--frame);
   display: flex;
@@ -180,7 +189,9 @@ input {
 
 @media (min-width: 461px) {
   .app-shell {
-    min-height: min(860px, 94vh);
+    /* The 24px margins above and below have to fit in the viewport too, so
+       the frame does not push the page into a second scroll. */
+    height: min(860px, calc(100vh - 48px));
     margin: 24px auto;
     border-radius: 34px;
     overflow: hidden;
@@ -189,18 +200,28 @@ input {
 }
 
 .top {
-  padding: 14px 16px 12px;
+  /* One row (B-028): brand on the left, risk pill on the right. The header
+     used to be a column with a full-width strip under the brand, which took
+     about 114 pixels of the phone before the first message. */
+  padding: 6px 14px;
   border-bottom: 1px solid var(--line);
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
+  align-items: center;
   gap: 10px;
   background: var(--surface);
+  /* The row keeps its height whatever the risk level says, so a change of
+     level never nudges the content below it. */
+  min-height: 52px;
+  flex: none;
 }
 
 .brandrow {
   display: flex;
   align-items: center;
   gap: 10px;
+  min-width: 0;
+  flex: 1;
 }
 
 .mark {
@@ -263,21 +284,6 @@ input {
   height: 17px;
 }
 
-.envstrip {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 9px 11px;
-  border-radius: 14px;
-  background: var(--surface-2);
-  border: 1px solid var(--line);
-  cursor: pointer;
-  width: 100%;
-  text-align: left;
-  font: inherit;
-  color: inherit;
-}
-
 .risk-dot {
   width: 10px;
   height: 10px;
@@ -285,26 +291,36 @@ input {
   flex: none;
 }
 
-.envstrip .lbl {
-  font-size: 12px;
-  color: var(--ink-soft);
+/* The colour classes the dot is given by `riskClass()`. They were missing,
+   so the dot rendered with no background at all and the risk chip had no
+   colour signal on the Today and Alerts screens. */
+.risk-dot.low {
+  background: var(--low);
 }
 
-.envstrip b {
-  font-weight: 700;
+.risk-dot.moderate {
+  background: var(--moderate);
 }
 
-.envstrip .go {
-  margin-left: auto;
-  color: var(--ink-soft);
-  font-size: 12px;
-  display: flex;
-  align-items: center;
-  gap: 3px;
+.risk-dot.high {
+  background: var(--high);
+}
+
+.risk-dot.emergency {
+  background: var(--emergency);
+}
+
+/* No provider answered, so there is no level to colour. */
+.risk-dot.unavailable {
+  background: var(--ink-soft);
 }
 
 .stage {
   flex: 1;
+  /* `min-height: 0` is what lets the scrolling region shrink inside the
+     fixed-height shell (B-031). Without it the flex item keeps its content
+     height, the stage never scrolls, and the whole document scrolls instead. */
+  min-height: 0;
   overflow-y: auto;
   padding: 16px;
 }
@@ -536,6 +552,16 @@ h2.vt {
   text-transform: uppercase;
   color: var(--ink-soft);
   margin: 4px 0 10px;
+}
+
+/* The qualifier after a section heading, e.g. the radius the list covers. */
+.vsect-note {
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: none;
+  color: var(--ink-soft);
+  opacity: 0.8;
+  margin-left: 8px;
 }
 
 /* Today screen — hospital list */
@@ -783,7 +809,7 @@ h2.vt {
 
 .aui-composer-input {
   flex: 1;
-  min-height: 42px;
+  min-height: 44px;
   max-height: 120px;
   resize: none;
   border: 1px solid var(--line);
@@ -802,6 +828,12 @@ h2.vt {
 
 .aui-send,
 .aui-cancel {
+  /* 44px is the target size, not a preference: at 11px padding these buttons
+     measured 38px tall, which fails the tap target floor on a phone. */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
   border: none;
   border-radius: 999px;
   padding: 11px 16px;
@@ -821,12 +853,9 @@ h2.vt {
 /* Send and Cancel are both always mounted so the library owns their click
    behaviour, which means both paint unless something hides the inactive
    one. While the input still shows its placeholder there is nothing to
-   send, so hide both. This also means there is no visible Stop button
-   mid-run: CSS cannot see the library's running state, and guessing at its
-   internals is what broke this screen once already. Our backend answers a
-   whole turn in one SSE event rather than streaming tokens, so the run is
-   short and the missing cancel is a known, accepted trade-off. Revisit
-   against the assistant-ui composer state if long streams land. */
+   send, so hide both. chat.css undoes this rule for the send button, which
+   has to stay on screen as the only hint that a message can be sent, and for
+   the stop button, which matters most when the draft is empty. */
 .aui-composer:has(.aui-composer-input:placeholder-shown) .aui-send,
 .aui-composer:has(.aui-composer-input:placeholder-shown) .aui-cancel {
   display: none;
@@ -885,4 +914,233 @@ h2.vt {
 @media (prefers-reduced-motion: reduce) {
   /* Keep the text, drop the movement. The label alone still reports progress. */
   .aui-activity-dot { animation: none; opacity: 0.7; }
+}
+
+/* ---------- Chat screen: markdown, message actions, jump, offline ---------- */
+
+/* The model's markdown. The bubble already sets the type and the spacing, so
+   this only covers the blocks markdown adds: links, code, quotes and lists. */
+.aui-prose > :first-child {
+  margin-top: 0;
+}
+
+.aui-prose > :last-child {
+  margin-bottom: 0;
+}
+
+.aui-prose a {
+  color: var(--brand-ink);
+  text-decoration: underline;
+  overflow-wrap: anywhere;
+}
+
+.aui-prose code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.92em;
+  background: var(--surface-2);
+  border-radius: 6px;
+  padding: 1px 4px;
+}
+
+.aui-prose pre {
+  background: var(--surface-2);
+  border-radius: 10px;
+  padding: 10px 12px;
+  overflow-x: auto;
+}
+
+.aui-prose pre code {
+  background: none;
+  padding: 0;
+}
+
+.aui-prose blockquote {
+  margin: 6px 0;
+  padding-left: 10px;
+  border-left: 3px solid var(--line);
+  color: var(--ink-soft);
+}
+
+/* The description of an image the model asked for. The image itself is never
+   fetched, so this text is all the user gets of it. */
+.aui-prose-alt {
+  color: var(--ink-soft);
+  font-style: italic;
+}
+
+/* The row under a reply: when it was sent, and what to do with it. */
+.aui-msg-meta {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+/* The same row under a message the user sent, lined up with their bubble. */
+.aui-msg-meta-end {
+  justify-content: flex-end;
+}
+
+.aui-msg-time {
+  font-size: 11.5px;
+  color: var(--ink-soft);
+  padding: 0 6px 0 2px;
+}
+
+/* Small controls under a reply. 44px tall so they stay a tap target on a
+   phone, and quiet so they do not compete with the reply itself. */
+.aui-msg-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 44px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink-soft);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.aui-msg-action:hover:not(:disabled) {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+
+.aui-msg-action:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.aui-msg-action:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 1px;
+}
+
+.aui-msg-action-icon {
+  width: 14px;
+  height: 14px;
+}
+
+/* Jump back to the bottom of the thread. It only exists while the viewport is
+   away from the bottom, and it sticks to the bottom edge while it does. */
+.aui-jump {
+  position: sticky;
+  bottom: 6px;
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: 0 4px 14px rgba(20, 36, 29, 0.12);
+  cursor: pointer;
+}
+
+.aui-jump:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+/* The library keeps the control mounted and disables it while the viewport is
+   already at the bottom. Hiding it then is what makes it appear only when
+   there is somewhere to jump back to. */
+.aui-jump:disabled {
+  display: none;
+}
+
+.aui-jump-icon {
+  width: 18px;
+  height: 18px;
+}
+
+/* The chat says so when the network is gone. A toast fades, and this is the
+   one thing the user has to know before they type a symptom. */
+.aui-offline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 12px 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-2);
+  color: var(--ink-soft);
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+
+.aui-offline-icon {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+}
+
+.aui-offline-text {
+  margin: 0;
+}
+
+/* The magnifier inside the history search field. Eight utility classes for one
+   icon is too much to read inline. */
+@utility search-field-icon {
+  pointer-events: none;
+  position: absolute;
+  top: 50%;
+  left: 0.75rem;
+  width: 1rem;
+  height: 1rem;
+  transform: translateY(-50%);
+  color: var(--muted-foreground);
+}
+
+/* ---------- B-028 / B-031: the one-row header and the pinned nav ---------- */
+
+/* The risk pill. It replaced the full-width `.envstrip`, which was a second
+   row under the brand and took about 114 pixels of the phone before the first
+   message. Same information, one compact control that opens Today.
+
+   The height is fixed, so a change of risk level never changes the height of
+   the header and never nudges the content below it. */
+.riskpill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  min-height: 44px;
+  min-width: 44px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.riskpill:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+.riskpill .risk-dot {
+  width: 8px;
+  height: 8px;
+}
+
+/* The chat brings its own scroll container (the thread viewport), so the
+   stage must not scroll on that screen. The composer stays visible above the
+   nav and the messages scroll inside the thread. */
+.stage-chat {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }

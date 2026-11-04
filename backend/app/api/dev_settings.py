@@ -29,6 +29,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from app.core.config import get_settings
+from app.core.openai_client import LLMCallError, probe_model
 
 logger = logging.getLogger(__name__)
 
@@ -129,6 +130,45 @@ def _reject_injection(value: str, field: str) -> str:
     return cleaned
 
 
+def _verify_with_the_provider(to_write: dict[str, str], current: dict[str, str]) -> None:
+    """Ask the provider whether it accepts this configuration, before saving it.
+
+    This screen is the one place a model name can be typed by hand, and a
+    wrong one is silent: it saves fine, the page looks fine, and then every
+    chat turn fails with a message that says nothing about the cause. One
+    short call settles it at the point of the mistake.
+
+    The configuration is checked as it would be after the save, so a field
+    left blank keeps the value it has today.
+    """
+    key = to_write.get("OPENAI_API_KEY") or current["OPENAI_API_KEY"]
+    base_url = to_write.get("OPENAI_BASE_URL") or current["OPENAI_BASE_URL"]
+    model = to_write.get("OPENAI_MODEL") or current["OPENAI_MODEL"]
+    if not key or not model:
+        return
+
+    try:
+        probe_model(api_key=key, base_url=base_url or None, model=model)
+    except LLMCallError as exc:
+        raise HTTPException(status_code=422, detail=_safe_reason(exc, key)) from exc
+
+
+def _safe_reason(exc: LLMCallError, api_key: str) -> str:
+    """The provider's reason, with the key cut out of it.
+
+    The provider masks the key in its own message, but the message is not
+    ours to trust about that, and the key is in the room. It is removed
+    before the text goes anywhere.
+    """
+    detail = exc.detail.replace(api_key, "<the key>") if api_key else exc.detail
+    if exc.kind == "misconfigured":
+        return (
+            f"The provider refused this configuration: {detail}. "
+            "Check the model name and the base URL."
+        )
+    return f"The provider could not be reached: {detail}. Check the base URL and the key."
+
+
 @router.put("/llm", response_model=LlmSettingsOut)
 async def write_llm_settings(payload: LlmSettingsIn) -> LlmSettingsOut:
     _require_enabled()
@@ -149,6 +189,8 @@ async def write_llm_settings(payload: LlmSettingsIn) -> LlmSettingsOut:
         "OPENAI_MODEL": _reject_injection(payload.model, "model"),
     }
     to_write = {key: value for key, value in submitted.items() if value.strip() or not current[key]}
+
+    _verify_with_the_provider(to_write, current)
 
     _upsert_env(to_write)
 

@@ -54,6 +54,10 @@ class HospitalNearbyResponse(BaseModel):
     provider_available: bool
     count: int
     results: list[HospitalOut]
+    # The radius the results were filtered by. It is wider than the requested
+    # one when the requested one held nothing, so a client never presents a
+    # nine-kilometre clinic as a neighbour.
+    radius_m: int
 
 
 @router.get("/nearby")
@@ -119,4 +123,5 @@ async def nearby(
         provider_available=outcome.provider_available,
         count=len(outcome.results),
         results=[_to_out(r) for r in outcome.results],
+        radius_m=outcome.radius_m,
     )

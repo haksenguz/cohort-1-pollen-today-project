@@ -7,6 +7,12 @@ CREATE TABLE users (
     password_hash VARCHAR(255) NOT NULL,
     latitude NUMERIC(9,6),
     longitude NUMERIC(9,6),
+    sensitive_consent_at TIMESTAMPTZ,
+    sensitive_consent_version VARCHAR(32),
+    sensitive_consent_withdrawn_at TIMESTAMPTZ,
+    emergency_contact_name VARCHAR(80),
+    emergency_contact_phone VARCHAR(40),
+    emergency_contact_note VARCHAR(200),
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE (email)

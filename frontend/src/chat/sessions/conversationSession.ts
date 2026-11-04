@@ -70,6 +70,11 @@ function messageParts(message: ConversationMessage): readonly ThreadMessagePart[
  *
  * Order matters: assistant-ui renders messages in array order and the backend
  * returns them oldest first.
+ *
+ * The server timestamp travels in the message metadata rather than in
+ * `createdAt`. assistant-ui fills `createdAt` with the local clock for a
+ * message that has none, and a locally invented time is not the time the
+ * message was sent. Only the server knows that.
  */
 export function toThreadMessages(conversation: ConversationDetail): ThreadMessageLike[] {
   return conversation.messages.map((message) => ({
@@ -77,5 +82,6 @@ export function toThreadMessages(conversation: ConversationDetail): ThreadMessag
     role: message.role,
     content: messageParts(message),
     createdAt: new Date(message.created_at),
+    metadata: { custom: { sentAt: message.created_at } },
   }));
 }

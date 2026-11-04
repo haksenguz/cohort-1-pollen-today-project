@@ -2,13 +2,10 @@
 
 Two things are worth knowing about the fixture.
 
-`conversations` and `messages` are the tables under test, and `messages` has
-the same wall `symptom_events` hits: its `triage_reasons` column is Postgres
-JSONB, which SQLite's dialect cannot compile, so the shared `session` fixture
-deliberately leaves it out. These endpoints do nothing but read that table, so
-on SQLite the metadata below copies the three tables and swaps that one column
-for plain JSON — all `JSONB` adds over `JSON` here is a text column holding
-JSON. Postgres (`TEST_DATABASE_URL`) gets the real table untouched.
+`conversations` and `messages` are the tables under test. The `messages`
+columns that hold JSON are JSONB on Postgres and plain JSON on SQLite, so both
+dialects compile the real table definitions and this file does not need a
+substituted copy of the schema.
 
 Ordering is set with explicit `updated_at`/`created_at` values instead of
 sleeping, so "newest first" is asserted rather than assumed.
@@ -21,7 +18,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import JSON, MetaData
+from sqlalchemy import MetaData
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
@@ -33,11 +30,10 @@ T0 = datetime(2026, 10, 16, 8, 12, 0, tzinfo=UTC)
 
 
 def _sqlite_metadata() -> MetaData:
-    """users/conversations/messages with JSONB swapped for SQLite-compilable JSON."""
+    """users/conversations/messages, as the models declare them."""
     metadata = MetaData()
     for table in (User.__table__, UserAllergy.__table__, Conversation.__table__, Message.__table__):
         table.to_metadata(metadata)
-    metadata.tables["messages"].c.triage_reasons.type = JSON()
     return metadata
 
 

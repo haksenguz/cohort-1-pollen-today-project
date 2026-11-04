@@ -13,6 +13,10 @@ release checklist.
 
     cd backend && uv run python scripts/verify_live_chat.py
 
+Point it at a deployed instance to check the whole path a phone takes:
+
+    VERIFY_BASE_URL=https://your-host uv run python scripts/verify_live_chat.py
+
 Scenario 1 runs a two-turn conversation in Korean and asserts the safety
 verdict is EMERGENCY and that it agrees with a direct rule-engine call.
 Scenario 2 checks the `pollen_is_sample` / provider-degradation contract the
@@ -23,6 +27,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -34,7 +39,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from app.core.config import get_settings  # noqa: E402
 from app.services import triage  # noqa: E402
 
-BASE = "http://127.0.0.1:8011"
+# Where the check talks to. The default is a local server on 8011, which is
+# how this script is run during development. A deployment sets
+# VERIFY_BASE_URL to its own public origin, so the check goes through the
+# whole path a phone takes: TLS, the edge, nginx, the API.
+BASE = os.environ.get("VERIFY_BASE_URL", "http://127.0.0.1:8011")
 # A real address: the register endpoint runs a strict email validator that
 # rejects special-use TLDs like `.test`.
 EMAIL = "j2-live-check@example.com"

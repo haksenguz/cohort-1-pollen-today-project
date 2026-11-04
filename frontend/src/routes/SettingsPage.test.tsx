@@ -39,6 +39,15 @@ vi.mock("../api/client", async (importOriginal) => {
   };
 });
 
+vi.mock("../api/emergencyContact", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../api/emergencyContact")>();
+  return {
+    ...actual,
+    readEmergencyContact: vi.fn(),
+    saveEmergencyContact: vi.fn(),
+  };
+});
+
 const auth = vi.hoisted(() => ({ logout: vi.fn() }));
 
 vi.mock("../auth/AuthContext", () => ({
@@ -52,6 +61,50 @@ vi.mock("../auth/AuthContext", () => ({
   }),
 }));
 
+// The consent state lives in its own provider above the app shell. The page
+// only reads it, so the test stands one in.
+const consent = vi.hoisted(() => ({
+  granted: false,
+  withdrawnAt: null as string | null,
+  setGranted: vi.fn(),
+}));
+
+vi.mock("../auth/ConsentContext", () => ({
+  useConsent: () => ({
+    status: "ready",
+    consent: {
+      purpose: "health_data_processing",
+      granted: consent.granted,
+      version: consent.granted ? "2026-10-19-draft1" : null,
+      granted_at: consent.granted ? "2026-10-20T00:00:00Z" : null,
+      withdrawn_at: consent.withdrawnAt,
+      policy_version: "2026-10-19-draft1",
+      basis: "개인정보 보호법 제23조제1항제1호, 제15조제2항",
+    },
+    policy: {
+      title: "개인정보 처리방침 (초안)",
+      version: "2026-10-19-draft1",
+      status: "draft",
+      requires_legal_review: true,
+      operator: "Pollen Health Co. (사업자등록번호: 123-45-67890)",
+      operator_name: "Pollen Health Co.",
+      operator_registration_number: "123-45-67890",
+      operator_named: true,
+      sections: [],
+      required_notice_items: [
+        "수집·이용 목적",
+        "수집하는 민감정보의 항목",
+        "보유 및 이용 기간",
+        "동의를 거부할 권리와 거부 시 불이익",
+      ],
+    },
+    granted: consent.granted,
+    error: null,
+    refresh: vi.fn(),
+    setGranted: consent.setGranted,
+  }),
+}));
+
 import {
   createAllergy,
   deleteAllergy,
@@ -61,6 +114,8 @@ import {
   updateCurrentUser,
   updatePreferences,
 } from "../api/client";
+import { readEmergencyContact, saveEmergencyContact } from "../api/emergencyContact";
+import { TEXT_SIZE_STORAGE_KEY } from "../prefs/textSize";
 import { SettingsPage } from "./SettingsPage";
 
 const user = (overrides: Partial<UserResponse> = {}): UserResponse => ({
@@ -97,6 +152,13 @@ const serverDefaults = prefs({ alert_weather: true });
 const renderPage = () =>
   render(
     <MemoryRouter>
+      <SettingsPage />
+    </MemoryRouter>,
+  );
+
+const renderPageAt = (entry: string) =>
+  render(
+    <MemoryRouter initialEntries={[entry]}>
       <SettingsPage />
     </MemoryRouter>,
   );
@@ -165,12 +227,29 @@ beforeEach(() => {
   vi.mocked(createAllergy).mockResolvedValue(allergy({ id: 2, allergen: "BIRCH" }));
   vi.mocked(deleteAllergy).mockResolvedValue(undefined);
   vi.mocked(updatePreferences).mockResolvedValue(prefs());
+  vi.mocked(readEmergencyContact).mockResolvedValue({
+    name: null,
+    phone: null,
+    note: null,
+  });
+  vi.mocked(saveEmergencyContact).mockResolvedValue({
+    name: "Park Minjun",
+    phone: "010-1234-5678",
+    note: null,
+  });
+  consent.granted = false;
+  consent.withdrawnAt = null;
+  consent.setGranted.mockReset();
+  consent.setGranted.mockResolvedValue(undefined);
 });
 
 afterEach(() => {
   vi.restoreAllMocks();
   auth.logout.mockClear();
   Reflect.deleteProperty(navigator, "geolocation");
+  // The page now reads a text size out of storage, so a choice made by one
+  // test would otherwise still be showing on the next one.
+  localStorage.removeItem(TEXT_SIZE_STORAGE_KEY);
 });
 
 describe("SettingsPage overview", () => {
@@ -181,10 +260,10 @@ describe("SettingsPage overview", () => {
     const headings = screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent);
 
     expect(headings).toEqual([
+      "Account",
       "Health",
       "Emergency",
       "Notifications",
-      "Chat and language",
       "Accessibility",
       "Privacy and data",
       "Advanced",
@@ -223,12 +302,18 @@ describe("SettingsPage overview", () => {
     expect(auth.logout).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps the destructive control switched off instead of faking a delete", async () => {
+  it("wires the destructive control to the delete endpoint that exists", async () => {
     renderPage();
 
     const deleteButton = await screen.findByRole("button", { name: "Delete account" });
-    expect(deleteButton).toBeDisabled();
-    expect(deleteButton.closest("section")).toHaveTextContent("The server has no delete endpoint");
+    // The server has had DELETE /api/privacy/account for a long time. A
+    // disabled button next to "the server has no delete endpoint" told the
+    // user their data could not be removed.
+    expect(deleteButton).toBeEnabled();
+    expect(deleteButton.closest("section")).not.toHaveTextContent("no delete endpoint");
+
+    fireEvent.click(deleteButton);
+    expect((await screen.findAllByText("Delete my data")).length).toBeGreaterThan(0);
     expect(deleteAllergy).not.toHaveBeenCalled();
     expect(createAllergy).not.toHaveBeenCalled();
   });
@@ -242,44 +327,143 @@ describe("SettingsPage overview", () => {
 
     fireEvent.click(toggle);
 
-    expect(await screen.findByText("Diagnostics")).toBeTruthy();
+    // The panel behind the row is the developer key, not a placeholder for a
+    // screen that does not exist.
     expect(toggle).toHaveAttribute("aria-expanded", "true");
+    expect(document.getElementById("settings-advanced")).toBeTruthy();
   });
 });
 
-describe("SettingsPage areas with nothing behind them yet", () => {
-  it("labels each row not built yet and offers no control", async () => {
+describe("SettingsPage rows", () => {
+  it("leaves out every row that has no screen behind it", async () => {
     renderPage();
 
     await screen.findByText("someone@example.com");
 
-    for (const name of ["Emergency", "Chat and language", "Accessibility", "Privacy and data"]) {
-      const group = screen.getByRole("region", { name });
-      expect(within(group).getAllByText("Not built yet").length).toBeGreaterThan(0);
-      expect(within(group).queryAllByRole("button")).toHaveLength(0);
-      expect(within(group).queryAllByRole("switch")).toHaveLength(0);
-      expect(within(group).queryAllByRole("checkbox")).toHaveLength(0);
+    // A row that admits it does nothing is worse than no row at all, so the
+    // areas that are not built are not in the overview.
+    for (const label of [
+      "Medications",
+      "Medical card",
+      "Quiet hours",
+      "Notification permission",
+      "Agent language",
+      "Voice input",
+      "Keep chat history",
+      "Reduce motion",
+      "High contrast",
+    ]) {
+      expect(screen.queryByText(label)).toBeNull();
     }
+    expect(screen.queryAllByText("Not built yet")).toHaveLength(0);
   });
 
-  it("keeps Quiet hours and the permission link inert inside Notifications", async () => {
+  it("keeps a working row for every area that has one", async () => {
     renderPage();
 
-    const group = await screen.findByRole("region", { name: "Notifications" });
-    expect(within(group).getByText("Quiet hours")).toBeTruthy();
-    expect(within(group).getByText("Notification permission")).toBeTruthy();
-    expect(within(group).getAllByText("Not built yet")).toHaveLength(2);
+    await screen.findByText("someone@example.com");
+
+    const emergency = screen.getByRole("region", { name: "Emergency" });
+    expect(within(emergency).getByRole("button", { name: /^Emergency contact/ })).toHaveTextContent(
+      "Not set",
+    );
+    expect(within(emergency).queryAllByText("Not built yet")).toHaveLength(0);
+
+    const accessibility = screen.getByRole("region", { name: "Accessibility" });
+    expect(within(accessibility).getByRole("button", { name: /^Text size/ })).toHaveTextContent(
+      "Normal",
+    );
+    expect(within(accessibility).queryAllByText("Not built yet")).toHaveLength(0);
+
+    const notifications = screen.getByRole("region", { name: "Notifications" });
+    expect(within(notifications).getByRole("button", { name: /^Categories/ })).toBeTruthy();
+    expect(within(notifications).getByRole("button", { name: /^Minimum risk/ })).toBeTruthy();
+    expect(within(notifications).queryAllByText("Not built yet")).toHaveLength(0);
+
+    const privacy = screen.getByRole("region", { name: "Privacy and data" });
+    expect(
+      within(privacy).getByRole("button", { name: /^Health information consent/ }),
+    ).toHaveTextContent("Not agreed yet");
+    // Export and delete are real rows now. The server has had both endpoints
+    // for a long time, and the rows used to say "Not built yet", which told
+    // the user their data could not be taken out.
+    expect(within(privacy).getByRole("button", { name: /^What is stored/ })).toBeTruthy();
+    expect(within(privacy).getByRole("button", { name: /^Export my data/ })).toBeTruthy();
+    expect(within(privacy).getByRole("button", { name: /^Delete my data/ })).toBeTruthy();
+    expect(within(privacy).queryAllByText("Not built yet")).toHaveLength(0);
+  });
+
+  it("gives every row a leading icon", async () => {
+    renderPage();
+
+    await screen.findByText("someone@example.com");
+
+    const row = screen.getByRole("button", { name: /^Profile/ });
+    expect(row.querySelector("svg")).toBeTruthy();
+  });
+
+  it("shows the stored text size on the row behind", async () => {
+    localStorage.setItem(TEXT_SIZE_STORAGE_KEY, "largest");
+    renderPage();
+
+    expect(await screen.findByRole("button", { name: /^Text size/ })).toHaveTextContent(
+      "Largest",
+    );
+  });
+});
+
+describe("SettingsPage search", () => {
+  it("filters the rows as you type", async () => {
+    renderPage();
+    const search = await screen.findByLabelText("Search settings");
+
+    fireEvent.change(search, { target: { value: "allerg" } });
+
+    expect(screen.getByRole("button", { name: /^Allergies/ })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /^Profile/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Text size/ })).toBeNull();
+  });
+
+  it("keeps the title and the Done button while a search is on", async () => {
+    renderPage();
+    const search = await screen.findByLabelText("Search settings");
+
+    fireEvent.change(search, { target: { value: "allerg" } });
+
+    expect(screen.getByRole("heading", { level: 1, name: "Settings" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Done" })).toBeTruthy();
+  });
+
+  it("matches the group a row sits in", async () => {
+    renderPage();
+    const search = await screen.findByLabelText("Search settings");
+
+    fireEvent.change(search, { target: { value: "privacy" } });
+
+    expect(screen.getByRole("button", { name: /^Export my data/ })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /^Text size/ })).toBeNull();
+  });
+
+  it("says so when nothing matches", async () => {
+    renderPage();
+    const search = await screen.findByLabelText("Search settings");
+
+    fireEvent.change(search, { target: { value: "zzzz" } });
+
+    expect(screen.getByText(/No settings match/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /^Profile/ })).toBeNull();
   });
 });
 
 describe("SettingsPage profile and health screens", () => {
-  it("shows the account email and says name is not built yet", async () => {
+  it("shows the account email", async () => {
     renderPage();
 
     await openRow(/^Profile/);
 
     expect(await screen.findByLabelText("Email")).toHaveValue("someone@example.com");
-    expect(screen.getByText("Name").nextElementSibling).toHaveTextContent("Not built yet");
+    // The account has no name yet, so there is no row for one.
+    expect(screen.queryByText("Name")).toBeNull();
   });
 
   it("shows a saved allergy with its human label and severity", async () => {
@@ -472,6 +656,24 @@ describe("SettingsPage location screen", () => {
     await openLocation();
 
     fireEvent.click(await screen.findByRole("button", { name: "Back" }));
+
+    expect(await screen.findByRole("button", { name: /^Location/ })).toBeTruthy();
+  });
+});
+
+describe("SettingsPage deep links", () => {
+  it("opens the screen the link names", async () => {
+    // The Today page tells the user to add a location. That button opens
+    // /settings?screen=location, so the user lands on the screen that takes
+    // one instead of the overview.
+    renderPageAt("/settings?screen=location");
+
+    expect(await screen.findByRole("heading", { name: "Location" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /^Emergency contact/ })).toBeNull();
+  });
+
+  it("opens the overview for an unknown screen name", async () => {
+    renderPageAt("/settings?screen=nonsense");
 
     expect(await screen.findByRole("button", { name: /^Location/ })).toBeTruthy();
   });

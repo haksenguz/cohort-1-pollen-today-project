@@ -31,6 +31,7 @@ import type { ChatResponse, TriageLevel, ToolCallEvent } from "../api/types";
 import { ChatScreen } from "./ChatScreen";
 import { resetActivity } from "./activity";
 import { resetConversation } from "./allergyChatAdapter";
+import { SUGGESTED_PROMPTS } from "./sessions/starterPrompts";
 
 function doneEvent(
   level: TriageLevel | null,
@@ -61,7 +62,7 @@ function mockTurn(response: ChatResponse | null) {
 async function sendATurn(text = "my eyes are itchy") {
   const user = userEvent.setup();
   await user.type(
-    screen.getByPlaceholderText("Describe how you feel, in any language"),
+    screen.getByPlaceholderText("Describe how you feel"),
     text,
   );
   await user.click(screen.getByRole("button", { name: "Send message" }));
@@ -121,7 +122,7 @@ describe("ChatScreen", () => {
 
     expect(await screen.findByText("Tell me how you feel")).toBeTruthy();
     expect(
-      screen.getByPlaceholderText("Describe how you feel, in any language"),
+      screen.getByPlaceholderText("Describe how you feel"),
     ).toBeTruthy();
     expect(screen.getByText(/Not a diagnosis/)).toBeTruthy();
   });
@@ -442,5 +443,217 @@ describe("ChatScreen", () => {
         "empty",
       );
     });
+  });
+
+  /* B-014 group F. The transcript is the one place where an accessibility
+     regression is silent: nothing looks different, the button still works, and
+     the only thing that breaks is a blind patient's assistant reading the
+     whole thread again for every token. So these assert attributes and state
+     transitions directly rather than through the DOM shape. */
+  describe("accessibility of the transcript", () => {
+    it("is a log that reads additions rather than the whole thread", async () => {
+      mockTurn(doneEvent(null));
+      renderScreen();
+
+      const log = screen.getByRole("log");
+      expect(log.getAttribute("aria-live")).toBe("polite");
+      /* atomic false is what stops the reader re-reading every prior message
+         when one is added. */
+      expect(log.getAttribute("aria-atomic")).toBe("false");
+      expect(log.getAttribute("aria-relevant")).toBe("additions");
+      expect(log.getAttribute("aria-label")).toBe("Conversation");
+    });
+
+    it("holds announcements while the turn runs, then releases once", async () => {
+      const finish = mockHeldTurn([
+        { id: "call_1", name: "find_nearby_care", status: "running" },
+      ]);
+      renderScreen();
+
+      const log = screen.getByRole("log");
+      /* Before anything is sent there is nothing in flight. */
+      expect(log.getAttribute("aria-busy")).toBe("false");
+
+      await sendATurn();
+
+      /* Busy during the turn. This is the whole of F2: without it a streaming
+         reply would be read out one token at a time. */
+      await waitFor(() => {
+        expect(screen.getByRole("log").getAttribute("aria-busy")).toBe("true");
+      });
+
+      await finish();
+
+      /* Released afterwards, which is when the finished message is spoken. */
+      await waitFor(() => {
+        expect(screen.getByRole("log").getAttribute("aria-busy")).toBe("false");
+      });
+    });
+  });
+
+  describe("composer keyboard contract", () => {
+    it("recalls earlier messages on ArrowUp and walks back down again", async () => {
+      mockTurn(doneEvent(null));
+      renderScreen();
+
+      await sendATurn("my eyes are itchy");
+      await sendATurn("it is worse at night");
+
+      const composer = screen.getByLabelText("Message") as HTMLTextAreaElement;
+      const user = userEvent.setup();
+      composer.focus();
+      composer.setSelectionRange(0, 0);
+      await user.keyboard("{ArrowUp}");
+      await waitFor(() => {
+        expect(composer.value).toBe("it is worse at night");
+      });
+
+      /* Held down, the walk keeps going back even though the caret sits at the
+         end of the recalled text, which is how a shell behaves. */
+      await user.keyboard("{ArrowUp}");
+      await waitFor(() => {
+        expect(composer.value).toBe("my eyes are itchy");
+      });
+
+      await user.keyboard("{ArrowDown}");
+      await waitFor(() => {
+        expect(composer.value).toBe("it is worse at night");
+      });
+    });
+
+    it("stops recalling once the user types, rather than discarding their text", async () => {
+      mockTurn(doneEvent(null));
+      renderScreen();
+
+      await sendATurn("my eyes are itchy");
+
+      const composer = screen.getByLabelText("Message") as HTMLTextAreaElement;
+      const user = userEvent.setup();
+      composer.focus();
+      composer.setSelectionRange(0, 0);
+      await user.keyboard("{ArrowUp}");
+      await waitFor(() => {
+        expect(composer.value).toBe("my eyes are itchy");
+      });
+
+      /* Editing the recalled message abandons the walk. Bash would carry on
+         walking and quietly drop the edit; here the edit is about someone's
+         symptoms, so it wins and the arrows go back to moving the caret. */
+      await user.type(composer, " and it is spreading");
+      expect(composer.value).toBe("my eyes are itchy and it is spreading");
+
+      await user.keyboard("{ArrowUp}");
+      await user.keyboard("{ArrowDown}");
+      expect(composer.value).toBe("my eyes are itchy and it is spreading");
+    });
+
+    it("leaves a newline above the caret reachable", async () => {
+      mockTurn(doneEvent(null));
+      renderScreen();
+
+      await sendATurn("first message");
+
+      const composer = screen.getByLabelText("Message") as HTMLTextAreaElement;
+      const user = userEvent.setup();
+      composer.focus();
+      composer.value = "second line";
+      /* Caret in the middle, so ArrowUp means "move up a line" and must not
+         be stolen by recall. */
+      composer.setSelectionRange(6, 6);
+      await user.keyboard("{ArrowUp}");
+
+      expect(composer.value).toBe("second line");
+    });
+
+    it("does not recall from an empty history", async () => {
+      mockTurn(doneEvent(null));
+      renderScreen();
+
+      const composer = screen.getByLabelText("Message") as HTMLTextAreaElement;
+      const user = userEvent.setup();
+      composer.focus();
+      composer.setSelectionRange(0, 0);
+      await user.keyboard("{ArrowUp}");
+
+      expect(composer.value).toBe("");
+    });
+  });
+
+  /* B-029: the "New chat" control has to work from the route the user is
+     already on. On /chat the path does not change, so only a reset of the
+     thread itself empties the screen. */
+  it("empties the thread when New chat is pressed on the chat route", async () => {
+    mockTurn(doneEvent(null));
+    renderScreen();
+
+    await sendATurn("my eyes are itchy");
+    expect(await screen.findByText("I can help.")).toBeTruthy();
+
+    await userEvent.click(screen.getByRole("button", { name: /new chat/i }));
+
+    await waitFor(() => {
+      expect(screen.queryByText("I can help.")).toBeNull();
+    });
+    // The empty state is back, so this is a new conversation and not a
+    // thread that lost its messages.
+    expect(screen.getByText("Tell me how you feel")).toBeTruthy();
+  });
+
+  /* B-032: the send control is always on screen. It was the only hint that
+     a message can be sent at all, and it used to appear only once there was
+     something to send. */
+  it("keeps the send button on screen with an empty draft, greyed out", async () => {
+    mockTurn(doneEvent(null));
+    renderScreen();
+
+    const send = screen.getByRole("button", { name: "Send message" });
+    expect((send as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("enables the send button once the draft has text", async () => {
+    mockTurn(doneEvent(null));
+    renderScreen();
+
+    const send = screen.getByRole("button", { name: "Send message" });
+    expect((send as HTMLButtonElement).disabled).toBe(true);
+
+    await userEvent.type(
+      screen.getByPlaceholderText("Describe how you feel"),
+      "my eyes are itchy",
+    );
+
+    await waitFor(() => {
+      expect(
+        (screen.getByRole("button", { name: "Send message" }) as HTMLButtonElement)
+          .disabled,
+      ).toBe(false);
+    });
+  });
+
+  /* B-036: a turn that failed before any text arrived still leaves a message
+     behind, and an empty message still leaves a bubble. The error above it
+     already says what happened. */
+  it("draws no bubble for a turn that failed before any text arrived", async () => {
+    vi.mocked(streamChat).mockRejectedValue(
+      new Error("The model is busy right now. Try again in a moment."),
+    );
+    renderScreen();
+
+    await sendATurn();
+
+    await waitFor(() => {
+      expect(screen.getByText(/The model is busy right now/)).toBeTruthy();
+    });
+    expect(document.querySelector(".aui-msg-bot")).toBeNull();
+  });
+
+  /* B-033: the empty thread is a centred greeting with the starter chips
+     underneath, not a wall of prose. */
+  it("shows the greeting and the starter chips on the empty thread", async () => {
+    mockTurn(doneEvent(null));
+    renderScreen();
+
+    expect(await screen.findByText("Tell me how you feel")).toBeTruthy();
+    expect(screen.getByRole("button", { name: SUGGESTED_PROMPTS[0] })).toBeTruthy();
   });
 });

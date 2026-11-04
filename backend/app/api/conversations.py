@@ -67,9 +67,17 @@ def _message_out(message: Message) -> MessageResponse:
 
 @router.get("")
 async def list_conversations(
-    current_user: CurrentUser, session: SessionDep
+    current_user: CurrentUser, session: SessionDep, q: str | None = None
 ) -> ConversationListResponse:
-    summaries = await conversation_service.list_conversations(session, user_id=current_user.id)
+    """This user's conversations, newest first.
+
+    `q` searches the titles and the messages of the caller's own
+    conversations. An empty or absent `q` returns everything, so the list is
+    the same call with one parameter added.
+    """
+    summaries = await conversation_service.list_conversations(
+        session, user_id=current_user.id, query=q
+    )
     return ConversationListResponse(
         conversations=[
             ConversationSummaryResponse(

@@ -31,11 +31,15 @@ const POLLEN_LABEL: Record<PollenLevel, string> = {
   HIGH: "High",
 };
 
-export function formatRisk(level: RiskLevel): string {
+export function formatRisk(level: RiskLevel | null): string {
+  // A null level means the app had nothing real to score. "Low" there would
+  // be a false all-clear, so it says so.
+  if (level === null || level === undefined) return "Unavailable";
   return RISK_LABEL[level] ?? level;
 }
 
-export function riskClass(level: RiskLevel): string {
+export function riskClass(level: RiskLevel | null): string {
+  if (level === null || level === undefined) return "unavailable";
   return RISK_CLASS[level] ?? "low";
 }
 

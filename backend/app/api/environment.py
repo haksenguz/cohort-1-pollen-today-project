@@ -42,7 +42,11 @@ class EnvironmentResponse(BaseModel):
     air_quality: AirQualityBlock
     weather: WeatherBlock
     points: int
-    risk: RiskLevel
+    # None when there is nothing to score. Every provider can fail on its own,
+    # and a score built from nothing is zero points, which is LOW. Reporting
+    # LOW on a day the app could not ask anybody is a false all-clear.
+    risk: RiskLevel | None
+    risk_available: bool
     pollen_is_sample: bool
 
 
@@ -69,16 +73,17 @@ async def _gather(lat: float, lon: float) -> EnvironmentResponse:
     if isinstance(pollen, BaseException):
         logger.warning("pollen provider raised unexpectedly", exc_info=pollen)
         pollen = ps.PollenData()
-    pts, level = risk.score(
-        risk.EnvInput(
-            tree_pollen=pollen.tree,
-            grass_pollen=pollen.grass,
-            weed_pollen=pollen.weed,
-            pm25=air.pm25,
-            pm10=air.pm10,
-            wind_speed=weather.wind_speed,
-        )
+    env_input = risk.EnvInput(
+        tree_pollen=pollen.tree,
+        grass_pollen=pollen.grass,
+        weed_pollen=pollen.weed,
+        pm25=air.pm25,
+        pm10=air.pm10,
+        wind_speed=weather.wind_speed,
+        pollen_is_sample=pollen.is_sample,
     )
+    pts, level = risk.score(env_input)
+    available = risk.has_data(env_input)
     return EnvironmentResponse(
         latitude=lat,
         longitude=lon,
@@ -90,7 +95,8 @@ async def _gather(lat: float, lon: float) -> EnvironmentResponse:
             wind=weather.wind_speed,
         ),
         points=pts,
-        risk=level,
+        risk=level if available else None,
+        risk_available=available,
         pollen_is_sample=pollen.is_sample,
     )
 

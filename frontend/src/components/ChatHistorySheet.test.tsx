@@ -9,6 +9,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
+import { AssistantRuntimeProvider, useLocalRuntime } from "@assistant-ui/react";
+import type { ChatModelAdapter } from "@assistant-ui/react";
+import type { ReactNode } from "react";
 
 import type { ConversationSummary } from "../api/types";
 
@@ -18,6 +21,10 @@ vi.mock("../api/client", async (importOriginal) => {
 });
 
 import { ApiError, listConversations } from "../api/client";
+import {
+  adoptConversation,
+  currentConversationId,
+} from "../chat/allergyChatAdapter";
 import { ChatHistorySheet } from "./ChatHistorySheet";
 
 const NOW = new Date("2026-10-16T08:14:31Z");
@@ -37,14 +44,30 @@ function LocationProbe() {
   return <span data-testid="location">{`${location.pathname}`}</span>;
 }
 
+/* The sheet lives inside the assistant-ui runtime in the app, because "New
+   chat" resets the thread through it. The tests give it the same runtime so
+   the control under test is the control the user presses. */
+const stubAdapter: ChatModelAdapter = {
+  run: async () => ({ content: [{ type: "text", text: "" }] }),
+};
+
+function Runtime({ children }: { children: ReactNode }) {
+  const runtime = useLocalRuntime(stubAdapter);
+  return (
+    <AssistantRuntimeProvider runtime={runtime}>{children}</AssistantRuntimeProvider>
+  );
+}
+
 const renderSheet = (initialEntry = "/chat") =>
   render(
     <MemoryRouter initialEntries={[initialEntry]}>
-      <LocationProbe />
-      <Routes>
-        <Route path="/chat" element={<ChatHistorySheet activeId={42} />} />
-        <Route path="/chat/:conversationId" element={<ChatHistorySheet />} />
-      </Routes>
+      <Runtime>
+        <LocationProbe />
+        <Routes>
+          <Route path="/chat" element={<ChatHistorySheet activeId={42} />} />
+          <Route path="/chat/:conversationId" element={<ChatHistorySheet />} />
+        </Routes>
+      </Runtime>
     </MemoryRouter>,
   );
 
@@ -63,6 +86,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.useRealTimers();
   vi.restoreAllMocks();
+  adoptConversation(null);
 });
 
 describe("ChatHistorySheet", () => {
@@ -176,6 +200,35 @@ describe("ChatHistorySheet", () => {
     expect(screen.getByTestId("location")).toHaveTextContent("/chat");
   });
 
+  /* B-029: "New chat" has to work from the route the user is already on.
+     Navigating to /chat is a no-op there, so the thread and the backend
+     conversation id have to be reset by the control itself. */
+  it("drops the backend conversation id when New chat is pressed", async () => {
+    adoptConversation(42);
+    renderSheet("/chat/42");
+    await openHistory();
+
+    const dialog = screen.getByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: /new chat/i }));
+
+    expect(currentConversationId()).toBeNull();
+    expect(screen.getByTestId("location")).toHaveTextContent("/chat");
+  });
+
+  /* B-030: the sheet is a drawer over the chat, not a page that replaces
+     it. The scrim is what says so, and the panel has to leave the rest of
+     the screen visible. */
+  it("opens as a drawer over the chat, with a scrim behind it", async () => {
+    renderSheet();
+    await openHistory();
+
+    const dialog = screen.getByRole("dialog");
+    expect(dialog.className).toContain("aui-drawer");
+    // The old panel was fixed inset-0, which covered the whole app.
+    expect(dialog.className).not.toContain("inset-0");
+    expect(document.querySelector(".aui-overlay")).toBeInTheDocument();
+  });
+
   it("dismisses the sheet on Escape", async () => {
     vi.mocked(listConversations).mockResolvedValue([conversation()]);
     renderSheet();
@@ -184,5 +237,89 @@ describe("ChatHistorySheet", () => {
     fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
 
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  });
+});
+
+describe("searching conversations", () => {
+  const typeSearch = async (text: string) => {
+    fireEvent.change(screen.getByLabelText("Search conversations"), {
+      target: { value: text },
+    });
+  };
+
+  it("searches titles and message content through the list endpoint", async () => {
+    vi.mocked(listConversations).mockResolvedValue([conversation()]);
+    renderSheet();
+    await openHistory();
+    await screen.findByText("chest tightness after running");
+
+    await typeSearch("pollen");
+
+    await waitFor(() => {
+      expect(listConversations).toHaveBeenLastCalledWith("pollen");
+    });
+  });
+
+  it("asks for no filter when the search is empty", async () => {
+    vi.mocked(listConversations).mockResolvedValue([conversation()]);
+    renderSheet();
+    await openHistory();
+    await screen.findByText("chest tightness after running");
+
+    await typeSearch("pollen");
+    await waitFor(() => {
+      expect(listConversations).toHaveBeenLastCalledWith("pollen");
+    });
+
+    await typeSearch("");
+    await waitFor(() => {
+      expect(listConversations).toHaveBeenLastCalledWith(undefined);
+    });
+  });
+
+  it("shows the matches that came back", async () => {
+    vi.mocked(listConversations).mockResolvedValue([conversation()]);
+    renderSheet();
+    await openHistory();
+    await screen.findByText("chest tightness after running");
+
+    vi.mocked(listConversations).mockResolvedValue([
+      conversation({ id: 7, title: "pollen season" }),
+    ]);
+    await typeSearch("pollen");
+
+    expect(await screen.findByText("pollen season")).toBeInTheDocument();
+    expect(screen.queryByText("chest tightness after running")).not.toBeInTheDocument();
+  });
+
+  it("says a search matched nothing without saying the history is empty", async () => {
+    vi.mocked(listConversations).mockResolvedValue([conversation()]);
+    renderSheet();
+    await openHistory();
+    await screen.findByText("chest tightness after running");
+
+    vi.mocked(listConversations).mockResolvedValue([]);
+    await typeSearch("zzz");
+
+    const dialog = screen.getByRole("dialog");
+    expect(await within(dialog).findByText(/no conversations match/i)).toBeInTheDocument();
+    expect(within(dialog).queryByText(/no conversations yet/i)).not.toBeInTheDocument();
+  });
+
+  it("keeps a failed search apart from a search that matched nothing", async () => {
+    vi.mocked(listConversations).mockResolvedValue([conversation()]);
+    renderSheet();
+    await openHistory();
+    await screen.findByText("chest tightness after running");
+
+    vi.mocked(listConversations).mockRejectedValue(new ApiError(500, "Search offline"));
+    await typeSearch("pollen");
+
+    const dialog = screen.getByRole("dialog");
+    expect(
+      await within(dialog).findByText(/could not load your conversations/i),
+    ).toBeInTheDocument();
+    expect(within(dialog).queryByText(/no conversations match/i)).not.toBeInTheDocument();
+    expect(within(dialog).queryByText(/no conversations yet/i)).not.toBeInTheDocument();
   });
 });

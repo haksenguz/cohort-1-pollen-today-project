@@ -83,9 +83,19 @@ async def run_async_migrations() -> None:
 
 
 def run_migrations_online() -> None:
-    """Run migrations in 'online' mode."""
+    """Run migrations in 'online' mode.
 
-    asyncio.run(run_async_migrations())
+    A caller may put an already-open `sqlalchemy.engine.Connection` in
+    ``config.attributes["connection"]`` to run the migrations on a connection it
+    controls — which is how tests run them inside a scratch schema instead of
+    against whatever `database_url` points at. With nothing supplied we open our
+    own engine, which is what `alembic upgrade head` from the CLI does.
+    """
+    existing = config.attributes.get("connection")
+    if existing is not None:
+        do_run_migrations(existing)
+    else:
+        asyncio.run(run_async_migrations())
 
 
 if context.is_offline_mode():

@@ -245,6 +245,8 @@ def test_complete_does_not_mutate_caller_messages(monkeypatch):
         ("APIConnectionError", "Connection reset by peer", "unavailable"),
         ("InternalServerError", "upstream boom", "unavailable"),
         ("AuthenticationError", "Incorrect API key provided", "unavailable"),
+        ("BadRequestError", "unknown model 'minimax-m3.1'", "misconfigured"),
+        ("NotFoundError", "The model does not exist", "misconfigured"),
     ],
 )
 def test_sdk_failures_are_classified(monkeypatch, exc_name, message, expected):
@@ -291,6 +293,36 @@ def test_failure_detail_keeps_the_exception_class():
     assert "AuthenticationError" in auth.detail
     assert "APIConnectionError" in conn.detail
     assert auth.detail != conn.detail
+
+
+def test_a_provider_that_refuses_the_request_is_not_a_blip():
+    """A request the provider read and rejected is a setup problem.
+
+    The wording is what the provider in front of MiniMax uses, and the
+    exception class is the SDK's own. Both have to land on `misconfigured`,
+    because that kind tells the user that sending the same message again will
+    not help. Dressing it up as an outage sends them round the same loop.
+    """
+    from_wording = _classify(
+        type("BadRequestError", (Exception,), {})(
+            "invalid params, unknown model 'minimax-m3.1' (2013)"
+        )
+    )
+    from_class = _classify(type("BadRequestError", (Exception,), {})("Error code: 400"))
+    from_proxy_wording = _classify(
+        type("SomeProviderError", (Exception,), {})("the model does not exist")
+    )
+
+    assert from_wording.kind == "misconfigured"
+    assert from_class.kind == "misconfigured"
+    assert from_proxy_wording.kind == "misconfigured"
+
+
+def test_a_rate_limit_is_not_mistaken_for_a_refused_request():
+    """429 is a busy provider, not a broken configuration."""
+    err = _classify(type("RateLimitError", (Exception,), {})("429 Too Many Requests"))
+
+    assert err.kind == "rate_limit"
 
 
 def test_none_content_is_a_malformed_failure_not_an_empty_string(monkeypatch):

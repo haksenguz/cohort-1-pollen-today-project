@@ -1,0 +1,29 @@
+# Front door for the deployed stack.
+#
+# Caddy does two things: it terminates TLS and it forwards to nginx. It does
+# not compress, and it does not set cache headers, because those rules already
+# live in frontend/nginx.conf and two places deciding the same header is how
+# the service worker ends up serving a stale shell.
+#
+# SITE_ADDRESS arrives as PUBLIC_ORIGIN from the root .env:
+#   https://allergy.example.com  -> automatic certificate, HTTP redirects
+#   http://localhost              -> plain HTTP, no certificate
+
+{$SITE_ADDRESS} {
+    reverse_proxy web:80 {
+        # Server-sent events. The default flush interval buffers a response,
+        # and a buffered event stream is not an event stream: the client sees
+        # nothing for the length of the turn, then gets the whole answer at
+        # once. The same reason nginx sets `proxy_buffering off` for /api/.
+        flush_interval -1
+    }
+
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "SAMEORIGIN"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        # nginx identifies itself. Drop the name as well as the version.
+        -Server
+    }
+}

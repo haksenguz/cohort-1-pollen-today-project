@@ -16,14 +16,16 @@ vocabulary (J4):
   that but let the timeout bound the whole thing.
 * Every provider failure is translated into a `LLMCallError` carrying a
   `kind` — `timeout`, `rate_limit`, `unavailable`, or `malformed` — so callers
-  decide how to degrade without string-matching SDK exception types.
+  decide how to degrade without string-matching SDK exception types. A provider
+  that answers 400 is telling us the request itself is wrong, and asking the
+  same thing again will not change that.
 """
 
 from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Literal, Protocol
 
@@ -40,7 +42,7 @@ DEFAULT_MAX_TOKENS = 512
 # this is already a failed turn from the user's point of view.
 DEFAULT_TIMEOUT_SECONDS = 20.0
 
-LLMErrorKind = Literal["timeout", "rate_limit", "unavailable", "malformed"]
+LLMErrorKind = Literal["timeout", "rate_limit", "unavailable", "malformed", "misconfigured"]
 
 
 class LLMCallError(Exception):
@@ -128,6 +130,17 @@ class ToolCallingLLMClient(Protocol):
     ) -> ToolTurn: ...
 
 
+class StreamingLLMClient(Protocol):
+    """OPTIONAL capability: a client that hands back its answer as it arrives.
+
+    Separate from `LLMClient` for the same reason tool calling is. A client
+    that has never heard of streaming still satisfies `LLMClient` unchanged,
+    and the caller falls back to one complete answer.
+    """
+
+    def stream_complete(self, messages: Sequence[ChatMessageLike]) -> Iterator[str]: ...
+
+
 def function_tool_spec(name: str, description: str, parameters: Mapping[str, Any]) -> ToolSpec:
     """Build one OpenAI `tools` entry from a JSON-schema parameter block."""
     return {
@@ -158,13 +171,31 @@ def _message_payload(message: ChatMessageLike) -> dict[str, Any]:
     """Rebuild one turn as a plain dict for the SDK.
 
     `tool_call_id` / `name` are carried only when the caller supplied them, i.e.
-    for a tool-result message. An ordinary turn stays exactly role + content.
+    for a tool-result message. `tool_calls` is carried only when the caller
+    supplied it, i.e. for the assistant turn that asked for the tools. An
+    ordinary turn stays exactly role + content.
     """
     payload: dict[str, Any] = {"role": message["role"], "content": message["content"]}
     for key in ("tool_call_id", "name"):
         if key in message:
             payload[key] = message[key]
+    if "tool_calls" in message:
+        payload["tool_calls"] = list(message["tool_calls"])
     return payload
+
+
+def _delta_text(chunk: Any) -> str:
+    """The text in one streamed chunk, or "" when the chunk carries none.
+
+    A chunk can carry a role, a finish reason or a tool call instead of text,
+    and the first chunk of a stream usually carries only the role.
+    """
+    choices = getattr(chunk, "choices", None) or []
+    if not choices:
+        return ""
+    delta = getattr(choices[0], "delta", None)
+    content = getattr(delta, "content", None)
+    return content if isinstance(content, str) else ""
 
 
 def _import_openai_sdk():
@@ -186,6 +217,26 @@ def _detail(exc: Exception, message: str) -> str:
     return f"{message} [{type(exc).__name__}]: {exc}"
 
 
+def _is_a_rejected_request(name: str, text: str) -> bool:
+    """True when the provider refused the request itself rather than failing.
+
+    A 400 means the provider read the request and said no: the model name is
+    unknown, the parameters are not ones it accepts, the body cannot be
+    parsed. The OpenAI SDK names those errors, and the proxies in front of a
+    model often phrase them in their own words, so both are checked.
+
+    The wording matters here. An unknown model is a setup problem and the
+    same request will be refused every single time, so it cannot be dressed up
+    as a transient outage.
+    """
+    if name in ("BadRequestError", "NotFoundError", "UnprocessableEntityError"):
+        return True
+    return any(
+        marker in text
+        for marker in ("unknown model", "invalid params", "model_not_found", "does not exist")
+    )
+
+
 def _classify(exc: Exception) -> LLMCallError:
     """Map an OpenAI SDK / transport exception onto our failure vocabulary.
 
@@ -200,6 +251,12 @@ def _classify(exc: Exception) -> LLMCallError:
         return LLMCallError("timeout", _detail(exc, "model call timed out"))
     if name == "RateLimitError" or "rate limit" in text or "429" in text:
         return LLMCallError("rate_limit", _detail(exc, "model rate limited"))
+    if _is_a_rejected_request(name, text):
+        # The provider understood the request and refused it: an unknown model
+        # name, a parameter it does not accept, a body it cannot parse. This
+        # is a setup problem, not a blip, and the difference decides what the
+        # user is told to do about it.
+        return LLMCallError("misconfigured", _detail(exc, "model rejected the request"))
     if name in ("APIConnectionError", "APIError", "InternalServerError", "ServiceUnavailable"):
         return LLMCallError("unavailable", _detail(exc, "model unavailable"))
     if name == "AuthenticationError" or "unauthorized" in text or "invalid api key" in text:
@@ -265,6 +322,45 @@ class OpenAIChatClient:
             raise LLMCallError("malformed", "model returned no content")
         return ToolTurn(content=content, tool_calls=tool_calls)
 
+    def stream_complete(self, messages: Sequence[ChatMessageLike]) -> Iterator[str]:
+        """The answer, piece by piece, as the provider writes it.
+
+        The provider is asked for a stream, so the first words arrive while the
+        model is still writing them instead of after it has finished. The
+        pieces are the answer exactly: they are handed over untouched, so what
+        the caller appends is what the reply is.
+
+        A failure at any point of the stream, including halfway through, is
+        raised as an `LLMCallError`, the same way a failed complete call is.
+        """
+        payload = [_message_payload(m) for m in messages]
+        try:
+            stream = self._client.chat.completions.create(
+                model=self._model,
+                messages=payload,
+                temperature=0,
+                max_tokens=self._max_tokens,
+                stream=True,
+            )
+        except Exception as exc:  # noqa: BLE001 — normalized immediately below
+            err = _classify(exc)
+            logger.warning("openai_client: %s", err.detail)
+            raise err from exc
+
+        try:
+            for chunk in stream:
+                text = _delta_text(chunk)
+                if text:
+                    yield text
+        except Exception as exc:  # noqa: BLE001 — normalized immediately below
+            err = _classify(exc)
+            logger.warning("openai_client: %s", err.detail)
+            raise err from exc
+        finally:
+            close = getattr(stream, "close", None)
+            if callable(close):
+                close()
+
     def _create(self, messages: Sequence[ChatMessageLike], tools: Sequence[ToolSpec] | None = None):
         # Rebuild each turn as a fresh dict. `symptom_agent` passes TypedDicts,
         # so touching `m.role` here would raise AttributeError on the real chat
@@ -301,6 +397,30 @@ def _build_openai_client(
         max_tokens=max_tokens,
         timeout=timeout,
     )
+
+
+def probe_model(*, api_key: str, base_url: str | None, model: str) -> None:
+    """Ask the provider whether it accepts this key, host and model.
+
+    Raises `LLMCallError` when it does not. The local dev screen uses this so
+    a model name the provider has never heard of is caught where it was typed,
+    instead of on every chat turn afterwards.
+    """
+    client = _build_openai_client(
+        api_key=api_key,
+        base_url=base_url,
+        model=model,
+        max_tokens=8,
+        timeout=15.0,
+    )
+    try:
+        client.complete([{"role": "user", "content": "ping"}])
+    except LLMCallError as exc:
+        if exc.kind == "malformed":
+            # The provider answered, which is all this probe is asking. An
+            # empty reply says nothing about whether the model name is right.
+            return
+        raise
 
 
 def get_openai_client_from_settings() -> LLMClient:

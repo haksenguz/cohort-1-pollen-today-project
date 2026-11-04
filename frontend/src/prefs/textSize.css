@@ -1,0 +1,17 @@
+/*
+ * Text size support for the preference in prefs/textSize.ts (bugs.md F4,
+ * WCAG 2.2 SC 1.4.4).
+ *
+ * One rule is needed. theme.css pins `body { font-size: 15px }`, and a pixel
+ * font size on body ignores the root size, so scaling <html> would grow every
+ * Tailwind rem utility and leave the app's own base text sitting at 15px.
+ * 0.9375rem is that same 15px at the 16px browser default the steps are
+ * percentages of: the app looks identical at Normal, and every step above it
+ * scales the base text along with everything else.
+ *
+ * `html body` rather than `body` so this wins on specificity instead of on
+ * which stylesheet the bundler happens to emit first.
+ */
+html body {
+  font-size: 0.9375rem;
+}
