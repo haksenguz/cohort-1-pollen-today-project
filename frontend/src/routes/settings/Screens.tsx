@@ -153,12 +153,6 @@ export function ProfileScreen({ user }: { user: UserResponse }) {
             <FieldDescription>Changing your email is not built yet.</FieldDescription>
           </Field>
           <Field>
-            <FieldTitle>Name</FieldTitle>
-            <FieldDescription>
-              Not built yet. Your account does not have a name yet.
-            </FieldDescription>
-          </Field>
-          <Field>
             <FieldTitle>Member since</FieldTitle>
             <FieldDescription>
               {new Date(user.created_at).toLocaleDateString()}
@@ -496,13 +490,6 @@ export function HealthScreen({
             <AlertDescription>{error}</AlertDescription>
           </Alert>
         ) : null}
-
-        <Separator />
-
-        <div className="flex flex-col gap-0.5">
-          <FieldTitle>Medications</FieldTitle>
-          <FieldDescription>Not built yet.</FieldDescription>
-        </div>
       </CardContent>
     </Card>
   );
@@ -630,22 +617,6 @@ export function NotificationsScreen({
             </SelectContent>
           </Select>
         </Field>
-
-        <Separator />
-
-        <div className="flex flex-col gap-2">
-          <div className="flex flex-col gap-0.5">
-            <FieldTitle>Quiet hours</FieldTitle>
-            <FieldDescription>Not built yet.</FieldDescription>
-          </div>
-          <div className="flex flex-col gap-0.5">
-            <FieldTitle>Notification permission</FieldTitle>
-            <FieldDescription>
-              Not built yet. Alerts are stored on the server, so your browser
-              has not been asked for permission.
-            </FieldDescription>
-          </div>
-        </div>
 
         <Separator />
 

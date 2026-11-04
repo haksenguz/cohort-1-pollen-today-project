@@ -1,0 +1,80 @@
+/*
+ * Settings and Alerts screen styles.
+ *
+ * A separate file so the screen work and the chat work can happen in parallel
+ * without two people editing one stylesheet. It is imported after theme.css,
+ * so a rule here wins over the same selector there.
+ */
+
+/* ---------- Alerts screen: one flat list ---------- */
+
+/*
+ * The alerts used to be a stack of bordered cards, so a long list read as a
+ * pile of separate objects. They are one list now: a hairline between rows,
+ * no card around a row, and the meta on one line under the alert text.
+ * These rules win over the ones in theme.css because this file comes after it.
+ */
+.alert-list {
+  gap: 0;
+  border-top: 1px solid var(--line);
+}
+
+.alert-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  min-height: 44px;
+  padding: 12px 0;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  background: transparent;
+}
+
+.alert-row.is-unread {
+  border-color: var(--line);
+  background: transparent;
+}
+
+.alert-row.is-read {
+  opacity: 0.7;
+}
+
+/* An unread alert carries its weight, not a second background colour. */
+.alert-row.is-unread .alert-msg {
+  font-weight: 600;
+}
+
+.alert-icon {
+  display: flex;
+  width: 32px;
+  height: 32px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  background: var(--surface-2);
+  color: var(--ink-soft);
+}
+
+.alert-body {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.alert-msg {
+  margin-top: 0;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+/* The time, the level and the kind of alert, all on one line. */
+.alert-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ink-soft);
+  font-size: 12px;
+}

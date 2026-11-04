@@ -2,12 +2,35 @@
  * Alerts screen (I6). Lists the user's stored alerts, lets them mark
  * an alert as read, and toggles between "all" and "unread only" via
  * the backend's `unread_only` query parameter.
+ *
+ * The alerts read as one list, the way ChatGPT draws its notification and
+ * activity lists: a leading icon, the alert text, and the meta (the time and
+ * the level) on one line under it. The alert text is the server's, word for
+ * word.
  */
 import { useEffect, useState } from "react";
+import type { ReactNode } from "react";
+import { Bell, CloudSun, Flower2, Wind } from "lucide-react";
 
 import { ApiError, listAlerts, markAlertRead } from "../api/client";
 import type { AlertResponse } from "../api/types";
 import { formatRelativeTime, formatRisk, riskClass } from "../utils/format";
+
+/**
+ * The leading icon for an alert. The kind of the alert picks the icon, so a
+ * pollen alert does not look like a weather one.
+ */
+function alertIcon(alertType: string): ReactNode {
+  const key = alertType.toUpperCase();
+  const Icon = key.includes("POLLEN")
+    ? Flower2
+    : key.includes("AIR_QUALITY") || key.startsWith("PM")
+      ? Wind
+      : key.includes("WEATHER")
+        ? CloudSun
+        : Bell;
+  return <Icon className="size-4" aria-hidden="true" />;
+}
 
 export function AlertsPage() {
   const [alerts, setAlerts] = useState<AlertResponse[] | null>(null);
@@ -122,13 +145,18 @@ export function AlertsPage() {
               }}
               aria-busy={pendingId === a.id}
             >
-              <div className="alert-head">
-                <span className={`risk-dot ${riskClass(a.risk_level)}`} aria-hidden="true" />
-                <b>{formatRisk(a.risk_level)}</b>
-                <span className="alert-type">{a.alert_type.replace(/_/g, " ").toLowerCase()}</span>
-                <span className="alert-time">{formatRelativeTime(a.created_at)}</span>
-              </div>
-              <div className="alert-msg">{a.message}</div>
+              <span className="alert-icon">{alertIcon(a.alert_type)}</span>
+              <span className="alert-body">
+                <span className="alert-msg">{a.message}</span>
+                <span className="alert-meta">
+                  <span className={`risk-dot ${riskClass(a.risk_level)}`} aria-hidden="true" />
+                  <span>{formatRelativeTime(a.created_at)}</span>
+                  <span aria-hidden="true">·</span>
+                  <span>{formatRisk(a.risk_level)}</span>
+                  <span aria-hidden="true">·</span>
+                  <span className="alert-type">{a.alert_type.replace(/_/g, " ").toLowerCase()}</span>
+                </span>
+              </span>
             </li>
           ))}
         </ul>

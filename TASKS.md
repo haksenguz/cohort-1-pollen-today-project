@@ -290,21 +290,26 @@ for pinning the nav.
 
 ### The plan, in three parts with no shared files
 
-- [ ] **A. The shell.** The header becomes one row with a compact risk pill
+- [x] **A. The shell.** The header becomes one row with a compact risk pill
       beside the brand, and the shell gets a definite height so the tab bar
       stops scrolling away (B-028, B-031).
-- [ ] **B. The chat screen.** "New chat" resets the thread instead of hoping
+- [x] **B. The chat screen.** "New chat" resets the thread instead of hoping
       a route change will do it, the history sheet becomes a drawer with a
       scrim that stays inside the app frame, the send control is always
       visible with three states, and the empty screen follows ChatGPT's
       (B-029, B-030, B-032, B-033).
-- [ ] **C. The screens.** The alerts list and the settings rows become flat
+- [x] **C. The screens.** The alerts list and the settings rows become flat
       ChatGPT-style lists, and the rows that said "Not built yet" are removed
       rather than shown (B-034, B-035).
 
-The three parts run in parallel. `theme.css` belongs to A alone. B owns
-`styles/chat.css` and C owns `styles/screens.css`, both of which are already
-imported after `theme.css`, so no two workers write to one file.
+The three parts ran in parallel. `theme.css` belonged to A alone. B owned
+`styles/chat.css` and C owned `styles/screens.css`, both of which are already
+imported after `theme.css`, so no two workers wrote to one file.
+
+One thing the plan did not say: the drawer is portalled into the app frame
+rather than on the body. On a wide screen the app is a 412 pixel phone frame
+in the middle of the page, and a drawer on the body opens at the far left of
+the browser window, nowhere near the chat it belongs to.
 
 ## Blocking the demo
 

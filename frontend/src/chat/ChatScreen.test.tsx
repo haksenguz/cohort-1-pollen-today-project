@@ -31,6 +31,7 @@ import type { ChatResponse, TriageLevel, ToolCallEvent } from "../api/types";
 import { ChatScreen } from "./ChatScreen";
 import { resetActivity } from "./activity";
 import { resetConversation } from "./allergyChatAdapter";
+import { SUGGESTED_PROMPTS } from "./sessions/starterPrompts";
 
 function doneEvent(
   level: TriageLevel | null,
@@ -61,7 +62,7 @@ function mockTurn(response: ChatResponse | null) {
 async function sendATurn(text = "my eyes are itchy") {
   const user = userEvent.setup();
   await user.type(
-    screen.getByPlaceholderText("Describe how you feel, in any language"),
+    screen.getByPlaceholderText("Describe how you feel"),
     text,
   );
   await user.click(screen.getByRole("button", { name: "Send message" }));
@@ -121,7 +122,7 @@ describe("ChatScreen", () => {
 
     expect(await screen.findByText("Tell me how you feel")).toBeTruthy();
     expect(
-      screen.getByPlaceholderText("Describe how you feel, in any language"),
+      screen.getByPlaceholderText("Describe how you feel"),
     ).toBeTruthy();
     expect(screen.getByText(/Not a diagnosis/)).toBeTruthy();
   });
@@ -576,5 +577,83 @@ describe("ChatScreen", () => {
 
       expect(composer.value).toBe("");
     });
+  });
+
+  /* B-029: the "New chat" control has to work from the route the user is
+     already on. On /chat the path does not change, so only a reset of the
+     thread itself empties the screen. */
+  it("empties the thread when New chat is pressed on the chat route", async () => {
+    mockTurn(doneEvent(null));
+    renderScreen();
+
+    await sendATurn("my eyes are itchy");
+    expect(await screen.findByText("I can help.")).toBeTruthy();
+
+    await userEvent.click(screen.getByRole("button", { name: /new chat/i }));
+
+    await waitFor(() => {
+      expect(screen.queryByText("I can help.")).toBeNull();
+    });
+    // The empty state is back, so this is a new conversation and not a
+    // thread that lost its messages.
+    expect(screen.getByText("Tell me how you feel")).toBeTruthy();
+  });
+
+  /* B-032: the send control is always on screen. It was the only hint that
+     a message can be sent at all, and it used to appear only once there was
+     something to send. */
+  it("keeps the send button on screen with an empty draft, greyed out", async () => {
+    mockTurn(doneEvent(null));
+    renderScreen();
+
+    const send = screen.getByRole("button", { name: "Send message" });
+    expect((send as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("enables the send button once the draft has text", async () => {
+    mockTurn(doneEvent(null));
+    renderScreen();
+
+    const send = screen.getByRole("button", { name: "Send message" });
+    expect((send as HTMLButtonElement).disabled).toBe(true);
+
+    await userEvent.type(
+      screen.getByPlaceholderText("Describe how you feel"),
+      "my eyes are itchy",
+    );
+
+    await waitFor(() => {
+      expect(
+        (screen.getByRole("button", { name: "Send message" }) as HTMLButtonElement)
+          .disabled,
+      ).toBe(false);
+    });
+  });
+
+  /* B-036: a turn that failed before any text arrived still leaves a message
+     behind, and an empty message still leaves a bubble. The error above it
+     already says what happened. */
+  it("draws no bubble for a turn that failed before any text arrived", async () => {
+    vi.mocked(streamChat).mockRejectedValue(
+      new Error("The model is busy right now. Try again in a moment."),
+    );
+    renderScreen();
+
+    await sendATurn();
+
+    await waitFor(() => {
+      expect(screen.getByText(/The model is busy right now/)).toBeTruthy();
+    });
+    expect(document.querySelector(".aui-msg-bot")).toBeNull();
+  });
+
+  /* B-033: the empty thread is a centred greeting with the starter chips
+     underneath, not a wall of prose. */
+  it("shows the greeting and the starter chips on the empty thread", async () => {
+    mockTurn(doneEvent(null));
+    renderScreen();
+
+    expect(await screen.findByText("Tell me how you feel")).toBeTruthy();
+    expect(screen.getByRole("button", { name: SUGGESTED_PROMPTS[0] })).toBeTruthy();
   });
 });

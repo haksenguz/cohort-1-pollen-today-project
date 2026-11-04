@@ -265,7 +265,7 @@ a good token still signs straight in.
 - **Reported:** 2026-11-04 (user: *"kill the space waste of space"*)
 - **Surface:** `frontend/src/components/TopHeader.tsx`,
   `frontend/src/styles/theme.css`
-- **Status:** open
+- **Status:** fixed
 
 **Observed.** The header is two stacked rows: the brand block, then a full
 width strip that says "See today's pollen, air quality and risk". On a 393 by
@@ -280,6 +280,17 @@ that carries the same information as the strip, and nothing else. ChatGPT's
 mobile header is the same shape: slim, one line, actions on the right, and it
 never competes with the message area.
 
+**Fixed.** The header is one row. The brand sits on the left and a risk pill on
+the right carries the level and the dot that colours it. The pill opens Today,
+so the strip is not lost, it is a control now. Its height is fixed, so a change
+of risk never nudges the content below it. The `.envstrip` rules are gone.
+
+The pill never claims a level it does not have. No reading yet, or no provider
+answer, shows the unavailable state instead of a green dot.
+
+Checked in the running app at 412 by 915: the header is 52 pixels tall and the
+pill reads "Low".
+
 ---
 
 ## B-029: "New chat" does nothing when you are already on the chat screen
@@ -287,7 +298,7 @@ never competes with the message area.
 - **Reported:** 2026-11-04 (user: *"this is not working, does not open new chat
   room"*)
 - **Surface:** `frontend/src/components/ChatHistorySheet.tsx`
-- **Status:** open
+- **Status:** fixed
 
 **Observed.** The "New chat" button in the chat header does nothing. The
 messages stay on screen and no new room appears.
@@ -303,6 +314,14 @@ PWA opens and where most people will press the button, it is a no-op.
 **Planned.** A new chat action that resets the thread itself, not one that
 hopes a route change will do it. It has to work from every state.
 
+**Fixed.** One handler backs both "New chat" buttons. It drops the backend
+conversation id, resets the thread, clears the draft, closes the sheet and
+goes to `/chat`. The route change is still there for the case where the user
+came from `/chat/:id`, but the thread no longer depends on it.
+
+The backend id matters as much as the thread. Without dropping it, the next
+message would be posted into the conversation the user just left.
+
 ---
 
 ## B-030: The history sheet replaces the app instead of opening over it
@@ -310,7 +329,7 @@ hopes a route change will do it. It has to work from every state.
 - **Reported:** 2026-11-04 (user: *"also this does not work, no history page
   opened"*)
 - **Surface:** `frontend/src/components/ChatHistorySheet.tsx`
-- **Status:** open
+- **Status:** fixed
 
 **Observed.** Pressing "History" replaces the whole app with a bare panel. The
 phone frame, its rounded corners and its shadow are gone, and there is no
@@ -326,6 +345,18 @@ animation, and a sheet that stays inside the app frame. ChatGPT uses the same
 idea on mobile, where the conversation list is a drawer behind a button rather
 than a page of its own.
 
+**Fixed.** The sheet is a drawer over the chat. A scrim dims what is behind it,
+the drawer slides in from the left, and the list scrolls on its own so the
+search field and the New chat button stay where the thumb can reach them.
+
+The drawer is portalled into the app frame rather than on the body. On a wide
+screen the app is a 412 pixel frame in the middle of the page, and a drawer on
+the body would open at the far left of the browser window, nowhere near the
+chat it belongs to.
+
+The slide and the fade are plain CSS keyframes driven by Radix's own
+`data-state` attribute, and both stop when the system asks for less motion.
+
 ---
 
 ## B-031: The bottom nav scrolls away with the content
@@ -333,7 +364,7 @@ than a page of its own.
 - **Reported:** 2026-11-04 (user: *"this bottom navbar should stick no matter
   how i scroll the above things!"*)
 - **Surface:** `frontend/src/styles/theme.css`
-- **Status:** open
+- **Status:** fixed
 
 **Observed.** On a long page the tab bar scrolls out of view with the content
 and the user has to scroll back to reach it.
@@ -348,6 +379,17 @@ The fix is the standard app shell: an exact height on the shell and
 `min-height: 0` on the scrolling region, so the scrollbar belongs to the
 content and the header and nav stay put.
 
+**Fixed.** The shell has an exact height, `100vh` with `100dvh` on top of it,
+and `.stage` gets `min-height: 0`. The stage is now the only thing that
+scrolls, and the nav is pinned under it.
+
+The chat screen goes one step further. It brings its own scroll container, the
+thread viewport, so the stage does not scroll there at all and the composer
+stays above the nav while the messages scroll inside the thread.
+
+Checked in the running app at 412 by 915: the nav sits at the bottom of the
+viewport and the page does not scroll.
+
 ---
 
 ## B-032: There is no Send button until you type
@@ -355,7 +397,7 @@ content and the header and nav stay put.
 - **Reported:** 2026-11-04 (user: *"not obvious to users, confuse UX issue"*)
 - **Surface:** `frontend/src/chat/ChatScreen.tsx`,
   `frontend/src/styles/theme.css`
-- **Status:** open
+- **Status:** fixed
 
 **Observed.** The composer is an empty rounded box. There is no visible send
 control, so a new user does not know how to send anything. The button appears
@@ -369,6 +411,20 @@ right of the composer, grey while there is nothing to send, in the brand
 colour once there is, and a stop square while the answer is streaming. One
 control, three states, always in the same place.
 
+**Fixed.** The send control is a native submit button inside the composer
+form, not `ComposerPrimitive.Send`, because that primitive renders nothing
+while the composer is empty and the affordance has to stay on screen. The form
+is what the Enter key already submits, so the button walks the same send path.
+
+It is a 44 pixel circle with an arrow. It is grey while there is nothing to
+send and in the brand colour once there is, and it is disabled while a turn is
+running or the browser is offline. The stop button keeps its own place and the
+two never show at once.
+
+The stop button is visible during a run now, which it was not before. The old
+rule that hid both controls while the input was empty also hid the stop
+button, and a run with an empty draft had no way to cancel.
+
 ---
 
 ## B-033: The empty chat screen does not follow ChatGPT's
@@ -377,7 +433,7 @@ control, three states, always in the same place.
   and apply it, study it, research"*)
 - **Surface:** `frontend/src/chat/ChatScreen.tsx`,
   `frontend/src/chat/sessions/SuggestedPrompts.tsx`
-- **Status:** open
+- **Status:** fixed
 
 **Observed.** The empty screen is a serif headline, a paragraph of explanation
 and a row of suggestion chips that overflow sideways. The chips have a visible
@@ -388,6 +444,19 @@ of guidance, and suggestions that wrap inside the screen instead of sliding.
 The screen should also animate in the way ChatGPT's does, a short fade and
 lift, rather than appearing flat.
 
+**Fixed.** The greeting is centred, the guidance is one line, and the chips
+sit two to a row inside the screen instead of sliding sideways. A chip that
+used to be cut off at the edge now ends inside the frame.
+
+The chips are short enough to fit two lines each. A taller block pushed the
+greeting off the top of a short screen, and on a laptop the thread area is
+shorter than on a phone.
+
+The block fades and lifts in over about a third of a second, and the motion
+stops when the system asks for less of it. The greeting is set in the body
+face rather than the display serif, because a chat someone is about to type
+into should not look like a marketing header.
+
 ---
 
 ## B-034: The alerts screen does not follow ChatGPT's list pattern
@@ -395,7 +464,7 @@ lift, rather than appearing flat.
 - **Reported:** 2026-11-04 (user: *"check and follow how openai designed this
   and apply it, study it, research"*)
 - **Surface:** `frontend/src/routes/AlertsPage.tsx`
-- **Status:** open
+- **Status:** fixed
 
 **Observed.** Every alert is a card with its own border and shadow. Stacked
 down the page they read as separate objects rather than as one list, and the
@@ -405,6 +474,13 @@ unread control sits in a row of its own.
 and the meta on one line, which is how ChatGPT draws its notifications and
 activity lists.
 
+**Fixed.** One flat list. A hairline separates the rows, a leading icon says
+which kind of alert it is, the text is the server's own wording, and the time,
+the level and the kind sit on one line underneath it.
+
+Checked in the running app: the five stored alerts read as one list with one
+leading icon each.
+
 ---
 
 ## B-035: The settings screen does not follow ChatGPT's settings pattern
@@ -412,7 +488,7 @@ activity lists.
 - **Reported:** 2026-11-04 (user: *"go open ai gpt how they designed their
   settings and follow it"*)
 - **Surface:** `frontend/src/routes/SettingsPage.tsx`
-- **Status:** open
+- **Status:** fixed
 
 **Observed.** The settings screen is a stack of bordered cards, some of them
 holding rows that say "Not built yet". A row that admits it does nothing is
@@ -421,6 +497,35 @@ worse than no row, and the cards make the screen longer than it needs to be.
 **Planned.** Follow ChatGPT's settings: flat rows grouped under small grey
 labels, a leading icon on each row, the current value on the second line, a
 search field at the top, and nothing on screen that does not work yet.
+
+**Fixed.** The overview is flat rows under small grey labels. Each row has a
+leading icon, its name, and the current value on the second line, and it opens
+the screen behind it. A search field sits under the header and filters the rows
+as you type. The rows that said "Not built yet" are gone, so nothing on the
+screen is a dead end.
+
+Checked in the running app: the header carries the avatar, the title and a
+Done button, and the rows read Account, Health, Emergency, Notifications,
+Accessibility and Privacy and data.
+
+---
+
+## B-036: A turn that failed leaves an empty bubble in the thread
+
+- **Reported:** 2026-11-04 (found while checking B-029 in the running app)
+- **Surface:** `frontend/src/chat/ChatScreen.tsx`
+- **Status:** fixed
+
+**Observed.** The provider was busy and the turn failed. The thread showed the
+user's message, the error in a red box, and under it a small bubble with
+nothing in it.
+
+**Cause.** The assistant message is created when the turn starts, before any
+text arrives. The bubble around the reply is drawn whatever the message
+holds, so a message with no parts still got one.
+
+**Fixed.** The bubble is drawn only when the message has parts. The error box,
+the copy button and the retry stay where they are.
 
 ---
 

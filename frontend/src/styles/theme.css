@@ -59,6 +59,10 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
+
+  /* Scrim behind the history drawer. A dimmed layer is the same in both
+     themes, so it needs no dark-mode override. */
+  --color-overlay: var(--overlay);
 }
 
 :root {
@@ -80,6 +84,7 @@
   --me: #2f7d57;
   --me-ink: #ffffff;
   --shadow: 0 18px 50px rgba(20, 36, 29, 0.18);
+  --overlay: rgb(0 0 0 / 0.5);
   --font: "Hanken Grotesk", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --display: "Fraunces", Georgia, serif;
 }
@@ -138,9 +143,9 @@ body,
   height: 100%;
 }
 
-/* iOS PWA standalone: 100dvh incorrectly subtracts the safe area (there's
-   no URL bar in standalone, so the "large viewport" already equals the
-   full screen). Use 100vh and let safe-area-inset-* handle the notch. */
+/* The shell owns the viewport height, not the body. The body only carries the
+   page background and the colours, and safe-area-inset-* on .app-shell keeps
+   the notch and the home indicator clear of the header and the nav. */
 body {
   margin: 0;
   background: var(--bg);
@@ -162,11 +167,15 @@ input {
 .app-shell {
   width: 100%;
   max-width: 412px;
-  /* 100vh, not 100dvh — see the comment on `body` above for the iOS
-     standalone rationale. safe-area-inset-* handles the notch / home
-     indicator on notched devices. */
-  min-height: 100vh;
-  min-height: 100dvh; /* fallback for non-iOS PWAs where dvh IS correct */
+  /* `vh` first, `dvh` second, so the dynamic viewport wins where the browser
+     supports it: when the phone browser chrome collapses, the shell shrinks
+     with it instead of leaving a gap. The `vh` line is the fallback for
+     browsers that do not know `dvh`. */
+  /* An exact height, not a minimum (B-031). A `min-height` lets the shell
+     grow to fit its content, so `.stage` never gets a height to scroll
+     inside and the whole document scrolls, taking the nav with it. */
+  height: 100vh;
+  height: 100dvh;
   margin: 0 auto;
   background: var(--frame);
   display: flex;
@@ -180,7 +189,9 @@ input {
 
 @media (min-width: 461px) {
   .app-shell {
-    min-height: min(860px, 94vh);
+    /* The 24px margins above and below have to fit in the viewport too, so
+       the frame does not push the page into a second scroll. */
+    height: min(860px, calc(100vh - 48px));
     margin: 24px auto;
     border-radius: 34px;
     overflow: hidden;
@@ -189,18 +200,28 @@ input {
 }
 
 .top {
-  padding: 14px 16px 12px;
+  /* One row (B-028): brand on the left, risk pill on the right. The header
+     used to be a column with a full-width strip under the brand, which took
+     about 114 pixels of the phone before the first message. */
+  padding: 6px 14px;
   border-bottom: 1px solid var(--line);
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
+  align-items: center;
   gap: 10px;
   background: var(--surface);
+  /* The row keeps its height whatever the risk level says, so a change of
+     level never nudges the content below it. */
+  min-height: 52px;
+  flex: none;
 }
 
 .brandrow {
   display: flex;
   align-items: center;
   gap: 10px;
+  min-width: 0;
+  flex: 1;
 }
 
 .mark {
@@ -263,21 +284,6 @@ input {
   height: 17px;
 }
 
-.envstrip {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 9px 11px;
-  border-radius: 14px;
-  background: var(--surface-2);
-  border: 1px solid var(--line);
-  cursor: pointer;
-  width: 100%;
-  text-align: left;
-  font: inherit;
-  color: inherit;
-}
-
 .risk-dot {
   width: 10px;
   height: 10px;
@@ -309,26 +315,12 @@ input {
   background: var(--ink-soft);
 }
 
-.envstrip .lbl {
-  font-size: 12px;
-  color: var(--ink-soft);
-}
-
-.envstrip b {
-  font-weight: 700;
-}
-
-.envstrip .go {
-  margin-left: auto;
-  color: var(--ink-soft);
-  font-size: 12px;
-  display: flex;
-  align-items: center;
-  gap: 3px;
-}
-
 .stage {
   flex: 1;
+  /* `min-height: 0` is what lets the scrolling region shrink inside the
+     fixed-height shell (B-031). Without it the flex item keeps its content
+     height, the stage never scrolls, and the whole document scrolls instead. */
+  min-height: 0;
   overflow-y: auto;
   padding: 16px;
 }
@@ -861,12 +853,9 @@ h2.vt {
 /* Send and Cancel are both always mounted so the library owns their click
    behaviour, which means both paint unless something hides the inactive
    one. While the input still shows its placeholder there is nothing to
-   send, so hide both. This also means there is no visible Stop button
-   mid-run: CSS cannot see the library's running state, and guessing at its
-   internals is what broke this screen once already. Our backend answers a
-   whole turn in one SSE event rather than streaming tokens, so the run is
-   short and the missing cancel is a known, accepted trade-off. Revisit
-   against the assistant-ui composer state if long streams land. */
+   send, so hide both. chat.css undoes this rule for the send button, which
+   has to stay on screen as the only hint that a message can be sent, and for
+   the stop button, which matters most when the draft is empty. */
 .aui-composer:has(.aui-composer-input:placeholder-shown) .aui-send,
 .aui-composer:has(.aui-composer-input:placeholder-shown) .aui-cancel {
   display: none;
@@ -1108,4 +1097,50 @@ h2.vt {
   height: 1rem;
   transform: translateY(-50%);
   color: var(--muted-foreground);
+}
+
+/* ---------- B-028 / B-031: the one-row header and the pinned nav ---------- */
+
+/* The risk pill. It replaced the full-width `.envstrip`, which was a second
+   row under the brand and took about 114 pixels of the phone before the first
+   message. Same information, one compact control that opens Today.
+
+   The height is fixed, so a change of risk level never changes the height of
+   the header and never nudges the content below it. */
+.riskpill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  min-height: 44px;
+  min-width: 44px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.riskpill:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+.riskpill .risk-dot {
+  width: 8px;
+  height: 8px;
+}
+
+/* The chat brings its own scroll container (the thread viewport), so the
+   stage must not scroll on that screen. The composer stays visible above the
+   nav and the messages scroll inside the thread. */
+.stage-chat {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }

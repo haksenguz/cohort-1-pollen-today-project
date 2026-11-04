@@ -260,10 +260,10 @@ describe("SettingsPage overview", () => {
     const headings = screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent);
 
     expect(headings).toEqual([
+      "Account",
       "Health",
       "Emergency",
       "Notifications",
-      "Chat and language",
       "Accessibility",
       "Privacy and data",
       "Advanced",
@@ -327,32 +327,38 @@ describe("SettingsPage overview", () => {
 
     fireEvent.click(toggle);
 
-    expect(await screen.findByText("Diagnostics")).toBeTruthy();
+    // The panel behind the row is the developer key, not a placeholder for a
+    // screen that does not exist.
     expect(toggle).toHaveAttribute("aria-expanded", "true");
+    expect(document.getElementById("settings-advanced")).toBeTruthy();
   });
 });
 
-describe("SettingsPage areas with nothing behind them yet", () => {
-  it("labels each row not built yet and offers no control", async () => {
+describe("SettingsPage rows", () => {
+  it("leaves out every row that has no screen behind it", async () => {
     renderPage();
 
     await screen.findByText("someone@example.com");
 
-    // Accessibility is not in this list: bugs.md F4 gave it a working text
-    // size control, and the invariant it is really protecting is that a row
-    // with nothing behind it says so rather than offering a dead control.
-    // Emergency and Privacy are not in it either: both have a working row now,
-    // and the rows around them are still inert.
-    for (const name of ["Chat and language"]) {
-      const group = screen.getByRole("region", { name });
-      expect(within(group).getAllByText("Not built yet").length).toBeGreaterThan(0);
-      expect(within(group).queryAllByRole("button")).toHaveLength(0);
-      expect(within(group).queryAllByRole("switch")).toHaveLength(0);
-      expect(within(group).queryAllByRole("checkbox")).toHaveLength(0);
+    // A row that admits it does nothing is worse than no row at all, so the
+    // areas that are not built are not in the overview.
+    for (const label of [
+      "Medications",
+      "Medical card",
+      "Quiet hours",
+      "Notification permission",
+      "Agent language",
+      "Voice input",
+      "Keep chat history",
+      "Reduce motion",
+      "High contrast",
+    ]) {
+      expect(screen.queryByText(label)).toBeNull();
     }
+    expect(screen.queryAllByText("Not built yet")).toHaveLength(0);
   });
 
-  it("gives Emergency and Privacy a real row and leaves the rest inert", async () => {
+  it("keeps a working row for every area that has one", async () => {
     renderPage();
 
     await screen.findByText("someone@example.com");
@@ -361,8 +367,18 @@ describe("SettingsPage areas with nothing behind them yet", () => {
     expect(within(emergency).getByRole("button", { name: /^Emergency contact/ })).toHaveTextContent(
       "Not set",
     );
-    expect(within(emergency).getByText("Medical card")).toBeTruthy();
-    expect(within(emergency).getAllByText("Not built yet")).toHaveLength(1);
+    expect(within(emergency).queryAllByText("Not built yet")).toHaveLength(0);
+
+    const accessibility = screen.getByRole("region", { name: "Accessibility" });
+    expect(within(accessibility).getByRole("button", { name: /^Text size/ })).toHaveTextContent(
+      "Normal",
+    );
+    expect(within(accessibility).queryAllByText("Not built yet")).toHaveLength(0);
+
+    const notifications = screen.getByRole("region", { name: "Notifications" });
+    expect(within(notifications).getByRole("button", { name: /^Categories/ })).toBeTruthy();
+    expect(within(notifications).getByRole("button", { name: /^Minimum risk/ })).toBeTruthy();
+    expect(within(notifications).queryAllByText("Not built yet")).toHaveLength(0);
 
     const privacy = screen.getByRole("region", { name: "Privacy and data" });
     expect(
@@ -377,18 +393,13 @@ describe("SettingsPage areas with nothing behind them yet", () => {
     expect(within(privacy).queryAllByText("Not built yet")).toHaveLength(0);
   });
 
-  it("gives Accessibility a real text size row and leaves the rest inert", async () => {
+  it("gives every row a leading icon", async () => {
     renderPage();
 
-    const group = await screen.findByRole("region", { name: "Accessibility" });
+    await screen.findByText("someone@example.com");
 
-    expect(within(group).getByRole("button", { name: /^Text size/ })).toHaveTextContent(
-      "Normal",
-    );
-    expect(within(group).getAllByText("Not built yet")).toHaveLength(2);
-    expect(within(group).getByText("Reduce motion")).toBeTruthy();
-    expect(within(group).getByText("High contrast")).toBeTruthy();
-    expect(within(group).queryAllByRole("switch")).toHaveLength(0);
+    const row = screen.getByRole("button", { name: /^Profile/ });
+    expect(row.querySelector("svg")).toBeTruthy();
   });
 
   it("shows the stored text size on the row behind", async () => {
@@ -399,25 +410,60 @@ describe("SettingsPage areas with nothing behind them yet", () => {
       "Largest",
     );
   });
+});
 
-  it("keeps Quiet hours and the permission link inert inside Notifications", async () => {
+describe("SettingsPage search", () => {
+  it("filters the rows as you type", async () => {
     renderPage();
+    const search = await screen.findByLabelText("Search settings");
 
-    const group = await screen.findByRole("region", { name: "Notifications" });
-    expect(within(group).getByText("Quiet hours")).toBeTruthy();
-    expect(within(group).getByText("Notification permission")).toBeTruthy();
-    expect(within(group).getAllByText("Not built yet")).toHaveLength(2);
+    fireEvent.change(search, { target: { value: "allerg" } });
+
+    expect(screen.getByRole("button", { name: /^Allergies/ })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /^Profile/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Text size/ })).toBeNull();
+  });
+
+  it("keeps the title and the Done button while a search is on", async () => {
+    renderPage();
+    const search = await screen.findByLabelText("Search settings");
+
+    fireEvent.change(search, { target: { value: "allerg" } });
+
+    expect(screen.getByRole("heading", { level: 1, name: "Settings" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Done" })).toBeTruthy();
+  });
+
+  it("matches the group a row sits in", async () => {
+    renderPage();
+    const search = await screen.findByLabelText("Search settings");
+
+    fireEvent.change(search, { target: { value: "privacy" } });
+
+    expect(screen.getByRole("button", { name: /^Export my data/ })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /^Text size/ })).toBeNull();
+  });
+
+  it("says so when nothing matches", async () => {
+    renderPage();
+    const search = await screen.findByLabelText("Search settings");
+
+    fireEvent.change(search, { target: { value: "zzzz" } });
+
+    expect(screen.getByText(/No settings match/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /^Profile/ })).toBeNull();
   });
 });
 
 describe("SettingsPage profile and health screens", () => {
-  it("shows the account email and says name is not built yet", async () => {
+  it("shows the account email", async () => {
     renderPage();
 
     await openRow(/^Profile/);
 
     expect(await screen.findByLabelText("Email")).toHaveValue("someone@example.com");
-    expect(screen.getByText("Name").nextElementSibling).toHaveTextContent("Not built yet");
+    // The account has no name yet, so there is no row for one.
+    expect(screen.queryByText("Name")).toBeNull();
   });
 
   it("shows a saved allergy with its human label and severity", async () => {

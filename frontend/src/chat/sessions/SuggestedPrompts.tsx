@@ -24,7 +24,12 @@ export function SuggestedPrompts({ onSelect }: SuggestedPromptsProps = {}) {
   const select = onSelect ?? ((prompt: string) => aui.composer.setText(prompt));
 
   return (
-    <div className="-mx-4 mt-6 flex gap-2 overflow-x-auto px-4 pb-1">
+    /* The chips sit in two columns instead of sliding sideways. A row that
+       scrolls off the edge hides half of the last chip and tells the user
+       there is more, which is a worse way to offer the first sentence. Two
+       columns also keep the empty screen short enough that the greeting
+       stays on screen on a laptop. */
+    <div className="grid w-full grid-cols-2 gap-2">
       {SUGGESTED_PROMPTS.map((prompt) => (
         <button
           key={prompt}
@@ -32,7 +37,7 @@ export function SuggestedPrompts({ onSelect }: SuggestedPromptsProps = {}) {
           onClick={() => {
             select(prompt);
           }}
-          className="min-h-11 shrink-0 rounded-full border border-border bg-card px-4 py-2 text-left text-sm text-card-foreground transition-colors hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
+          className="min-h-11 rounded-2xl border border-border bg-card px-4 py-2 text-left text-sm text-card-foreground transition-colors hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
         >
           {prompt}
         </button>

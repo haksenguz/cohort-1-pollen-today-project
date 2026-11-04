@@ -9,6 +9,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
+import { AssistantRuntimeProvider, useLocalRuntime } from "@assistant-ui/react";
+import type { ChatModelAdapter } from "@assistant-ui/react";
+import type { ReactNode } from "react";
 
 import type { ConversationSummary } from "../api/types";
 
@@ -18,6 +21,10 @@ vi.mock("../api/client", async (importOriginal) => {
 });
 
 import { ApiError, listConversations } from "../api/client";
+import {
+  adoptConversation,
+  currentConversationId,
+} from "../chat/allergyChatAdapter";
 import { ChatHistorySheet } from "./ChatHistorySheet";
 
 const NOW = new Date("2026-10-16T08:14:31Z");
@@ -37,14 +44,30 @@ function LocationProbe() {
   return <span data-testid="location">{`${location.pathname}`}</span>;
 }
 
+/* The sheet lives inside the assistant-ui runtime in the app, because "New
+   chat" resets the thread through it. The tests give it the same runtime so
+   the control under test is the control the user presses. */
+const stubAdapter: ChatModelAdapter = {
+  run: async () => ({ content: [{ type: "text", text: "" }] }),
+};
+
+function Runtime({ children }: { children: ReactNode }) {
+  const runtime = useLocalRuntime(stubAdapter);
+  return (
+    <AssistantRuntimeProvider runtime={runtime}>{children}</AssistantRuntimeProvider>
+  );
+}
+
 const renderSheet = (initialEntry = "/chat") =>
   render(
     <MemoryRouter initialEntries={[initialEntry]}>
-      <LocationProbe />
-      <Routes>
-        <Route path="/chat" element={<ChatHistorySheet activeId={42} />} />
-        <Route path="/chat/:conversationId" element={<ChatHistorySheet />} />
-      </Routes>
+      <Runtime>
+        <LocationProbe />
+        <Routes>
+          <Route path="/chat" element={<ChatHistorySheet activeId={42} />} />
+          <Route path="/chat/:conversationId" element={<ChatHistorySheet />} />
+        </Routes>
+      </Runtime>
     </MemoryRouter>,
   );
 
@@ -63,6 +86,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.useRealTimers();
   vi.restoreAllMocks();
+  adoptConversation(null);
 });
 
 describe("ChatHistorySheet", () => {
@@ -174,6 +198,35 @@ describe("ChatHistorySheet", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: /new chat/i }));
 
     expect(screen.getByTestId("location")).toHaveTextContent("/chat");
+  });
+
+  /* B-029: "New chat" has to work from the route the user is already on.
+     Navigating to /chat is a no-op there, so the thread and the backend
+     conversation id have to be reset by the control itself. */
+  it("drops the backend conversation id when New chat is pressed", async () => {
+    adoptConversation(42);
+    renderSheet("/chat/42");
+    await openHistory();
+
+    const dialog = screen.getByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: /new chat/i }));
+
+    expect(currentConversationId()).toBeNull();
+    expect(screen.getByTestId("location")).toHaveTextContent("/chat");
+  });
+
+  /* B-030: the sheet is a drawer over the chat, not a page that replaces
+     it. The scrim is what says so, and the panel has to leave the rest of
+     the screen visible. */
+  it("opens as a drawer over the chat, with a scrim behind it", async () => {
+    renderSheet();
+    await openHistory();
+
+    const dialog = screen.getByRole("dialog");
+    expect(dialog.className).toContain("aui-drawer");
+    // The old panel was fixed inset-0, which covered the whole app.
+    expect(dialog.className).not.toContain("inset-0");
+    expect(document.querySelector(".aui-overlay")).toBeInTheDocument();
   });
 
   it("dismisses the sheet on Escape", async () => {

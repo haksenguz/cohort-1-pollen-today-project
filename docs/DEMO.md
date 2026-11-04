@@ -60,8 +60,10 @@ a "find a clinic near you" action.
 Say this: the model wrote the sentence, the engine wrote the verdict. The
 emergency path is deterministic, so a flaky provider can never talk it down.
 
-Then show that the answer streams in, that the history drawer has real
-titles, and that the search finds a thread by a word from the middle of it.
+Then show that the answer streams in, that the history drawer opens over the
+chat with the app still visible behind it, that "New chat" empties the screen
+and starts a fresh conversation, and that the search finds a thread by a word
+from the middle of it.
 
 ## 4. Privacy and data (60 seconds)
 

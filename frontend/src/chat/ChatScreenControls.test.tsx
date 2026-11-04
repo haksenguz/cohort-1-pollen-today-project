@@ -88,7 +88,7 @@ function renderScreen(path = "/chat") {
 async function sendATurn(text = "my eyes are itchy") {
   const user = userEvent.setup();
   await user.type(
-    screen.getByPlaceholderText("Describe how you feel, in any language"),
+    screen.getByPlaceholderText("Describe how you feel"),
     text,
   );
   await user.click(screen.getByRole("button", { name: "Send message" }));
@@ -200,7 +200,7 @@ describe("regenerate the last reply", () => {
     const release = mockHeldTurn("Second answer.");
     const user = userEvent.setup();
     await user.type(
-      screen.getByPlaceholderText("Describe how you feel, in any language"),
+      screen.getByPlaceholderText("Describe how you feel"),
       "and my nose runs",
     );
     await user.click(screen.getByRole("button", { name: "Send message" }));
@@ -341,7 +341,7 @@ describe("offline", () => {
 
     const user = userEvent.setup();
     await user.type(
-      screen.getByPlaceholderText("Describe how you feel, in any language"),
+      screen.getByPlaceholderText("Describe how you feel"),
       "my eyes are itchy",
     );
     await user.click(screen.getByRole("button", { name: "Send message" }));
@@ -358,6 +358,30 @@ describe("offline", () => {
 
     const send = await screen.findByRole("button", { name: "Send message" });
     expect((send as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("shows a stop control while a turn runs, and it never submits the form", async () => {
+    const release = mockHeldTurn();
+    renderScreen();
+
+    await sendATurn();
+
+    const stop = await screen.findByRole("button", { name: "Stop generating" });
+    // The composer is a form, and the send control is a submit button. A
+    // stop button that submitted would send a second message.
+    expect(stop).toHaveAttribute("type", "button");
+
+    await release();
+  });
+
+  it("keeps the stop control off the screen while no turn is running", async () => {
+    mockTurn();
+    renderScreen();
+
+    const send = await screen.findByRole("button", { name: "Send message" });
+    expect(send).toBeTruthy();
+    // The two controls share one corner, so only one of them is ever there.
+    expect(screen.queryByRole("button", { name: "Stop generating" })).toBeNull();
   });
 
   it("comes back when the device reconnects", async () => {

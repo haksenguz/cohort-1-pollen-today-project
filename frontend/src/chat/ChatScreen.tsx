@@ -15,13 +15,14 @@ import {
   ErrorPrimitive,
   MessagePrimitive,
   ThreadPrimitive,
+  AuiIf,
   useAui,
   useAuiState,
   useLocalRuntime,
 } from "@assistant-ui/react";
 import { useEffect, useSyncExternalStore } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowDown } from "lucide-react";
+import { ArrowDown, ArrowUp, Square } from "lucide-react";
 import { AgentActivity } from "./agentActivity";
 import { getActivity, subscribeActivity } from "./activity";
 import { allergyChatAdapter, adoptConversation } from "./allergyChatAdapter";
@@ -79,13 +80,18 @@ const AssistantMessage = () => (
         is preferred over MessagePrimitive.Error here. */}
     <ErrorPrimitive.Message className="aui-error-message" />
     <AssistantTriage />
-    <div className="aui-msg aui-msg-bot">
-      {/* The verdict part is rendered above, not here, so the in-bubble
-          fallback is suppressed rather than drawing it twice. */}
-      <MessagePrimitive.Content
-        components={{ Text: MarkdownText, data: { Fallback: () => null } }}
-      />
-    </div>
+    {/* A turn that failed before any text arrived still gets a message, and an
+        empty message still gets a bubble. The error above it already says
+        what happened, so the bubble only gets in the way. */}
+    <AuiIf condition={(state) => state.message.parts.length > 0}>
+      <div className="aui-msg aui-msg-bot">
+        {/* The verdict part is rendered above, not here, so the in-bubble
+            fallback is suppressed rather than drawing it twice. */}
+        <MessagePrimitive.Content
+          components={{ Text: MarkdownText, data: { Fallback: () => null } }}
+        />
+      </div>
+    </AuiIf>
     <div className="aui-msg-meta">
       <MessageTimestamp />
       <CopyMessageButton />
@@ -98,6 +104,12 @@ function Composer() {
   const aui = useAui();
   const { recall, forget, isWalking } = useComposerHistory();
   const online = useOnlineStatus();
+  const isRunning = useAuiState((s) => s.thread.isRunning);
+  const draft = useAuiState((s) => s.composer.text);
+  /* One control, three states, always in the same place. The button is grey
+     while there is nothing to send, live once there is, and it never fights
+     the Stop button, which only exists while a turn is running. */
+  const canSend = draft.trim().length > 0 && !isRunning && online;
 
   /* Land the caret at the end after a recall. Deferred by a tick so it runs
      after the controlled textarea has re-rendered with the new value. */
@@ -126,7 +138,7 @@ function Composer() {
     >
       <ComposerPrimitive.Input
         className="aui-composer-input"
-        placeholder="Describe how you feel, in any language"
+        placeholder="Describe how you feel"
         aria-label="Message"
         /* Pinned rather than inherited. Enter sends, Shift+Enter inserts a
            newline and Escape stops the turn, and those are assistant-ui's
@@ -165,18 +177,29 @@ function Composer() {
           }
         }}
       />
-      {/* Send and Cancel manage their own visibility from composer state, so
-          both are rendered and only the relevant one shows. */}
-      <ComposerPrimitive.Send
-        className="aui-send"
-        aria-label="Send message"
-        disabled={!online}
-      >
-        Send
-      </ComposerPrimitive.Send>
-      <ComposerPrimitive.Cancel className="aui-cancel" aria-label="Stop generating">
-        Stop
-      </ComposerPrimitive.Cancel>
+      {/* The send control is a native submit button inside the composer form
+          rather than ComposerPrimitive.Send, because that primitive renders
+          nothing while the composer is empty and the affordance has to stay
+          on screen. The form is what the Enter key already submits, so this
+          button walks the same send path. */}
+      {!isRunning && (
+        <button
+          type="submit"
+          className="aui-send"
+          aria-label="Send message"
+          disabled={!canSend}
+        >
+          <ArrowUp aria-hidden="true" className="aui-send-icon" />
+        </button>
+      )}
+      {/* The stop button only exists while a turn is running, so the two
+          controls never share the corner. The library keeps it mounted, so
+          the condition is ours to make. */}
+      {isRunning && (
+        <ComposerPrimitive.Cancel className="aui-cancel" aria-label="Stop generating">
+          <Square aria-hidden="true" className="aui-send-icon" />
+        </ComposerPrimitive.Cancel>
+      )}
     </ComposerPrimitive.Root>
   );
 }
@@ -244,9 +267,7 @@ function Thread() {
         <div className="aui-empty">
           <p className="aui-empty-title">Tell me how you feel</p>
           <p className="aui-empty-body">
-            Describe your symptoms and how long they have been going on. I
-            ask a few follow-up questions, then the safety rules decide how
-            urgent this is.
+            Describe your symptoms in any language. I will ask a few questions.
           </p>
           <SuggestedPrompts />
         </div>

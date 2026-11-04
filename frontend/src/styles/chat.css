@@ -1,0 +1,148 @@
+/*
+ * Chat screen styles.
+ *
+ * A separate file so the chat work and the shell work can happen in parallel
+ * without two people editing one stylesheet. It is imported after theme.css,
+ * so a rule here wins over the same selector there.
+ */
+
+/* ---------------------------------------------------------------- B-030 --
+ * The history sheet is a drawer that opens OVER the chat, not a page that
+ * replaces it. The scrim dims what is behind it and the drawer slides in
+ * from the left edge, both driven by Radix's data-state attribute so no
+ * animation library is needed.
+ */
+
+.aui-overlay {
+  /* The scrim covers the app frame, not the browser window. */
+  position: absolute;
+  inset: 0;
+  animation: aui-fade-in 180ms ease-out;
+}
+
+.aui-drawer {
+  /* Anchored to the app frame, so the drawer slides in from the left edge of
+     the phone the app is drawn in. */
+  position: absolute;
+  inset-block: 0;
+  left: 0;
+  animation: aui-drawer-in 220ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.aui-drawer[data-state="closed"] {
+  animation: aui-drawer-out 160ms ease-in;
+}
+
+@keyframes aui-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes aui-drawer-in {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+@keyframes aui-drawer-out {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-100%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .aui-overlay,
+  .aui-drawer {
+    animation: none;
+  }
+}
+
+/* ---------------------------------------------------------------- B-032 --
+ * One control, always in the same place: a circle with an arrow that is grey
+ * while there is nothing to send and in the brand colour once there is.
+ */
+
+.aui-send,
+.aui-cancel {
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  padding: 0;
+  border-radius: 999px;
+}
+
+.aui-send-icon {
+  width: 20px;
+  height: 20px;
+}
+
+.aui-send:disabled {
+  background: var(--surface-2);
+  color: var(--ink-soft);
+  cursor: not-allowed;
+}
+
+/* theme.css hides the send and stop controls while the input still shows its
+   placeholder. The send button has to stay on screen (it is the only hint
+   that a message can be sent at all) and the stop button matters most when
+   the draft is empty, so both overrides undo that rule. */
+.aui-composer:has(.aui-composer-input:placeholder-shown) .aui-send,
+.aui-composer:has(.aui-composer-input:placeholder-shown) .aui-cancel {
+  display: inline-flex;
+}
+
+/* ---------------------------------------------------------------- B-033 --
+ * The empty thread is a centred greeting with a line of guidance and the
+ * suggestion chips underneath, the shape ChatGPT uses.
+ */
+
+.aui-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  max-width: 32rem;
+  margin: auto;
+  padding: 16px;
+  text-align: center;
+  animation: aui-empty-in 320ms ease-out;
+}
+
+.aui-empty-title {
+  /* The greeting reads in the body face. The display serif belongs to the
+     brand headers, not to a chat that someone is about to type into. */
+  font-family: var(--font);
+  font-size: 24px;
+}
+
+.aui-empty-body {
+  max-width: 22rem;
+}
+
+@keyframes aui-empty-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .aui-empty {
+    animation: none;
+  }
+}

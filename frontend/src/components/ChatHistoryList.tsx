@@ -36,9 +36,9 @@ export function ChatHistoryList({ state }: { state: ConversationListState }) {
     return (
       <div role="status" aria-live="polite" aria-busy="true">
         <span className="sr-only">Loading conversations</span>
-        <ul className="flex flex-col gap-2">
+        <ul className="flex flex-col divide-y divide-border">
           {[0, 1, 2].map((row) => (
-            <li key={row} className="rounded-xl border border-border bg-card p-3">
+            <li key={row} className="p-3">
               <Skeleton className="h-4 w-2/3" />
               <Skeleton className="mt-2 h-3 w-full" />
             </li>
@@ -91,7 +91,11 @@ export function ChatHistoryList({ state }: { state: ConversationListState }) {
   }
 
   return (
-    <ul className="flex flex-col gap-2">
+    /* A flat list with a hairline between the rows, the way ChatGPT draws
+       its history drawer. A card per conversation turns the list into a
+       stack of boxes, and the boxes are the thing the eye reads first
+       instead of the conversation. */
+    <ul className="flex flex-col divide-y divide-border">
       {state.conversations.map((conversation) => (
         <ConversationRow
           key={conversation.id}
@@ -122,8 +126,8 @@ function ConversationRow({
       <NavLink
         to={`/chat/${conversation.id}`}
         className={cn(
-          "flex min-h-11 flex-col gap-1 rounded-xl border p-3 transition-colors hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none",
-          active ? "border-primary bg-accent" : "border-border bg-card",
+          "flex min-h-11 flex-col gap-1 p-3 transition-colors hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none",
+          active ? "bg-accent" : "",
         )}
       >
         <span className="flex items-baseline gap-2">

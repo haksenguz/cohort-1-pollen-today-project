@@ -2,21 +2,40 @@
  * Settings overview.
  *
  * One row per area, each showing the value you would see if you opened it, and
- * a screen behind the ones that have real behaviour today. Areas with nothing
- * behind them yet say so instead of showing a control that does nothing.
+ * a screen behind every one of them. A row that has nothing behind it is left
+ * out rather than shown as a dead end.
+ *
+ * The overview follows the pattern ChatGPT uses: a search field on top, then
+ * flat rows under small grey labels. No cards, one hairline between rows.
  *
  * The user, allergy and preference fetches all run here rather than inside the
  * screens, because an overview row has to show a real value before you open
  * anything.
  */
 import { useCallback, useEffect, useState } from "react";
+import type { ReactNode } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { ChevronRight } from "lucide-react";
+import {
+  Bell,
+  ChevronRight,
+  Code,
+  Database,
+  Download,
+  HeartPulse,
+  MapPin,
+  Phone,
+  Search,
+  ShieldCheck,
+  Trash2,
+  TriangleAlert,
+  Type,
+  User,
+} from "lucide-react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { Card, CardAction, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -49,13 +68,7 @@ import { toast } from "sonner";
 import { useTextSize } from "../prefs/textSize";
 import { formatRisk } from "../utils/format";
 import { DevLlmSettingsCard } from "./DevLlmSettingsCard";
-import {
-  ComingSoonGroup,
-  ComingSoonRow,
-  SettingsCard,
-  SettingsGroup,
-  SettingsRow,
-} from "./settings/SettingsRows";
+import { SettingsGroup, SettingsRow } from "./settings/SettingsRows";
 import { isSettingsScreenId, type SettingsScreenId } from "./settings/settingsScreenIds";
 import {
   EmergencyContactScreen,
@@ -82,6 +95,14 @@ const SCREEN_TITLE: Record<SettingsScreenId, string> = {
   export: "Export my data",
   delete: "Delete my data",
   emergency: "Emergency contact",
+};
+
+/** One row on the overview. */
+type OverviewRow = {
+  label: string;
+  value: string;
+  icon: ReactNode;
+  screen: SettingsScreenId;
 };
 
 function errorText(error: unknown, fallback: string): string {
@@ -130,6 +151,24 @@ function contactValue(contact: EmergencyContact | null, failed: boolean): string
   return contact.name ?? "Not set";
 }
 
+/**
+ * The rows a search keeps. A query matches a row when it appears in the row
+ * title, in the value under it, or in the group the row sits in, so a search
+ * for "privacy" brings up the whole privacy group.
+ */
+function matchesQuery(
+  groupTitle: string,
+  row: OverviewRow,
+  query: string,
+): boolean {
+  const needle = query.toLowerCase();
+  return (
+    row.label.toLowerCase().includes(needle) ||
+    row.value.toLowerCase().includes(needle) ||
+    groupTitle.toLowerCase().includes(needle)
+  );
+}
+
 export function SettingsPage() {
   const navigate = useNavigate();
   const { logout } = useAuth();
@@ -154,6 +193,7 @@ export function SettingsPage() {
   const screen: SettingsScreenId | null =
     requested !== null && isSettingsScreenId(requested) ? requested : null;
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [query, setQuery] = useState("");
   const { step: textSize, setStep: setTextSize } = useTextSize();
 
   const openScreen = (id: SettingsScreenId) => setParams({ screen: id }, { replace: true });
@@ -354,141 +394,194 @@ export function SettingsPage() {
     );
   }
 
+  // Every row below opens a screen. A row without one was left out, because a
+  // row that admits it does nothing is worse than no row at all.
+  const groups: { title: string; rows: OverviewRow[] }[] = [
+    {
+      title: "Account",
+      rows: [
+        {
+          label: "Profile",
+          value: user.email,
+          icon: <User className="size-4" />,
+          screen: "profile",
+        },
+        {
+          label: "Location",
+          value: locationValue(user),
+          icon: <MapPin className="size-4" />,
+          screen: "location",
+        },
+      ],
+    },
+    {
+      title: "Health",
+      rows: [
+        {
+          label: "Allergies",
+          value: allergyValue(allergies, allergyLoadError !== null),
+          icon: <HeartPulse className="size-4" />,
+          screen: "health",
+        },
+      ],
+    },
+    {
+      title: "Emergency",
+      rows: [
+        {
+          label: "Emergency contact",
+          value: contactValue(contact, contactLoadError !== null),
+          icon: <Phone className="size-4" />,
+          screen: "emergency",
+        },
+      ],
+    },
+    {
+      title: "Notifications",
+      rows: [
+        {
+          label: "Categories",
+          value: prefValue(prefs, prefsLoadError !== null, categoriesOn),
+          icon: <Bell className="size-4" />,
+          screen: "notifications",
+        },
+        {
+          label: "Minimum risk",
+          value: prefValue(prefs, prefsLoadError !== null, (p) => formatRisk(p.min_risk_level)),
+          icon: <TriangleAlert className="size-4" />,
+          screen: "notifications",
+        },
+      ],
+    },
+    {
+      title: "Accessibility",
+      rows: [
+        {
+          label: "Text size",
+          value: textSize.label,
+          icon: <Type className="size-4" />,
+          screen: "textsize",
+        },
+      ],
+    },
+    {
+      title: "Privacy and data",
+      rows: [
+        {
+          label: "Health information consent",
+          value: consentValue(granted, consent?.withdrawn_at ?? null),
+          icon: <ShieldCheck className="size-4" />,
+          screen: "privacy",
+        },
+        {
+          label: "What is stored",
+          value: policy?.version ? `Policy v${policy.version}` : "Not loaded",
+          icon: <Database className="size-4" />,
+          screen: "stored",
+        },
+        {
+          label: "Export my data",
+          value: "JSON file",
+          icon: <Download className="size-4" />,
+          screen: "export",
+        },
+        {
+          label: "Delete my data",
+          value: "Permanent",
+          icon: <Trash2 className="size-4" />,
+          screen: "delete",
+        },
+      ],
+    },
+  ];
+
+  const needle = query.trim();
+  const visibleGroups = needle
+    ? groups
+        .map((group) => ({
+          ...group,
+          rows: group.rows.filter((row) => matchesQuery(group.title, row, needle)),
+        }))
+        .filter((group) => group.rows.length > 0)
+    : groups;
+
   return (
     <div className="stage flex flex-col gap-4">
-      <Card>
-        <CardHeader>
-          <div className="flex items-center gap-3">
-            <Avatar>
-              <AvatarFallback>{initialsFor(user.email)}</AvatarFallback>
-            </Avatar>
-            <CardTitle>Settings</CardTitle>
-          </div>
-          <CardAction>
-            <Button variant="ghost" onClick={() => navigate("/today")}>
-              Done
-            </Button>
-          </CardAction>
-        </CardHeader>
-      </Card>
+      <div className="sticky top-0 z-10 -mx-4 flex flex-col gap-2 border-b border-border bg-background px-4 py-2">
+        <div className="flex items-center gap-3">
+          <Avatar>
+            <AvatarFallback>{initialsFor(user.email)}</AvatarFallback>
+          </Avatar>
+          <h1 className="font-display text-lg font-semibold">Settings</h1>
+          <Button
+            variant="ghost"
+            className="ml-auto min-h-11"
+            onClick={() => navigate("/today")}
+          >
+            Done
+          </Button>
+        </div>
 
-      <SettingsCard>
-        <SettingsRow label="Profile" value={user.email} onSelect={() => openScreen("profile")} />
-      </SettingsCard>
+        <div className="relative">
+          <Search
+            aria-hidden
+            className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
+          />
+          <Input
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            aria-label="Search settings"
+            placeholder="Search settings"
+            className="h-11 pl-9"
+          />
+        </div>
+      </div>
 
-      <SettingsGroup title="Health">
-        <SettingsRow
-          label="Allergies"
-          value={allergyValue(allergies, allergyLoadError !== null)}
-          onSelect={() => openScreen("health")}
-        />
-        <ComingSoonRow label="Medications" />
-      </SettingsGroup>
+      {visibleGroups.length === 0 ? (
+        <p className="text-sm text-muted-foreground">No settings match "{needle}".</p>
+      ) : (
+        visibleGroups.map((group) => (
+          <SettingsGroup key={group.title} title={group.title}>
+            {group.rows.map((row) => (
+              <SettingsRow
+                key={row.label}
+                label={row.label}
+                value={row.value}
+                icon={row.icon}
+                onSelect={() => openScreen(row.screen)}
+              />
+            ))}
+          </SettingsGroup>
+        ))
+      )}
 
-      <SettingsGroup title="Emergency">
-        <SettingsRow
-          label="Emergency contact"
-          value={contactValue(contact, contactLoadError !== null)}
-          onSelect={() => openScreen("emergency")}
-        />
-        <ComingSoonRow label="Medical card" />
-      </SettingsGroup>
-
-      <SettingsCard>
-        <SettingsRow
-          label="Location"
-          value={locationValue(user)}
-          onSelect={() => openScreen("location")}
-        />
-      </SettingsCard>
-
-      <SettingsGroup title="Notifications">
-        <SettingsRow
-          label="Categories"
-          value={prefValue(prefs, prefsLoadError !== null, categoriesOn)}
-          onSelect={() => openScreen("notifications")}
-        />
-        <SettingsRow
-          label="Minimum risk"
-          value={prefValue(prefs, prefsLoadError !== null, (p) => formatRisk(p.min_risk_level))}
-          onSelect={() => openScreen("notifications")}
-        />
-        <ComingSoonRow label="Quiet hours" />
-        <ComingSoonRow label="Notification permission" />
-      </SettingsGroup>
-
-      <ComingSoonGroup
-        title="Chat and language"
-        rows={["Agent language", "Voice input", "Keep chat history"]}
-      />
-
-      <SettingsGroup title="Accessibility">
-        <SettingsRow
-          label="Text size"
-          value={textSize.label}
-          onSelect={() => openScreen("textsize")}
-        />
-        <ComingSoonRow label="Reduce motion" />
-        <ComingSoonRow label="High contrast" />
-      </SettingsGroup>
-
-      <SettingsGroup title="Privacy and data">
-        <SettingsRow
-          label="Health information consent"
-          value={consentValue(granted, consent?.withdrawn_at ?? null)}
-          onSelect={() => openScreen("privacy")}
-        />
-        <SettingsRow
-          label="What is stored"
-          value={policy?.version ? `Policy v${policy.version}` : "Not loaded"}
-          onSelect={() => openScreen("stored")}
-        />
-        <SettingsRow
-          label="Export my data"
-          value="JSON file"
-          onSelect={() => openScreen("export")}
-        />
-        <SettingsRow
-          label="Delete my data"
-          value="Permanent"
-          onSelect={() => openScreen("delete")}
-        />
-      </SettingsGroup>
-
-      <section aria-label="Advanced" className="flex flex-col gap-2">
+      <section aria-label="Advanced" className="flex flex-col gap-1.5">
         <h2 className="text-xs font-bold tracking-[0.12em] text-muted-foreground uppercase">
           Advanced
         </h2>
-        <div className="overflow-hidden rounded-xl bg-card ring-1 ring-foreground/10">
-          <button
-            type="button"
-            aria-expanded={advancedOpen}
-            aria-controls="settings-advanced"
-            onClick={() => setAdvancedOpen((open) => !open)}
-            className="flex min-h-11 w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
-          >
-            <span className="flex min-w-0 flex-col">
-              <span className="text-sm font-medium">Developer tools</span>
-              <span className="text-xs text-muted-foreground">
-                Local development only
-              </span>
-            </span>
-            <ChevronRight
-              aria-hidden
-              className={`ml-auto size-4 shrink-0 text-muted-foreground ${advancedOpen ? "rotate-90" : ""}`}
-            />
-          </button>
-          {advancedOpen ? (
-            <div id="settings-advanced" className="flex flex-col gap-3 border-t border-border p-3">
-              <div className="flex flex-col gap-0.5">
-                <p className="text-sm font-medium">Diagnostics</p>
-                <p className="text-xs text-muted-foreground">Not built yet.</p>
-              </div>
-              {/* Renders nothing unless the backend has DEV_SETTINGS_ENABLED=true. */}
-              <DevLlmSettingsCard />
-            </div>
-          ) : null}
+        <div className="flex flex-col divide-y divide-border">
+          <SettingsRow
+            label="Developer tools"
+            value="Local development only"
+            icon={<Code className="size-4" />}
+            ariaExpanded={advancedOpen}
+            ariaControls="settings-advanced"
+            end={
+              <ChevronRight
+                aria-hidden
+                className={`ml-auto size-4 shrink-0 text-muted-foreground ${advancedOpen ? "rotate-90" : ""}`}
+              />
+            }
+            onSelect={() => setAdvancedOpen((open) => !open)}
+          />
         </div>
+        {advancedOpen ? (
+          <div id="settings-advanced" className="flex flex-col gap-3 pt-3">
+            {/* Renders nothing unless the backend has DEV_SETTINGS_ENABLED=true. */}
+            <DevLlmSettingsCard />
+          </div>
+        ) : null}
       </section>
 
       <Separator />
@@ -508,7 +601,7 @@ export function SettingsPage() {
         <h2 className="text-xs font-bold tracking-[0.12em] text-muted-foreground uppercase">
           Danger zone
         </h2>
-        <div className="flex flex-col gap-2 rounded-xl bg-card px-4 py-3 ring-1 ring-foreground/10">
+        <div className="flex flex-col gap-2">
           <p className="text-sm font-medium">Delete account</p>
           <p className="text-xs text-muted-foreground">
             Removes your account and everything in it, with no recovery period.
