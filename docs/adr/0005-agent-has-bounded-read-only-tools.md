@@ -58,3 +58,18 @@ Users get nearby-care answers in chat without a separate screen. The safety
 guarantee from ADR 0001 is unchanged: the rule engine in
 `backend/app/services/triage.py` still makes every decision. The cost is a
 larger surface to test. Each new tool needs a registry test entry and a refusal path. A tool that is not read-only, or that touches a safety field, needs a new ADR first.
+
+## Amendment (2026-11-17): `get_today_environment`
+
+A second read-only tool reports today's pollen, air quality and weather at the
+user's saved location, so the agent can answer "what's the pollen today?" in
+chat. It follows every rule above:
+
+- It reads three providers and returns numbers. It takes no input, and the
+  location comes from the server.
+- Its result carries no triage, urgency or severity field. The guard test
+  walks its schema.
+- It never feeds `triage.py`. The environment risk score stays on the Today
+  tab and does not reach the rule engine.
+- If all three providers are down, it refuses with `provider_unavailable`
+  rather than reporting clear air.

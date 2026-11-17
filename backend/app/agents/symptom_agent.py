@@ -512,13 +512,157 @@ FIND_NEARBY_CARE_TOOL = "find_nearby_hospitals"
 FIND_NEARBY_HOSPITALS = build_nearby_care_tool(None)
 
 
+ENVIRONMENT_TOOL = "get_today_environment"
+
+
+@dataclass(frozen=True)
+class EnvironmentSnapshot:
+    """Today's pollen, air quality and weather at the user's saved location."""
+
+    pollen: dict[str, str | None]
+    air_quality: dict[str, float | None]
+    weather: dict[str, float | None]
+    available: bool
+
+
+def _environment_snapshot(origin: NearbyCareOrigin) -> EnvironmentSnapshot:
+    """Fetch the three environment providers for `origin`, on a fresh loop.
+
+    Same reasoning as `_nearby_care_search`: the request's pooled client belongs
+    to another event loop, so this opens its own. Each provider degrades on its
+    own, so one outage leaves the other two readable.
+    """
+    from app.core.config import get_settings  # noqa: PLC0415 — avoids an import cycle
+    from app.services import air_quality_service as aqs  # noqa: PLC0415 — same
+    from app.services import pollen_service as ps  # noqa: PLC0415 — same
+    from app.services import weather_service as ws  # noqa: PLC0415 — same
+
+    async def _run() -> EnvironmentSnapshot:
+        key = get_settings().pollen_api_key
+        async with httpx.AsyncClient(timeout=NAVER_TIMEOUT_S) as http:
+            weather, air, pollen = await asyncio.gather(
+                ws.fetch_weather(origin.latitude, origin.longitude, http),
+                aqs.fetch_air_quality(origin.latitude, origin.longitude, http),
+                ps.fetch_pollen(origin.latitude, origin.longitude, http, key),
+                return_exceptions=True,
+            )
+        if isinstance(weather, BaseException):
+            weather = ws.WeatherData()
+        if isinstance(air, BaseException):
+            air = aqs.AirQualityData()
+        if isinstance(pollen, BaseException):
+            pollen = ps.PollenData()
+        pollen_block = {
+            "tree": _level_name(pollen.tree),
+            "grass": _level_name(pollen.grass),
+            "weed": _level_name(pollen.weed),
+        }
+        air_block = {"pm25": air.pm25, "pm10": air.pm10}
+        weather_block = {
+            "temperature": weather.temperature,
+            "humidity": weather.humidity,
+            "wind": weather.wind_speed,
+        }
+        available = any(
+            value is not None
+            for value in (
+                pollen.tree,
+                pollen.grass,
+                pollen.weed,
+                air.pm25,
+                air.pm10,
+                weather.temperature,
+                weather.humidity,
+                weather.wind_speed,
+            )
+        )
+        return EnvironmentSnapshot(pollen_block, air_block, weather_block, available)
+
+    try:
+        return asyncio.run(_run())
+    except Exception as exc:  # noqa: BLE001 — a lookup must not break the turn
+        logger.warning("environment snapshot failed (%s)", exc)
+        raise ToolRefused(PROVIDER_UNAVAILABLE) from exc
+
+
+def _level_name(level: object) -> str | None:
+    """The pollen level as a plain word, or None when the provider sent none."""
+    value = getattr(level, "value", level)
+    return str(value).lower() if value is not None else None
+
+
+def build_environment_tool(
+    origin: NearbyCareOrigin | None,
+    *,
+    snapshot: Callable[[NearbyCareOrigin], EnvironmentSnapshot] | None = None,
+) -> ToolDefinition:
+    """Today's environment at the user's saved location, read-only.
+
+    The tool reports conditions. It never scores them against triage, and no
+    field it returns is a safety field (the guard test in
+    `tests/test_tool_registry.py` walks this schema). `snapshot` is the test seam.
+    """
+    fetch = snapshot or _environment_snapshot
+
+    def _execute(_arguments: Mapping[str, Any]) -> Any:
+        if origin is None:
+            raise ToolRefused(NO_LOCATION)
+        outcome = fetch(origin)
+        if not outcome.available:
+            raise ToolRefused(PROVIDER_UNAVAILABLE)
+        return {
+            "pollen": outcome.pollen,
+            "air_quality": outcome.air_quality,
+            "weather": outcome.weather,
+        }
+
+    return ToolDefinition(
+        name=ENVIRONMENT_TOOL,
+        description=(
+            "Read today's pollen levels, air quality and weather for the user's "
+            "saved location. Read-only: it reports conditions and changes nothing. "
+            "It reports numbers only and does not judge how the user feels."
+        ),
+        parameters={"type": "object", "properties": {}, "required": []},
+        result_schema={
+            "type": "object",
+            "properties": {
+                "pollen": {
+                    "type": "object",
+                    "properties": {
+                        "tree": {"type": ["string", "null"]},
+                        "grass": {"type": ["string", "null"]},
+                        "weed": {"type": ["string", "null"]},
+                    },
+                },
+                "air_quality": {
+                    "type": "object",
+                    "properties": {
+                        "pm25": {"type": ["number", "null"]},
+                        "pm10": {"type": ["number", "null"]},
+                    },
+                },
+                "weather": {
+                    "type": "object",
+                    "properties": {
+                        "temperature": {"type": ["number", "null"]},
+                        "humidity": {"type": ["number", "null"]},
+                        "wind": {"type": ["number", "null"]},
+                    },
+                },
+            },
+        },
+        execute=_execute,
+    )
+
+
 def default_tool_registry(origin: NearbyCareOrigin | None = None) -> ToolRegistry:
     """The registry the app ships with: read-only lookups only.
 
     `origin` is the caller's saved location. It is resolved per request by
     `app.api.chat`, never asked of the model.
     """
-    return ToolRegistry([build_nearby_care_tool(origin)])
+    return ToolRegistry([build_nearby_care_tool(origin), build_environment_tool(origin)])
 
 
 # Reports what the agent is doing, stage by stage, so `app.api.chat` can tell

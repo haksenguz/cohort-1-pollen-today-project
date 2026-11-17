@@ -107,9 +107,13 @@ const CLINIC_LOOKUP_COPY = {
  * ships today calls the same lookup `find_nearby_hospitals`. Both mean one
  * thing to the user, so both get one sentence rather than one of them leaking.
  */
-const TOOL_COPY: Record<string, typeof CLINIC_LOOKUP_COPY> = {
+const TOOL_COPY: Record<string, { running: string; failure: string }> = {
   find_nearby_care: CLINIC_LOOKUP_COPY,
   find_nearby_hospitals: CLINIC_LOOKUP_COPY,
+  get_today_environment: {
+    running: "Checking today's pollen and air…",
+    failure: "Could not check today's pollen and air",
+  },
 };
 
 /**
