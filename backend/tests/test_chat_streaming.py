@@ -323,7 +323,9 @@ async def test_the_verdict_is_the_rule_engines_own(chat_client: AsyncClient, mon
             symptoms=["throat_swelling"],
             severity=5,
             breathing_difficulty=True,
-            airway_swelling=False,
+            # The user wrote "my throat is closing up": the deterministic text
+            # net confirms the airway flag on top of what the model extracted.
+            airway_swelling=True,
         )
     )
     assert done["triage_level"] == expected.level.value == "EMERGENCY"

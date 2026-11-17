@@ -23,7 +23,7 @@ from dataclasses import dataclass, field
 
 from app.core.enums import TriageLevel
 
-RULE_VERSION = "triage-2026-10-03"
+RULE_VERSION = "triage-2026-11-17"
 
 # Red-flag symptom keywords that force an emergency regardless of severity score.
 EMERGENCY_SYMPTOMS = {
@@ -56,6 +56,16 @@ RED_FLAG_ALIASES: dict[str, tuple[str, ...]] = {
         "cannot_breathe",
         "cant_breathe",
         "struggling_to_breath",
+        # Korean. Spaced and unspaced forms both appear: normalisation turns
+        # spaces into "_", so "숨쉬기 힘듦" arrives as "숨쉬기_힘듦".
+        "호흡곤란",
+        "호흡_곤란",
+        "숨쉬기힘",
+        "숨쉬기_힘",
+        "숨쉬기어려",
+        "숨쉬기_어려",
+        "숨이차",
+        "숨이_차",
     ),
     "throat_swelling": (
         "throat_swelling",
@@ -67,6 +77,13 @@ RED_FLAG_ALIASES: dict[str, tuple[str, ...]] = {
         "throat_closing_up",
         "neck_swelling",
         "swollen_neck",
+        # Korean: 목이 부음 / 목부음 (throat swelling), 목이 붓다.
+        "목부음",
+        "목_부음",
+        "목이부",
+        "목이_부",
+        "목이붓",
+        "목이_붓",
     ),
     "tongue_swelling": (
         "tongue_swelling",
@@ -74,6 +91,13 @@ RED_FLAG_ALIASES: dict[str, tuple[str, ...]] = {
         "tongue_swell",
         "tongue_closing",
         "swelling_tongue",
+        # Korean: 혀가 부음 / 혀부음.
+        "혀부음",
+        "혀_부음",
+        "혀가부",
+        "혀가_부",
+        "혀가붓",
+        "혀가_붓",
     ),
     "lip_swelling": (
         "lip_swelling",
@@ -81,6 +105,13 @@ RED_FLAG_ALIASES: dict[str, tuple[str, ...]] = {
         "swollen_lip",
         "lips_swelling",
         "lip_closing",
+        # Korean: 입술이 부음 / 입술부음.
+        "입술부음",
+        "입술_부음",
+        "입술이부",
+        "입술이_부",
+        "입술이붓",
+        "입술이_붓",
     ),
     "chest_tightness": (
         "chest_tightness",
@@ -88,6 +119,11 @@ RED_FLAG_ALIASES: dict[str, tuple[str, ...]] = {
         "tight_chest",
         "chest_pressure",
         "chest_squeezing",
+        # Korean: 가슴이 답답 / 가슴답답.
+        "가슴답답",
+        "가슴_답답",
+        "가슴이답답",
+        "가슴이_답답",
     ),
     "fainting": (
         "fainting",
@@ -102,39 +138,76 @@ RED_FLAG_ALIASES: dict[str, tuple[str, ...]] = {
         "anaphylactic",
         "anaphylactic_reaction",
         "anaphylactic_shock",
+        # Korean: 아나필락시스 (and the short form that the model may return).
+        "아나필락시",
     ),
 }
 
-# A symptom string that *negates* the finding must not match. The model is
-# instructed to report only what the user has, but a defensive negation guard
-# costs nothing and prevents a string like "no_breathing_difficulty" from
-# matching the `difficulty_breathing` aliases above.
-_NEGATION_PREFIXES = (
-    "no",
-    "not",
-    "without",
-    "denies",
-    "deny",
-    "never",
-    "free_of",
+# A denial must not trip a red flag, but only when the denial governs the
+# flag directly. The guard reads the clause the negator starts or ends, so a
+# compound like "no_swelling_but_difficulty_breathing" still matches its second
+# clause. Leading English negators need the underscore so "nothing" or "notable"
+# never count.
+_NEGATED_LEADS = (
+    "no_",
+    "not_",
+    "without_",
+    "denies_",
+    "deny_",
+    "never_",
+    "free_of_",
+    # Korean: 안 (not) and 없이 (without) before the symptom.
+    "안_",
+    "없이_",
 )
+# Korean denial endings: 없음 / 없어요 (none), 아님 / 아니에요 (not), 않아요 (does not).
+_NEGATED_TAILS = (
+    "없음",
+    "없어",
+    "없어요",
+    "없습니다",
+    "아님",
+    "아니요",
+    "아니에요",
+    "않음",
+    "않아",
+    "않아요",
+    "않습니다",
+)
+# Words that join two clauses. A positive red flag after one of these still counts.
+_CLAUSE_JOINERS = ("but", "하지만")
 
 
 def _normalize(symptom: str) -> str:
     return symptom.strip().lower().replace(" ", "_").replace("-", "_")
 
 
+def _clauses(normalized: str) -> list[str]:
+    """Split on joiners so each clause can be negated (or not) on its own."""
+    groups: list[list[str]] = [[]]
+    for token in normalized.split("_"):
+        if token in _CLAUSE_JOINERS:
+            groups.append([])
+        elif token:
+            groups[-1].append(token)
+    return ["_".join(g) for g in groups if g]
+
+
+def _is_denied(clause: str) -> bool:
+    return clause.startswith(_NEGATED_LEADS) or clause.endswith(_NEGATED_TAILS)
+
+
 def is_negated(symptom: str) -> bool:
-    """True when the string reads as a denial of what follows."""
-    parts = _normalize(symptom).split("_")
-    return any(p in _NEGATION_PREFIXES for p in parts[:2])
+    """True when the whole string opens with a denial of what follows."""
+    return _is_denied(_normalize(symptom))
 
 
 def match_red_flag(symptom: object) -> str | None:
     """Return the canonical red flag this symptom represents, or None.
 
-    Exact membership in `EMERGENCY_SYMPTOMS` is checked first, then the alias
-    table as substrings. A negated string returns None.
+    Exact membership in `EMERGENCY_SYMPTOMS` is checked first. Otherwise each
+    clause (split on "but") is checked in order: a denied clause is skipped,
+    and the first clause that contains an alias decides the flag.
 
     Takes `object` because the strings arriving here are model-extracted and
     this function is on the safety path: a non-string entry must be ignored,
@@ -147,11 +220,12 @@ def match_red_flag(symptom: object) -> str | None:
     normalized = _normalize(symptom)
     if normalized in EMERGENCY_SYMPTOMS:
         return normalized
-    if is_negated(normalized):
-        return None
-    for canonical, aliases in RED_FLAG_ALIASES.items():
-        if any(alias in normalized for alias in aliases):
-            return canonical
+    for clause in _clauses(normalized):
+        if _is_denied(clause):
+            continue
+        for canonical, aliases in RED_FLAG_ALIASES.items():
+            if any(alias in clause for alias in aliases):
+                return canonical
     return None
 
 

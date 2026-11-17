@@ -41,14 +41,19 @@ from sqlmodel import select
 from app.agents import symptom_agent
 from app.core.config import get_settings
 from app.core.db import SessionDep
-from app.core.enums import ConversationStatus, MessageRole
+from app.core.enums import Allergen, ConversationStatus, MessageRole
 from app.core.rate_limit import get_limiter
 from app.core.security import CurrentUser
-from app.models import Conversation, Message, SymptomEvent, TriageResult, User
+from app.models import Conversation, Message, SymptomEvent, TriageResult, User, UserAllergy
 from app.services import conversation_title, escalation, triage
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 logger = logging.getLogger(__name__)
+
+# The model sees at most this many recent messages. Persisted history is never
+# trimmed; the symptom state already carries the extracted fields, so older
+# turns add cost and no facts.
+MAX_HISTORY_MESSAGES = 20
 
 # What the user is told when the model call failed. One line per failure kind,
 # because the failure kind decides what the user can do about it.
@@ -435,6 +440,31 @@ async def _get_or_create_conversation(
     return conversation
 
 
+def _recent(history: list[symptom_agent.ChatMessage]) -> list[symptom_agent.ChatMessage]:
+    """The last MAX_HISTORY_MESSAGES entries, in order. The stored history is untouched."""
+    return history[-MAX_HISTORY_MESSAGES:]
+
+
+async def _allergy_names(session: AsyncSession, user_id: int) -> list[str]:
+    """Names of the user's saved allergies, as validated Allergen values only.
+
+    Rows are filtered through the Allergen enum, so nothing the user typed into
+    free text can reach the prompt. Unknown legacy values are dropped.
+    """
+    rows = await session.execute(
+        select(UserAllergy.allergen).where(UserAllergy.user_id == user_id).order_by(UserAllergy.id)
+    )
+    names: list[str] = []
+    for value in rows.scalars().all():
+        try:
+            name = Allergen(value).value.lower().replace("_", " ")
+        except ValueError:
+            continue
+        if name not in names:
+            names.append(name)
+    return names
+
+
 async def _load_state(
     session: AsyncSession, conversation: Conversation
 ) -> symptom_agent.AllergyState:
@@ -444,7 +474,7 @@ async def _load_state(
     history: list[symptom_agent.ChatMessage] = [
         {"role": m.role.lower(), "content": m.content} for m in rows.scalars().all()
     ]
-    state = symptom_agent.initial_state(history)
+    state = symptom_agent.initial_state(_recent(history))
 
     latest = await session.execute(
         select(SymptomEvent)
@@ -637,13 +667,14 @@ async def _run_chat(
     replay: _Replay | None = None,
 ) -> AsyncIterator[str]:
     state = await _load_state(session, conversation)
+    state["allergies"] = await _allergy_names(session, user_id)
 
     # A regenerate answers the last thing the user said again, so that is the
     # message this turn runs on, and the model reads the transcript as it was
     # before the answer that is being replaced.
     user_message = replay.message if replay is not None else (req.message or "")
     if replay is not None:
-        state["messages"] = list(replay.history)
+        state["messages"] = _recent(list(replay.history))
 
     # A turn is two sequential model calls plus the rule engine, and a tool
     # lookup in between — several seconds of silence otherwise, which reads as

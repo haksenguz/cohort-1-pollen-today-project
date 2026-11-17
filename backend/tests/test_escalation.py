@@ -96,10 +96,28 @@ def test_a_crisis_disclosure_is_caught(message: str) -> None:
         "can you diagnose me",
         "how much should I take",
         "what dose is right for me",
+        "how much ibuprofen should I take",
+        "how many pills can I take at once",
+        "how much medicine do I give my child",
     ],
 )
 def test_a_diagnosis_or_dosage_request_is_refused(message: str) -> None:
     assert escalation.assess(message).verdict == "out_of_scope", message
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "how much pollen is there today",
+        "how much pollen is in the air",
+        "how much rain is expected this week",
+        "how many pollen grains per cubic metre today",
+        "how much is the tree count today",
+    ],
+)
+def test_pollen_and_weather_how_much_questions_are_answered(message: str) -> None:
+    """Regression: a bare "how much" used to refuse every such question."""
+    assert escalation.assess(message).verdict == "in_scope", message
 
 
 def test_a_crisis_outranks_an_out_of_scope_request() -> None:

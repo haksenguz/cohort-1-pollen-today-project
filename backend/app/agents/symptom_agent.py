@@ -40,7 +40,7 @@ from app.core.openai_client import (
     ToolSpec,
     function_tool_spec,
 )
-from app.services import triage
+from app.services import red_flag_text, triage
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +51,12 @@ NAVER_TIMEOUT_S = 5.0
 # Safety net: stop asking and hand off to the rule engine with whatever we
 # have rather than looping forever on a confused model or a silent user.
 MAX_QUESTIONS = 4
+
+NO_ASSESSMENT_REPLY = (
+    "I could not assess your symptoms just now, so I will not give an urgency level. "
+    "If you have trouble breathing, or swelling of the tongue or throat, call 119 now. "
+    "Otherwise please try again in a moment."
+)
 
 # Hard ceiling on the reason -> act -> observe loop. Each step is one model call
 # that may or may not request a tool, so a turn costs at most MAX_TOOL_STEPS
@@ -64,6 +70,11 @@ SAFETY_QUESTION = (
 )
 
 FALLBACK_QUESTION = "Can you tell me more about your symptoms?"
+
+# Background for the follow-up question only. Names come from the user's saved
+# allergy enum, never from their free text, and the extraction and triage paths
+# never see this line.
+ALLERGY_CONTEXT_PREFIX = "Allergies saved on this user's profile: "
 
 EXTRACTION_SYSTEM_PROMPT = """You are the symptom-intake assistant for an allergy companion app.
 Read the conversation so far and extract what the user has told you. You never diagnose, never
@@ -116,6 +127,9 @@ class AllergyState(TypedDict, total=False):
     breathing_difficulty: bool | None
     airway_swelling: bool | None
     possible_trigger: str | None
+
+    # Names of the user's saved allergies, for the follow-up question only.
+    allergies: list[str]
 
     turn_count: int
     ready: bool
@@ -467,10 +481,14 @@ def default_tool_registry(origin: NearbyCareOrigin | None = None) -> ToolRegistr
 ProgressCallback = Callable[[str], None]
 
 
-def initial_state(history: Sequence[ChatMessage] | None = None) -> AllergyState:
-    """A fresh state, optionally seeded with prior turns loaded from storage."""
+def initial_state(
+    history: Sequence[ChatMessage] | None = None,
+    allergies: Sequence[str] | None = None,
+) -> AllergyState:
+    """A fresh state, optionally seeded with prior turns and saved allergy names."""
     return AllergyState(
         messages=list(history or []),
+        allergies=list(allergies or []),
         symptoms=[],
         severity=None,
         duration=None,
@@ -618,6 +636,16 @@ def make_extract_node(
             {"role": "system", "content": EXTRACTION_SYSTEM_PROMPT},
             *state.get("messages", []),
         ]
+        # Deterministic net first: the user's own words confirm a red flag even
+        # when the model is down or misses the phrase. Sticky and True-only.
+        user_text = "\n".join(
+            m["content"] for m in state.get("messages", []) if m.get("role") == "user"
+        )
+        breathing, airway = red_flag_text.scan(user_text)
+        if breathing:
+            state["breathing_difficulty"] = True
+        if airway:
+            state["airway_swelling"] = True
         if progress is not None:
             progress("extracting")
         try:
@@ -649,6 +677,15 @@ def make_extract_node(
     return _extract
 
 
+def _question_system_prompt(state: AllergyState) -> str:
+    """The question prompt, plus one factual line when the profile has allergies."""
+    allergies = [name for name in state.get("allergies") or [] if name]
+    if not allergies:
+        return QUESTION_SYSTEM_PROMPT
+    line = f"{ALLERGY_CONTEXT_PREFIX}{', '.join(allergies)}."
+    return f"{QUESTION_SYSTEM_PROMPT}\n{line}"
+
+
 def make_ask_question_node(
     llm: LLMClient, progress: ProgressCallback | None = None
 ) -> Callable[[AllergyState], AllergyState]:
@@ -662,7 +699,7 @@ def make_ask_question_node(
             question = SAFETY_QUESTION
         else:
             prompt: list[ChatMessage] = [
-                {"role": "system", "content": QUESTION_SYSTEM_PROMPT},
+                {"role": "system", "content": _question_system_prompt(state)},
                 *state.get("messages", []),
             ]
             if progress is not None:
@@ -867,6 +904,26 @@ def triage_node(state: AllergyState) -> AllergyState:
     """
     breathing_difficulty = bool(state.get("breathing_difficulty"))
     airway_swelling = bool(state.get("airway_swelling"))
+
+    # Fail closed. If the model never produced anything usable (it was down for
+    # the whole conversation) and no red flag is confirmed, a LOW built from
+    # defaults would tell the user their symptoms look mild when nothing was
+    # assessed. Emit no verdict at all: the endpoint reports the outage and the
+    # reply points at 119 for anything severe.
+    if (
+        state.get("llm_error_kind")
+        and not state.get("symptoms")
+        and state.get("severity") is None
+        and not breathing_difficulty
+        and not airway_swelling
+    ):
+        state["assistant_reply"] = NO_ASSESSMENT_REPLY
+        state["messages"] = [
+            *state.get("messages", []),
+            {"role": "assistant", "content": NO_ASSESSMENT_REPLY},
+        ]
+        return state
+
     outcome = triage.assess(
         triage.SymptomInput(
             symptoms=state.get("symptoms") or [],

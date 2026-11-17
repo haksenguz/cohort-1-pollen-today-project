@@ -96,7 +96,10 @@ _OUT_OF_SCOPE_PATTERNS = re.compile(
     | 처방전
     | what\s+(disease|condition|allergen)\s+(is|am\s+i)\s+i
     | (diagnose|diagnos)\s+(me|this)
-    | (how\s+much|what\s+dose|dosage)
+    | how\s+(much|many)\s+(\S+\s+){0,2}?(should|can|could|may|must)\s+i\s+(take|use|give)
+    | how\s+(much|many)\s+(\S+\s+)?
+      (pills?|tablets?|capsules?|doses?|drops?|medicine|medication|mg)\b
+    | what\s+dose | dosage
     | (prescribe|prescription)\b
     """,
     re.VERBOSE | re.IGNORECASE,

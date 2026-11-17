@@ -678,7 +678,7 @@ The response is **SSE**, not a single JSON object. `POST /api/chat` returns
 `text/event-stream` carrying `status` events (the pipeline stages `starting`,
 `extracting`, `asking`, `assessing`, `saving`), then a `message` event and a
 `done` event, or an `error` event. These are pipeline stages and **not** tool
-calls — the agent has no tools and performs no function-calling.
+calls. The agent may call bounded, read-only lookup tools (see ADR 0005), but no tool result can change the triage level.
 
 A representative stream:
 
