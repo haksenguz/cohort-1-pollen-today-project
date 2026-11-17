@@ -48,3 +48,19 @@ async def test_login_with_unknown_email_is_rejected(client: AsyncClient):
         "/api/auth/login", json={"email": "ghost@example.com", "password": "correcthorse123"}
     )
     assert resp.status_code == 401
+
+
+async def test_login_is_rate_limited_per_ip(client: AsyncClient):
+    from app.core.rate_limit import InMemoryRateLimiter, set_auth_limiter
+
+    set_auth_limiter(InMemoryRateLimiter(limit_per_minute=2))
+    try:
+        payload = {"email": "ratelimit@example.com", "password": "wrongpass123"}
+        statuses = [
+            (await client.post("/api/auth/login", json=payload)).status_code for _ in range(3)
+        ]
+        assert statuses == [401, 401, 429]
+        blocked = await client.post("/api/auth/login", json=payload)
+        assert "Retry-After" in blocked.headers
+    finally:
+        set_auth_limiter(None)

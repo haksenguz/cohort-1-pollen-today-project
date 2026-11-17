@@ -139,3 +139,29 @@ def set_limiter(limiter: InMemoryRateLimiter | None) -> None:
     """Install (or clear) the process-wide limiter. Tests call this."""
     global _limiter
     _limiter = limiter
+
+
+_auth_limiter: InMemoryRateLimiter | None = None
+
+
+def get_auth_limiter() -> InMemoryRateLimiter:
+    """Per-client-IP limiter for /register and /login (password guessing).
+
+    Keyed by IP, not user id, because an attacker guessing a password has no
+    valid account yet. Separate from the chat limiter so the two budgets do not
+    share a window.
+    """
+    global _auth_limiter
+    if _auth_limiter is None:
+        from app.core.config import get_settings
+
+        _auth_limiter = InMemoryRateLimiter(
+            limit_per_minute=get_settings().auth_rate_limit_per_minute
+        )
+    return _auth_limiter
+
+
+def set_auth_limiter(limiter: InMemoryRateLimiter | None) -> None:
+    """Install (or clear) the auth limiter. Tests call this."""
+    global _auth_limiter
+    _auth_limiter = limiter

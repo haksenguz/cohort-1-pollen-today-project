@@ -74,6 +74,10 @@ class Settings(BaseSettings):
     # the test suite use.
     chat_rate_limit_per_minute: int = 20
 
+    # Per-IP budget for POST /api/auth/register and /login. Stops password
+    # guessing and mass sign-up. 0 or less disables it (tests, local dev).
+    auth_rate_limit_per_minute: int = 10
+
     cors_origins: list[str] = []
 
     # The origin the site is served from. The shipped stack serves the PWA and

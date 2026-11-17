@@ -1,12 +1,25 @@
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel, EmailStr, Field
 from sqlmodel import select
 
 from app.core.db import SessionDep
+from app.core.rate_limit import get_auth_limiter
 from app.core.security import create_access_token, hash_password, verify_password
 from app.models import User
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
+
+
+async def _enforce_auth_limit(request: Request) -> None:
+    """Raise 429 when this client IP is over its auth budget."""
+    client = request.client.host if request.client else "unknown"
+    decision = await get_auth_limiter().check(client)
+    if not decision.allowed:
+        raise HTTPException(
+            status.HTTP_429_TOO_MANY_REQUESTS,
+            "Too many attempts. Try again shortly.",
+            headers=decision.headers,
+        )
 
 
 class RegisterRequest(BaseModel):
@@ -27,7 +40,8 @@ class TokenResponse(BaseModel):
 
 
 @router.post("/register", status_code=status.HTTP_201_CREATED)
-async def register(body: RegisterRequest, session: SessionDep) -> TokenResponse:
+async def register(request: Request, body: RegisterRequest, session: SessionDep) -> TokenResponse:
+    await _enforce_auth_limit(request)
     existing = await session.execute(select(User).where(User.email == body.email))
     if existing.scalars().first() is not None:
         raise HTTPException(status.HTTP_409_CONFLICT, "Email is already registered")
@@ -45,7 +59,8 @@ async def register(body: RegisterRequest, session: SessionDep) -> TokenResponse:
 
 
 @router.post("/login")
-async def login(body: LoginRequest, session: SessionDep) -> TokenResponse:
+async def login(request: Request, body: LoginRequest, session: SessionDep) -> TokenResponse:
+    await _enforce_auth_limit(request)
     result = await session.execute(select(User).where(User.email == body.email))
     user = result.scalars().first()
     if user is None or not verify_password(body.password, user.password_hash):

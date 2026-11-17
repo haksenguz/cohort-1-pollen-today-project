@@ -27,6 +27,7 @@ from sqlalchemy.pool import StaticPool
 from sqlmodel import SQLModel
 
 from app.core.db import get_session
+from app.core.rate_limit import InMemoryRateLimiter, set_auth_limiter
 from app.main import app
 from app.models import (
     Alert,
@@ -179,6 +180,15 @@ async def client(session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
     app.dependency_overrides.clear()
+
+
+@pytest.fixture(autouse=True)
+def _auth_limiter_off():
+    # Every test client shares one IP, so the per-IP auth limiter would trip
+    # across tests. Off by default; test_auth_api.py installs a small one.
+    set_auth_limiter(InMemoryRateLimiter(limit_per_minute=0))
+    yield
+    set_auth_limiter(None)
 
 
 @pytest.fixture

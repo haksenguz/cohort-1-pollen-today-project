@@ -86,7 +86,18 @@ async def lifespan(app: FastAPI):
             logger.warning("notification scheduler failed to shut down cleanly", exc_info=True)
 
 
-app = FastAPI(title=settings.app_name, version="0.1.0", lifespan=lifespan)
+# The interactive API docs and schema are for development. In production they
+# only map the attack surface, so they are off there.
+_docs_enabled = settings.environment != "production"
+
+app = FastAPI(
+    title=settings.app_name,
+    version="0.1.0",
+    lifespan=lifespan,
+    docs_url="/docs" if _docs_enabled else None,
+    redoc_url="/redoc" if _docs_enabled else None,
+    openapi_url="/openapi.json" if _docs_enabled else None,
+)
 
 app.add_middleware(
     CORSMiddleware,
