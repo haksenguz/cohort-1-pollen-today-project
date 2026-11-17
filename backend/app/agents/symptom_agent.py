@@ -27,6 +27,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol, TypedDict
@@ -69,7 +70,50 @@ SAFETY_QUESTION = (
     "Are you having any difficulty breathing, or swelling of your lips, tongue, or throat?"
 )
 
+SAFETY_QUESTION_KO = "숨쉬기 힘드시거나 입술, 혀, 목이 붓는 느낌이 있나요?"
+
 FALLBACK_QUESTION = "Can you tell me more about your symptoms?"
+
+# The lookup tools cost a model call per turn, so they only run when the user
+# is plausibly asking for a place (or has said something a red-flag scan
+# recognises). A plain symptom report skips the call entirely.
+_LOOKUP_INTENT = re.compile(
+    r"clinic|hospital|doctor|physician|pharmac|nearby|near me|nearest|closest|emergency room"
+    r"|(?<![a-z])er(?![a-z])|병원|약국|의원|응급실|가까운|근처|의사|클리닉|내과|이비인후과|안과|피부과",
+    re.IGNORECASE,
+)
+_HANGUL = re.compile(r"[가-힣]")
+
+# Environment questions have a screen of their own. Pointing there is honest;
+# a model reply that says "sure, I can help" and then asks a symptom question
+# is not.
+_ENVIRONMENT_INTENT = re.compile(
+    r"pollen|air quality|weather|dust|pm ?2|꽃가루|미세먼지|날씨|공기",
+    re.IGNORECASE,
+)
+TODAY_POINTER = "Today's pollen, air quality and your risk score are on the Today tab."
+TODAY_POINTER_KO = "오늘의 꽃가루, 대기질, 위험도는 오늘 탭에서 확인하실 수 있어요."
+
+
+def _last_user_text(state: AllergyState) -> str:
+    for message in reversed(state.get("messages", [])):
+        if message.get("role") == "user":
+            return message.get("content", "")
+    return ""
+
+
+def _safety_question_for(state: AllergyState) -> str:
+    """The fixed safety question, in Korean when the user wrote Korean."""
+    return SAFETY_QUESTION_KO if _HANGUL.search(_last_user_text(state)) else SAFETY_QUESTION
+
+
+def _wants_lookup(state: AllergyState) -> bool:
+    text = _last_user_text(state)
+    if _LOOKUP_INTENT.search(text):
+        return True
+    breathing, airway = red_flag_text.scan(text)
+    return breathing or airway
+
 
 # Background for the follow-up question only. Names come from the user's saved
 # allergy enum, never from their free text, and the extraction and triage paths
@@ -89,6 +133,10 @@ Reply with ONLY a single JSON object, no prose, no markdown fences, with these k
   "breathing_difficulty": true/false if the user has clearly answered this, otherwise null
   "airway_swelling": true/false if the user has clearly answered this, otherwise null
   "ready": true once you have symptoms, a severity estimate, and both safety answers; else false
+  "ack": ONE short, warm sentence (under 25 words) in the SAME language the user wrote, showing
+         you understood what they just described. No diagnosis, no urgency words, no advice, no
+         question. Use "" if the message is a question or request rather than a description of how
+         they feel, or if there is nothing to acknowledge.
 
 Only set a field from what the user actually said. Do not guess a safety answer that was never
 asked or answered."""
@@ -133,6 +181,11 @@ class AllergyState(TypedDict, total=False):
 
     turn_count: int
     ready: bool
+
+    # Courtesy line from extraction and the tool loop's answer, shown before
+    # the fixed safety question. Display text only, never a decision input.
+    ack: str
+    tool_answer: str
     extraction_error: bool
 
     # Tool-loop bookkeeping, written only by `make_tool_node`. `tool_observations`
@@ -582,6 +635,14 @@ def merge_extraction(state: AllergyState, data: dict) -> None:
     if isinstance(ready, bool):
         state["ready"] = ready
 
+    # A courtesy line shown before the fixed question. Text only: it never
+    # feeds a decision, and it is dropped when it is not a short plain string.
+    ack = data.get("ack")
+    if isinstance(ack, str) and 0 < len(ack.strip()) <= 240:
+        state["ack"] = ack.strip()
+    else:
+        state.pop("ack", None)
+
 
 def _has_enough_for_triage(state: AllergyState) -> bool:
     if state.get("breathing_difficulty") is None or state.get("airway_swelling") is None:
@@ -696,7 +757,17 @@ def make_ask_question_node(
             state.get("breathing_difficulty") is None or state.get("airway_swelling") is None
         )
         if missing_safety:
-            question = SAFETY_QUESTION
+            # The question stays fixed and deterministic. What changes is that
+            # it no longer arrives cold: an answer from a lookup, or a short
+            # acknowledgement, goes in front of it.
+            preface = state.get("tool_answer") or state.get("ack") or ""
+            if _ENVIRONMENT_INTENT.search(_last_user_text(state)) and not state.get("symptoms"):
+                preface = (
+                    TODAY_POINTER_KO if _HANGUL.search(_last_user_text(state)) else TODAY_POINTER
+                )
+            question = _safety_question_for(state)
+            if preface:
+                question = f"{preface}\n\n{question}"
         else:
             prompt: list[ChatMessage] = [
                 {"role": "system", "content": _question_system_prompt(state)},
@@ -822,6 +893,9 @@ def make_tool_node(
             return state
         if not hasattr(llm, "complete_with_tools"):
             return state
+        state.pop("tool_answer", None)
+        if not _wants_lookup(state):
+            return state
 
         specs = registry.provider_specs()
         transcript: list[dict[str, Any]] = [
@@ -848,6 +922,8 @@ def make_tool_node(
                 break
 
             if not turn.tool_calls:
+                if observations and (turn.content or "").strip():
+                    state["tool_answer"] = (turn.content or "").strip()
                 break
 
             # The assistant turn that asked for the tools goes into the

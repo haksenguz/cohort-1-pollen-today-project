@@ -337,7 +337,7 @@ def _only_done(events: list[tuple[str, dict]]) -> dict:
 
 
 async def _turn(
-    client: AsyncClient, token: str, message: str = "my eyes itch"
+    client: AsyncClient, token: str, message: str = "my eyes itch, is there a clinic nearby"
 ) -> list[tuple[str, dict]]:
     res = await client.post(
         "/api/chat",

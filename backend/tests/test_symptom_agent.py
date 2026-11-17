@@ -696,7 +696,7 @@ def test_the_model_is_offered_the_registry_schemas():
     symptom_agent.run_turn(
         llm,
         symptom_agent.initial_state(),
-        "hello",
+        "is there a clinic nearby",
         None,
         ToolRegistry([_lookup_tool()]),
     )
@@ -724,7 +724,10 @@ def test_an_unknown_tool_name_is_observed_as_an_error_not_a_crash():
     llm = ToolCallingFakeLLM([(_tool_call(name="book_appointment"),), "sorry"])
 
     result = symptom_agent.make_tool_node(llm, ToolRegistry([_lookup_tool()]))(
-        {**symptom_agent.initial_state(), "messages": [{"role": "user", "content": "book me in?"}]}
+        {
+            **symptom_agent.initial_state(),
+            "messages": [{"role": "user", "content": "book me a clinic nearby"}],
+        }
     )
 
     assert result["tool_observations"] == ["error: that lookup is not available."]
@@ -741,7 +744,10 @@ def test_an_observation_never_names_the_tool():
     llm = ToolCallingFakeLLM([(_tool_call(name="book_appointment"),), "sorry"])
 
     result = symptom_agent.make_tool_node(llm, ToolRegistry([_lookup_tool()]))(
-        {**symptom_agent.initial_state(), "messages": [{"role": "user", "content": "book me in?"}]}
+        {
+            **symptom_agent.initial_state(),
+            "messages": [{"role": "user", "content": "book me a clinic nearby"}],
+        }
     )
 
     assert "book_appointment" not in result["tool_observations"][0]
@@ -766,7 +772,10 @@ def test_an_llm_failure_during_the_tool_loop_ends_the_loop_quietly():
             raise RuntimeError("network is down")
 
     result = symptom_agent.make_tool_node(BoomToolLLM(), ToolRegistry([_lookup_tool()]))(
-        symptom_agent.initial_state()
+        {
+            **symptom_agent.initial_state(),
+            "messages": [{"role": "user", "content": "any clinic nearby"}],
+        }
     )
 
     # The loop gave up after one attempt and observed nothing, so extraction

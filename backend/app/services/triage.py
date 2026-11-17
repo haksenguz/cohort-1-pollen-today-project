@@ -264,7 +264,7 @@ def assess(s: SymptomInput) -> TriageOutcome:
             level=TriageLevel.EMERGENCY,
             recommendation=(
                 "These may be signs of a serious allergic reaction. Seek emergency "
-                "care now or call your local emergency number."
+                "care now or call 119 now."
             ),
             reasons=reasons,
         )
