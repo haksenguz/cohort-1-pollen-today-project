@@ -1,29 +1,23 @@
 /**
  * Overview rows for the settings screen.
  *
- * A row is a label plus the value you would see if you opened it. Every row
- * here opens a screen, so there is no row that quietly does nothing.
+ * A row is an icon tile, a title over the current value, and a chevron. Every
+ * row here opens a screen, so there is no row that quietly does nothing.
  *
- * The rows sit flat under a small grey label, the way ChatGPT groups its
- * settings: one hairline between rows, no card around them and no shadow.
+ * Rows sit inside an inset rounded card. The card is the unit; the label above
+ * it names the area. Hairlines separate rows inside one card.
  */
 import type { ReactNode } from "react";
 import { ChevronRight } from "lucide-react";
 
 export type { SettingsScreenId } from "./settingsScreenIds";
 
-function RowText({ label, value }: { label: string; value: string }) {
-  return (
-    <span className="flex min-w-0 flex-col">
-      <span className="text-sm font-medium">{label}</span>
-      <span className="text-xs text-muted-foreground">{value}</span>
-    </span>
-  );
-}
+/** `danger` tints the icon tile red. Used for rows that delete things. */
+export type SettingsRowTone = "default" | "danger";
 
 /**
- * A labelled group of flat rows. The label is the only thing that separates
- * one area from the next, so it is small, grey and uppercase.
+ * A labelled group. The label sits 8px above the card, and the card holds the
+ * rows. The label is the heading, so screen readers and the tests can find it.
  */
 export function SettingsGroup({
   title,
@@ -33,23 +27,22 @@ export function SettingsGroup({
   children: ReactNode;
 }) {
   return (
-    <section aria-label={title} className="flex flex-col gap-1.5">
-      <h2 className="text-xs font-bold tracking-[0.12em] text-muted-foreground uppercase">
-        {title}
-      </h2>
-      <div className="flex flex-col divide-y divide-border">{children}</div>
+    <section aria-label={title} className="settings-group">
+      <h2 className="settings-group-label">{title}</h2>
+      <div className="settings-card">{children}</div>
     </section>
   );
 }
 
 /**
- * One row. The icon comes first, the title sits above the current value, and
- * the chevron says the row opens something.
+ * One row. The icon tile comes first, the title sits above the current value,
+ * and the chevron says the row opens something.
  */
 export function SettingsRow({
   label,
   value,
   icon,
+  tone = "default",
   end,
   ariaExpanded,
   ariaControls,
@@ -58,6 +51,7 @@ export function SettingsRow({
   label: string;
   value: string;
   icon: ReactNode;
+  tone?: SettingsRowTone;
   /** Replaces the chevron, for a row that expands instead of navigating. */
   end?: ReactNode;
   ariaExpanded?: boolean;
@@ -70,15 +64,16 @@ export function SettingsRow({
       onClick={onSelect}
       aria-expanded={ariaExpanded}
       aria-controls={ariaControls}
-      className="flex min-h-11 w-full items-center gap-3 py-3 text-left transition-colors hover:bg-muted focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
+      className="settings-row"
     >
-      <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+      <span className={tone === "danger" ? "settings-tile settings-tile-danger" : "settings-tile"}>
         {icon}
       </span>
-      <RowText label={label} value={value} />
-      {end ?? (
-        <ChevronRight aria-hidden className="ml-auto size-4 shrink-0 text-muted-foreground" />
-      )}
+      <span className="settings-row-text">
+        <span className="settings-row-title">{label}</span>
+        <span className="settings-row-value">{value}</span>
+      </span>
+      {end ?? <ChevronRight aria-hidden className="settings-row-chevron" />}
     </button>
   );
 }

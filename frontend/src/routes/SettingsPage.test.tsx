@@ -398,8 +398,20 @@ describe("SettingsPage rows", () => {
 
     await screen.findByText("someone@example.com");
 
-    const row = screen.getByRole("button", { name: /^Profile/ });
+    const row = screen.getByRole("button", { name: /^Location/ });
     expect(row.querySelector("svg")).toBeTruthy();
+  });
+
+  it("puts the profile in a hero card above the groups", async () => {
+    renderPage();
+
+    const hero = await screen.findByRole("button", { name: /^Profile/ });
+    expect(hero).toHaveTextContent("someone@example.com");
+    expect(hero).toHaveTextContent("37.5665, 126.9780");
+    // The hero is the one place the profile lives, so no duplicate row sits
+    // under the Account label.
+    const account = screen.getByRole("region", { name: "Account" });
+    expect(within(account).queryByRole("button", { name: /^Profile/ })).toBeNull();
   });
 
   it("shows the stored text size on the row behind", async () => {
@@ -420,18 +432,21 @@ describe("SettingsPage search", () => {
     fireEvent.change(search, { target: { value: "allerg" } });
 
     expect(screen.getByRole("button", { name: /^Allergies/ })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: /^Profile/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Location/ })).toBeNull();
     expect(screen.queryByRole("button", { name: /^Text size/ })).toBeNull();
   });
 
-  it("keeps the title and the Done button while a search is on", async () => {
+  it("keeps the search field in place and leaves the title to the app header", async () => {
     renderPage();
     const search = await screen.findByLabelText("Search settings");
 
     fireEvent.change(search, { target: { value: "allerg" } });
 
-    expect(screen.getByRole("heading", { level: 1, name: "Settings" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Done" })).toBeTruthy();
+    // The header shows the title and the back arrow now, so the page has no
+    // in-page title row and no Done button, and the search stays where it is.
+    expect(screen.queryByRole("heading", { level: 1 })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Done" })).toBeNull();
+    expect(screen.getByLabelText("Search settings")).toHaveValue("allerg");
   });
 
   it("matches the group a row sits in", async () => {
@@ -451,7 +466,7 @@ describe("SettingsPage search", () => {
     fireEvent.change(search, { target: { value: "zzzz" } });
 
     expect(screen.getByText(/No settings match/)).toBeTruthy();
-    expect(screen.queryByRole("button", { name: /^Profile/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Location/ })).toBeNull();
   });
 });
 
@@ -651,13 +666,15 @@ describe("SettingsPage location screen", () => {
     expect(screen.getByRole("button", { name: "Save location" })).not.toBeDisabled();
   });
 
-  it("goes back to the overview from a screen", async () => {
+  it("leaves the back arrow to the app header, with no in-page Back button", async () => {
     renderPage();
     await openLocation();
 
-    fireEvent.click(await screen.findByRole("button", { name: "Back" }));
-
-    expect(await screen.findByRole("button", { name: /^Location/ })).toBeTruthy();
+    // The screen title is a visually hidden heading that takes focus, and the
+    // header owns the visible title and the Back arrow.
+    const title = await screen.findByRole("heading", { name: "Location" });
+    expect(title).toHaveClass("settings-sr-only");
+    expect(screen.queryByRole("button", { name: "Back" })).toBeNull();
   });
 });
 

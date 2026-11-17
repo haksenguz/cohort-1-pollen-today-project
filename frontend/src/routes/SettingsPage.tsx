@@ -29,14 +29,11 @@ import {
   Trash2,
   TriangleAlert,
   Type,
-  User,
 } from "lucide-react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 
 import {
@@ -68,7 +65,8 @@ import { toast } from "sonner";
 import { useTextSize } from "../prefs/textSize";
 import { formatRisk } from "../utils/format";
 import { DevLlmSettingsCard } from "./DevLlmSettingsCard";
-import { SettingsGroup, SettingsRow } from "./settings/SettingsRows";
+import { SettingsGroup, SettingsRow, type SettingsRowTone } from "./settings/SettingsRows";
+import { SCREEN_TITLE } from "./settings/screenTitles";
 import { isSettingsScreenId, type SettingsScreenId } from "./settings/settingsScreenIds";
 import {
   EmergencyContactScreen,
@@ -84,25 +82,13 @@ import {
   TextSizeScreen,
 } from "./settings/Screens";
 
-const SCREEN_TITLE: Record<SettingsScreenId, string> = {
-  profile: "Profile",
-  health: "Health",
-  location: "Location",
-  notifications: "Notifications",
-  textsize: "Text size",
-  privacy: "Privacy and data",
-  stored: "What is stored",
-  export: "Export my data",
-  delete: "Delete my data",
-  emergency: "Emergency contact",
-};
-
 /** One row on the overview. */
 type OverviewRow = {
   label: string;
   value: string;
   icon: ReactNode;
   screen: SettingsScreenId;
+  tone?: SettingsRowTone;
 };
 
 function errorText(error: unknown, fallback: string): string {
@@ -197,7 +183,6 @@ export function SettingsPage() {
   const { step: textSize, setStep: setTextSize } = useTextSize();
 
   const openScreen = (id: SettingsScreenId) => setParams({ screen: id }, { replace: true });
-  const closeScreen = () => setParams({}, { replace: true });
 
   const loadAllergies = useCallback(async () => {
     setAllergyLoadError(null);
@@ -375,11 +360,13 @@ export function SettingsPage() {
   }
 
   if (user === null) {
+    // Same shape as the overview: a hero, a search field, then two cards.
     return (
-      <div className="stage flex flex-col gap-4" aria-hidden="true">
-        <Skeleton className="h-8 w-32" />
-        <Skeleton className="h-36 w-full" />
-        <Skeleton className="h-36 w-full" />
+      <div className="stage settings-skeleton" aria-hidden="true">
+        <Skeleton className="settings-skeleton-hero" />
+        <Skeleton className="settings-skeleton-search" />
+        <Skeleton className="settings-skeleton-card" />
+        <Skeleton className="settings-skeleton-card" />
       </div>
     );
   }
@@ -387,25 +374,18 @@ export function SettingsPage() {
   if (screen !== null) {
     return (
       <div className="stage flex flex-col gap-4">
-        <SettingsSubScreen title={SCREEN_TITLE[screen]} onBack={closeScreen}>
-          {renderScreen(screen, user)}
-        </SettingsSubScreen>
+        <SettingsSubScreen title={SCREEN_TITLE[screen]}>{renderScreen(screen, user)}</SettingsSubScreen>
       </div>
     );
   }
 
   // Every row below opens a screen. A row without one was left out, because a
   // row that admits it does nothing is worse than no row at all.
+  // The profile is the hero card above the groups, so it is not repeated here.
   const groups: { title: string; rows: OverviewRow[] }[] = [
     {
       title: "Account",
       rows: [
-        {
-          label: "Profile",
-          value: user.email,
-          icon: <User className="size-4" />,
-          screen: "profile",
-        },
         {
           label: "Location",
           value: locationValue(user),
@@ -490,6 +470,7 @@ export function SettingsPage() {
           value: "Permanent",
           icon: <Trash2 className="size-4" />,
           screen: "delete",
+          tone: "danger",
         },
       ],
     },
@@ -505,41 +486,43 @@ export function SettingsPage() {
         .filter((group) => group.rows.length > 0)
     : groups;
 
-  return (
-    <div className="stage flex flex-col gap-4">
-      <div className="sticky top-0 z-10 -mx-4 flex flex-col gap-2 border-b border-border bg-background px-4 py-2">
-        <div className="flex items-center gap-3">
-          <Avatar>
-            <AvatarFallback>{initialsFor(user.email)}</AvatarFallback>
-          </Avatar>
-          <h1 className="font-display text-lg font-semibold">Settings</h1>
-          <Button
-            variant="ghost"
-            className="ml-auto min-h-11"
-            onClick={() => navigate("/today")}
-          >
-            Done
-          </Button>
-        </div>
+  const locationLabel = user.latitude === null ? "Location not set" : locationValue(user);
 
-        <div className="relative">
-          <Search
-            aria-hidden
-            className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
-          />
-          <Input
-            type="search"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            aria-label="Search settings"
-            placeholder="Search settings"
-            className="h-11 pl-9"
-          />
-        </div>
+  return (
+    <div className="stage flex flex-col gap-5">
+      <button
+        type="button"
+        className="settings-hero"
+        aria-label={`Profile, ${user.email}`}
+        onClick={() => openScreen("profile")}
+      >
+        <span className="settings-hero-avatar" aria-hidden="true">
+          {initialsFor(user.email)}
+        </span>
+        <span className="settings-hero-body">
+          <span className="settings-hero-email">{user.email}</span>
+          <span className="settings-chip">
+            <MapPin aria-hidden className="size-3" />
+            {locationLabel}
+          </span>
+        </span>
+        <ChevronRight aria-hidden className="settings-hero-chevron" />
+      </button>
+
+      <div className="settings-search">
+        <Search aria-hidden className="settings-search-icon" />
+        <Input
+          type="search"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          aria-label="Search settings"
+          placeholder="Search settings"
+          className="h-11"
+        />
       </div>
 
       {visibleGroups.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No settings match "{needle}".</p>
+        <p className="settings-empty">No settings match "{needle}".</p>
       ) : (
         visibleGroups.map((group) => (
           <SettingsGroup key={group.title} title={group.title}>
@@ -549,6 +532,7 @@ export function SettingsPage() {
                 label={row.label}
                 value={row.value}
                 icon={row.icon}
+                tone={row.tone}
                 onSelect={() => openScreen(row.screen)}
               />
             ))}
@@ -556,11 +540,9 @@ export function SettingsPage() {
         ))
       )}
 
-      <section aria-label="Advanced" className="flex flex-col gap-1.5">
-        <h2 className="text-xs font-bold tracking-[0.12em] text-muted-foreground uppercase">
-          Advanced
-        </h2>
-        <div className="flex flex-col divide-y divide-border">
+      <section aria-label="Advanced" className="settings-group">
+        <h2 className="settings-group-label">Advanced</h2>
+        <div className="settings-card">
           <SettingsRow
             label="Developer tools"
             value="Local development only"
@@ -570,45 +552,36 @@ export function SettingsPage() {
             end={
               <ChevronRight
                 aria-hidden
-                className={`ml-auto size-4 shrink-0 text-muted-foreground ${advancedOpen ? "rotate-90" : ""}`}
+                className={`settings-row-chevron${advancedOpen ? " is-open" : ""}`}
               />
             }
             onSelect={() => setAdvancedOpen((open) => !open)}
           />
         </div>
         {advancedOpen ? (
-          <div id="settings-advanced" className="flex flex-col gap-3 pt-3">
+          <div id="settings-advanced" className="flex flex-col gap-3">
             {/* Renders nothing unless the backend has DEV_SETTINGS_ENABLED=true. */}
             <DevLlmSettingsCard />
           </div>
         ) : null}
       </section>
 
-      <Separator />
+      <Button variant="outline" className="settings-signout" onClick={logout}>
+        Sign out
+      </Button>
 
-      <div className="flex flex-col gap-2">
-        <Button variant="destructive" className="min-h-11" onClick={logout}>
-          Sign out
-        </Button>
-        <p className="text-xs text-muted-foreground">
-          You need your email and password to sign back in.
-        </p>
-      </div>
-
-      <Separator />
-
-      <section aria-label="Danger zone" className="flex flex-col gap-2">
-        <h2 className="text-xs font-bold tracking-[0.12em] text-muted-foreground uppercase">
-          Danger zone
-        </h2>
-        <div className="flex flex-col gap-2">
-          <p className="text-sm font-medium">Delete account</p>
-          <p className="text-xs text-muted-foreground">
-            Removes your account and everything in it, with no recovery period.
-          </p>
+      <section aria-label="Danger zone" className="settings-group">
+        <h2 className="settings-group-label">Danger zone</h2>
+        <div className="settings-danger">
+          <div className="settings-danger-text">
+            <p className="settings-danger-title">Delete account</p>
+            <p className="settings-danger-body">
+              Removes your account and everything in it. There is no recovery period.
+            </p>
+          </div>
           <Button
-            variant="destructive"
-            className="min-h-11"
+            variant="outline"
+            className="settings-danger-button border-destructive/40 text-destructive hover:text-destructive"
             onClick={() => openScreen("delete")}
           >
             Delete account

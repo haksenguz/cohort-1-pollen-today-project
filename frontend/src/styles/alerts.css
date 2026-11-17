@@ -1,0 +1,496 @@
+/*
+ * Alerts screen. Every class is prefixed `al-` so this file never fights the
+ * older `.alert-*` rules in screens.css. Colours come from theme tokens, so
+ * light and dark both follow the theme.
+ */
+
+.al-page {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.al-page button:focus-visible,
+.al-page a:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ---------- Toolbar ---------- */
+
+.al-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.al-subtitle {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  min-width: 0;
+}
+
+.al-toolbar-actions {
+  display: flex;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+.al-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.al-icon-btn:disabled {
+  opacity: 0.6;
+}
+
+.al-spin {
+  animation: al-spin 0.9s linear infinite;
+}
+
+@keyframes al-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ---------- Summary ---------- */
+
+.al-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+}
+
+.al-count {
+  margin: 0;
+  font-size: 1.0625rem;
+  font-weight: 650;
+  color: var(--ink);
+}
+
+.al-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 0 14px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 0.875rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.al-btn:disabled {
+  color: var(--ink-soft);
+  border-color: var(--line);
+  background: var(--surface-2);
+}
+
+.al-btn--accent {
+  background: var(--accent);
+  color: var(--accent-foreground);
+  border-color: transparent;
+}
+
+.al-btn--accent:disabled {
+  background: var(--surface-2);
+  color: var(--ink-soft);
+}
+
+/* ---------- Filter chips ---------- */
+
+.al-chips {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  margin: 0 -2px;
+  padding: 2px;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.al-chips::-webkit-scrollbar {
+  display: none;
+}
+
+.al-chip-filter {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 0 14px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 0.875rem;
+  white-space: nowrap;
+}
+
+.al-chip-filter .al-chip-n {
+  min-width: 1.5em;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--ink-soft);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.al-chip-filter[aria-pressed="true"] {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--surface);
+}
+
+.al-chip-filter[aria-pressed="true"] .al-chip-n {
+  background: var(--surface);
+  color: var(--ink);
+}
+
+/* ---------- Day groups and list ---------- */
+
+.al-day {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.al-day-title {
+  margin: 4px 4px 0;
+  font-size: 0.75rem;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.al-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* ---------- Row ---------- */
+
+.al-row {
+  --tone: var(--ink-soft);
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: start;
+  padding: 12px;
+  border-radius: 16px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+}
+
+.al-row.level-low { --tone: var(--low); }
+.al-row.level-moderate { --tone: var(--moderate); }
+.al-row.level-high { --tone: var(--high); }
+.al-row.level-emergency { --tone: var(--emergency); }
+
+.al-row.is-unread {
+  border-color: color-mix(in srgb, var(--tone) 45%, var(--line));
+}
+
+/* Read rows drop to the muted palette instead of fading out. */
+.al-row.is-read {
+  background: var(--surface-2);
+}
+
+.al-tile {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--tone) 16%, var(--surface));
+  color: var(--tone);
+}
+
+.al-row.is-read .al-tile {
+  background: var(--surface);
+  color: var(--ink-soft);
+}
+
+.al-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.al-msg-btn {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.al-msg {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: 0.9375rem;
+  line-height: 1.45;
+  font-weight: 560;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.al-msg.is-open {
+  display: block;
+  -webkit-line-clamp: unset;
+  overflow: visible;
+}
+
+.al-row.is-read .al-msg {
+  font-weight: 400;
+  color: var(--ink-soft);
+}
+
+.al-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  font-size: 0.75rem;
+  color: var(--ink-soft);
+}
+
+.al-chip-level {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px 2px 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--tone) 14%, var(--surface));
+  color: var(--ink);
+  font-weight: 650;
+}
+
+.al-chip-level::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--tone);
+}
+
+.al-row.is-read .al-chip-level {
+  background: var(--surface);
+  color: var(--ink-soft);
+}
+
+.al-count-badge {
+  display: inline-flex;
+  align-items: center;
+  min-width: 2.25em;
+  justify-content: center;
+  padding: 0 6px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  color: var(--ink);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.al-chevron {
+  width: 14px;
+  height: 14px;
+  transition: transform 0.15s ease;
+}
+
+.al-chevron.is-open {
+  transform: rotate(180deg);
+}
+
+.al-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.al-action {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.al-action:disabled {
+  color: var(--ink-soft);
+}
+
+.al-action--primary {
+  background: var(--accent);
+  border-color: transparent;
+  color: var(--accent-foreground);
+}
+
+.al-dot {
+  width: 10px;
+  height: 10px;
+  margin-top: 6px;
+  border-radius: 50%;
+  background: var(--tone);
+}
+
+/* ---------- Expanded run ---------- */
+
+.al-sub {
+  list-style: none;
+  margin: 0;
+  padding: 6px 0 0;
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--line);
+}
+
+.al-sub-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 44px;
+  font-size: 0.8125rem;
+  color: var(--ink-soft);
+}
+
+.al-sub-item.is-unread {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.al-read-label {
+  font-size: 0.75rem;
+  color: var(--ink-soft);
+}
+
+/* ---------- Empty, error, notice, skeleton ---------- */
+
+.al-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 32px 20px;
+  border-radius: 20px;
+  border: 1px dashed var(--line);
+  background: var(--surface);
+  text-align: center;
+}
+
+.al-empty-icon {
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--low) 14%, var(--surface));
+  color: var(--low);
+}
+
+.al-empty-icon--warn {
+  background: color-mix(in srgb, var(--high) 14%, var(--surface));
+  color: var(--high);
+}
+
+.al-empty-title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 650;
+  color: var(--ink);
+}
+
+.al-empty-text {
+  margin: 0;
+  max-width: 28ch;
+  font-size: 0.875rem;
+  line-height: 1.45;
+  color: var(--ink-soft);
+  overflow-wrap: anywhere;
+}
+
+.al-notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--high) 12%, var(--surface));
+  color: var(--ink);
+  font-size: 0.875rem;
+}
+
+.al-skel {
+  display: block;
+  height: 84px;
+  border-radius: 16px;
+  background: linear-gradient(90deg, var(--surface-2), var(--surface), var(--surface-2));
+  background-size: 200% 100%;
+  animation: al-shimmer 1.4s linear infinite;
+}
+
+@keyframes al-shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .al-skel,
+  .al-spin {
+    animation: none;
+  }
+}

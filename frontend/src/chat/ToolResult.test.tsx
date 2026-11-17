@@ -100,7 +100,32 @@ describe("ToolResult", () => {
       />,
     );
 
-    expect(screen.queryByRole("link")).not.toBeInTheDocument();
+    expect(document.querySelector('a[href^="tel:"]')).toBeNull();
+    expect(screen.getByRole("link", { name: /Open Seoul Allergy Clinic in Naver Map/ })).toBeInTheDocument();
+  });
+
+  it("gives each clinic a Naver Map link next to its phone link", () => {
+    render(
+      <ToolResult
+        status="done"
+        result={{ provider_available: true, clinics: twoClinics }}
+      />,
+    );
+
+    const links = screen.getAllByRole("link", { name: /Open .* in Naver Map/ });
+    expect(links).toHaveLength(2);
+    expect(links[0]).toHaveAttribute(
+      "href",
+      `https://map.naver.com/p/search/${encodeURIComponent("Seoul Allergy Clinic 12 Sejong-daero, Jung-gu, Seoul")}`,
+    );
+    expect(links[0]).toHaveAttribute("target", "_blank");
+    expect(links[0]).toHaveAttribute("rel", "noopener noreferrer");
+    expect(links[1]).toHaveAttribute(
+      "href",
+      `https://map.naver.com/p/search/${encodeURIComponent("Han River Hospital")}`,
+    );
+    // The existing phone link is kept.
+    expect(screen.getByRole("link", { name: "02-1234-5678" })).toHaveAttribute("href", "tel:02-1234-5678");
   });
 
   it("says no clinics found when the search ran and returned none", () => {

@@ -7,7 +7,6 @@
  */
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { ChevronLeft } from "lucide-react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -81,13 +80,16 @@ function errorText(error: unknown, fallback: string): string {
   return error instanceof Error && error.message ? error.message : fallback;
 }
 
+/**
+ * The frame around a subscreen. The app header shows the visible title and the
+ * Back arrow, so this keeps only a visually hidden heading. It still takes
+ * focus on open, so a screen reader announces the screen it landed on.
+ */
 export function SettingsSubScreen({
   title,
-  onBack,
   children,
 }: {
   title: string;
-  onBack: () => void;
   children: ReactNode;
 }) {
   const headingRef = useRef<HTMLHeadingElement>(null);
@@ -98,19 +100,9 @@ export function SettingsSubScreen({
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-center gap-1">
-        <Button variant="ghost" onClick={onBack} className="min-h-11 gap-1 px-2">
-          <ChevronLeft aria-hidden className="size-4" />
-          Back
-        </Button>
-        <h2
-          ref={headingRef}
-          tabIndex={-1}
-          className="font-display text-lg font-semibold focus:outline-none"
-        >
-          {title}
-        </h2>
-      </div>
+      <h2 ref={headingRef} tabIndex={-1} className="settings-sr-only">
+        {title}
+      </h2>
       {children}
     </div>
   );

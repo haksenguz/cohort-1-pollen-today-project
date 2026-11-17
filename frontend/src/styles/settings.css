@@ -1,0 +1,293 @@
+/*
+ * Settings overview styles.
+ *
+ * Imported after screens.css in main.tsx, so these rules win over the older
+ * flat-list rules. Built on the theme tokens, on a 4px grid, with 44px minimum
+ * touch targets.
+ */
+
+/* ---------- Hero: who is signed in ---------- */
+
+.settings-hero {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+  min-height: 44px;
+  padding: 16px;
+  border: 0;
+  border-radius: 16px;
+  background: var(--surface-2);
+  color: inherit;
+  text-align: left;
+  transition: background-color 150ms ease;
+}
+
+.settings-hero:hover {
+  background: color-mix(in oklab, var(--surface-2) 88%, var(--brand) 12%);
+}
+
+.settings-hero:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.settings-hero-avatar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 999px;
+  background: var(--brand-tint);
+  color: var(--brand-ink);
+  font-weight: 600;
+  font-size: 18px;
+  letter-spacing: 0.02em;
+}
+
+.settings-hero-body {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.settings-hero-email {
+  overflow: hidden;
+  font-size: 15px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  align-self: flex-start;
+  min-height: 24px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: var(--brand-tint);
+  color: var(--brand-ink);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.settings-hero-chevron {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  color: var(--muted-foreground);
+}
+
+/* ---------- Groups and inset cards ---------- */
+
+.settings-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.settings-group-label {
+  padding: 0 4px;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.settings-card {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 16px;
+  background: var(--surface-2);
+}
+
+.settings-card > * + * {
+  border-top: 1px solid var(--line);
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 56px;
+  padding: 12px 16px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  transition: background-color 150ms ease;
+}
+
+.settings-row:hover {
+  background: color-mix(in oklab, var(--surface-2) 90%, var(--foreground) 6%);
+}
+
+.settings-row:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+
+.settings-tile {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: var(--brand-tint);
+  color: var(--brand-ink);
+}
+
+.settings-tile-danger {
+  background: color-mix(in oklab, var(--destructive) 14%, transparent);
+  color: var(--destructive);
+}
+
+.settings-row-text {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.settings-row-title {
+  font-size: 15px;
+  font-weight: 500;
+}
+
+.settings-row-value {
+  overflow: hidden;
+  color: var(--muted-foreground);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-row-chevron {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  color: var(--muted-foreground);
+  transition: transform 150ms ease;
+}
+
+.settings-row-chevron.is-open {
+  transform: rotate(90deg);
+}
+
+/* ---------- Search ---------- */
+
+.settings-search {
+  position: relative;
+}
+
+.settings-search-icon {
+  position: absolute;
+  top: 50%;
+  left: 14px;
+  width: 16px;
+  height: 16px;
+  transform: translateY(-50%);
+  color: var(--muted-foreground);
+  pointer-events: none;
+}
+
+.settings-search input {
+  padding-left: 40px;
+  border-radius: 12px;
+}
+
+/* ---------- Sign out and danger zone ---------- */
+
+.settings-signout {
+  width: 100%;
+  min-height: 44px;
+  border-radius: 12px;
+}
+
+.settings-danger {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid color-mix(in oklab, var(--destructive) 28%, transparent);
+  border-radius: 16px;
+}
+
+.settings-danger-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.settings-danger-title {
+  color: var(--destructive);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.settings-danger-body {
+  color: var(--muted-foreground);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.settings-danger-button {
+  width: 100%;
+  min-height: 44px;
+  border-radius: 12px;
+}
+
+.settings-empty {
+  padding: 16px 4px;
+  color: var(--muted-foreground);
+  font-size: 14px;
+}
+
+/* ---------- Loading skeleton, same shape as the overview ---------- */
+
+.settings-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.settings-skeleton-hero {
+  height: 88px;
+  border-radius: 16px;
+}
+
+.settings-skeleton-search {
+  height: 44px;
+  border-radius: 12px;
+}
+
+.settings-skeleton-card {
+  height: 144px;
+  border-radius: 16px;
+}
+
+/* ---------- Visually hidden, but still announced and focusable ---------- */
+
+.settings-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}

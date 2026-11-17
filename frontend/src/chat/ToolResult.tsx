@@ -38,6 +38,7 @@ import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
 import { formatDistance } from "../utils/format";
+import { naverMapSearchUrl } from "../utils/naverMap";
 
 /**
  * One clinic, as `find_nearby_care` returns it. Matches `HospitalResult` in
@@ -225,7 +226,24 @@ function readClinics(raw: readonly ToolResultClinic[] | null | undefined): Norma
     }));
 }
 
+/** Shared by the chat card and the Today list, so both render the same pill. */
+export function NaverMapLink({ href, name }: { href: string; name: string }) {
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      aria-label={`Open ${name} in Naver Map`}
+      className="map-link"
+    >
+      <MapPin className="size-3" aria-hidden="true" />
+      Open in Naver Map
+    </a>
+  );
+}
+
 function ClinicRow({ clinic }: { clinic: NormalizedClinic }) {
+  const mapUrl = naverMapSearchUrl(clinic.name, clinic.address);
   return (
     <li className="flex flex-col gap-0.5 border-t border-border/70 py-2 first:border-t-0 first:pt-0 last:pb-0">
       <div className="flex items-baseline justify-between gap-2">
@@ -237,17 +255,22 @@ function ClinicRow({ clinic }: { clinic: NormalizedClinic }) {
       {clinic.address ? (
         <span className="text-xs leading-snug break-words text-muted-foreground">{clinic.address}</span>
       ) : null}
-      {clinic.phone ? (
-        /* min-h-11 is the 44px target the rest of the app uses, not a size
-           this link happens to render at: a 12px line of phone number is not a
-           tap target on a phone. */
-        <a
-          href={`tel:${clinic.phone.replace(/\s+/g, "")}`}
-          className="inline-flex min-h-11 w-fit items-center gap-1 text-xs font-medium text-primary hover:underline"
-        >
-          <Phone className="size-3" aria-hidden="true" />
-          {clinic.phone}
-        </a>
+      {clinic.phone || mapUrl ? (
+        <div className="flex flex-wrap items-center gap-x-3">
+          {clinic.phone ? (
+            /* min-h-11 is the 44px target the rest of the app uses, not a size
+               this link happens to render at: a 12px line of phone number is not a
+               tap target on a phone. */
+            <a
+              href={`tel:${clinic.phone.replace(/\s+/g, "")}`}
+              className="inline-flex min-h-11 w-fit items-center gap-1 text-xs font-medium text-primary hover:underline"
+            >
+              <Phone className="size-3" aria-hidden="true" />
+              {clinic.phone}
+            </a>
+          ) : null}
+          {mapUrl ? <NaverMapLink href={mapUrl} name={clinic.name} /> : null}
+        </div>
       ) : null}
     </li>
   );
