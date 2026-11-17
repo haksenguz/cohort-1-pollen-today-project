@@ -30,6 +30,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from functools import partial
 from typing import Annotated, Any, Literal
+from uuid import uuid4
 from weakref import WeakSet
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -658,6 +659,36 @@ async def _origin_for(session: AsyncSession, user_id: int) -> symptom_agent.Near
     return symptom_agent.NearbyCareOrigin(latitude=user.latitude, longitude=user.longitude)
 
 
+def _is_emergency(result: dict) -> bool:
+    """True when the rule engine's verdict on this turn is EMERGENCY."""
+    level = result.get("triage_level")
+    return str(getattr(level, "value", level)) == "EMERGENCY"
+
+
+def _has_clinic_lookup(tool_calls: list[ToolCallEvent]) -> bool:
+    """True when the model already ran a clinic lookup this turn."""
+    clinic_names = {symptom_agent.FIND_NEARBY_CARE_TOOL, "find_nearby_care"}
+    return any(call.name in clinic_names for call in tool_calls)
+
+
+async def _nearby_clinics_observation(origin: symptom_agent.NearbyCareOrigin | None) -> str:
+    """Run the clinic lookup off the event loop and shape it as a tool observation.
+
+    The same tool and the same refusal codes the model would get, so `_settle`
+    reads it exactly as it reads a model-initiated lookup.
+    """
+    tool = symptom_agent.build_nearby_care_tool(origin)
+    try:
+        payload = await asyncio.to_thread(tool.execute, {})
+    except symptom_agent.ToolRefused as exc:
+        message = symptom_agent.TOOL_REFUSAL_MESSAGES.get(exc.code, "that lookup failed.")
+        return f"{_ERROR_PREFIX}{exc.code}: {message}"
+    except Exception:  # noqa: BLE001 — a lookup must not break the turn
+        logger.exception("emergency clinic lookup failed")
+        return f"{_ERROR_PREFIX}that lookup failed."
+    return json.dumps(payload, ensure_ascii=False, default=str)
+
+
 async def _run_chat(
     req: ChatRequest,
     session: AsyncSession,
@@ -797,6 +828,32 @@ async def _run_chat(
         # for at `running`, and they are not part of what the call returned.
         settled = ToolCallEvent(
             id=call.id, name=call.name, status=status, summary=summary, result=payload, code=code
+        )
+        tool_calls.append(settled)
+        yield _sse("tool", settled.model_dump(exclude_none=True))
+
+    # An EMERGENCY verdict always gets the nearby-clinic lookup, run here and
+    # not left to the model. The model sometimes skipped it, and on this path a
+    # clinic the user can reach now matters more than anything else in the
+    # reply. The verdict comes from the rule engine. The lookup adds no verdict.
+    if _is_emergency(result) and not _has_clinic_lookup(tool_calls):
+        lookup_id = f"emergency-clinics-{uuid4().hex[:8]}"
+        lookup_name = symptom_agent.FIND_NEARBY_CARE_TOOL
+        yield _sse(
+            "tool",
+            ToolCallEvent(id=lookup_id, name=lookup_name, status="running").model_dump(
+                exclude_none=True
+            ),
+        )
+        observation = await _nearby_clinics_observation(origin)
+        status, summary, payload, code = _settle(observation, lookup_name)
+        settled = ToolCallEvent(
+            id=lookup_id,
+            name=lookup_name,
+            status=status,
+            summary=summary,
+            result=payload,
+            code=code,
         )
         tool_calls.append(settled)
         yield _sse("tool", settled.model_dump(exclude_none=True))

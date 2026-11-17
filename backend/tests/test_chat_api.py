@@ -1172,3 +1172,62 @@ async def test_half_a_location_is_treated_as_none(chat_session: AsyncSession) ->
         user = found.scalars().first()
         user_id = user.id if user else 999_999
         assert await chat_api._origin_for(chat_session, user_id) is None, email
+
+
+_EMERGENCY_EXTRACTION = json.dumps(
+    {
+        "symptoms": ["throat_swelling"],
+        "severity": 5,
+        "duration": "just now",
+        "possible_trigger": None,
+        "breathing_difficulty": True,
+        "airway_swelling": True,
+        "ready": True,
+    }
+)
+
+
+@pytest.mark.asyncio
+async def test_an_emergency_always_runs_the_clinic_lookup_without_the_model(
+    chat_client: AsyncClient, stub_persistence, scripted_llm, fake_search
+) -> None:
+    """The lookup on an EMERGENCY verdict is the server's call, not the model's.
+
+    The model here never asks for a tool. The lookup must still run, publish its
+    clinics, and do so after the rule engine's verdict.
+    """
+    calls = fake_search(
+        clinics=[
+            {"name": "Seoul ENT", "address": None, "distance_m": 300, "phone": None, "rank": 1}
+        ]
+    )
+    scripted_llm(_EMERGENCY_EXTRACTION)
+
+    token = await _register_and_login(
+        chat_client, "emergency@example.com", latitude=37.5665, longitude=126.978
+    )
+    events = await _turn(chat_client, token, message="my throat is closing up")
+
+    done = next(data for name, data in events if name == "done")
+    assert done["triage_level"] == "EMERGENCY"
+
+    lookup = _tool_events(events)[-1]
+    assert lookup["status"] == "done"
+    assert lookup["result"]["clinics"][0]["name"] == "Seoul ENT"
+    assert len(calls) == 1, "the clinic lookup ran exactly once"
+
+
+@pytest.mark.asyncio
+async def test_an_emergency_without_a_location_says_so_and_does_not_search(
+    chat_client: AsyncClient, stub_persistence, scripted_llm, fake_search
+) -> None:
+    calls = fake_search(clinics=[])
+    scripted_llm(_EMERGENCY_EXTRACTION)
+
+    token = await _register_and_login(chat_client, "emergency-noloc@example.com")
+    events = await _turn(chat_client, token, message="my throat is closing up")
+
+    lookup = _tool_events(events)[-1]
+    assert lookup["status"] == "error"
+    assert lookup["code"] == symptom_agent.NO_LOCATION
+    assert calls == []
