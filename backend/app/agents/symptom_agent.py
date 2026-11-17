@@ -109,7 +109,7 @@ def _safety_question_for(state: AllergyState) -> str:
 
 def _wants_lookup(state: AllergyState) -> bool:
     text = _last_user_text(state)
-    if _LOOKUP_INTENT.search(text):
+    if _LOOKUP_INTENT.search(text) or _ENVIRONMENT_INTENT.search(text):
         return True
     breathing, airway = red_flag_text.scan(text)
     return breathing or airway
@@ -153,7 +153,11 @@ return factual directory data; they never judge the user's condition, and a tool
 reached says so plainly — say that to the user instead of guessing.
 
 You never diagnose, never recommend medication, and never state how urgent or serious anything is.
-A separate rule-based system owns that decision. Reply with the answer only, no extra text."""
+A separate rule-based system owns that decision. Reply with the answer only, no extra text.
+
+When the user asks for a clinic or doctor, call the clinic lookup and pass the specialty they name
+(for example cardiology, dermatology, ENT) or one that fits their symptoms. After the results, say
+in one or two sentences what you found, and name the closest option."""
 
 _OBSERVE_PROMPT = "Use the lookup results above if they help, then answer the user in one line."
 
@@ -922,6 +926,10 @@ def make_ask_question_node(
             question = _ask_the_model(llm, prompt, state)
             if not question:
                 question = FALLBACK_QUESTION
+            # Answer what the user asked first, then carry on with the intake.
+            preface = state.get("tool_answer") or ""
+            if preface:
+                question = f"{preface}\n\n{question}"
 
         state["assistant_reply"] = question
         state["messages"] = [*state.get("messages", []), {"role": "assistant", "content": question}]
@@ -941,7 +949,9 @@ def _ask_the_model(llm: LLMClient, prompt: list[ChatMessage], state: AllergyStat
     The pieces are used exactly as they arrive. Trimming them would break the
     promise the client relies on: what it appended is what the reply is.
     """
-    streamer = getattr(llm, "stream_complete", None)
+    # A lookup answer goes in front of the question, so the reply is sent whole
+    # rather than streamed (a streamed question would already be on the wire).
+    streamer = None if state.get("tool_answer") else getattr(llm, "stream_complete", None)
     if callable(streamer):
         pieces: list[str] = []
         try:
@@ -1057,7 +1067,11 @@ def make_tool_node(
                 # re-asking, which is what keeps the loop short in practice.
                 transcript = [*transcript, {"role": "user", "content": _OBSERVE_PROMPT}]
             try:
-                turn = llm.complete_with_tools(transcript, specs)  # type: ignore[attr-defined]
+                # Once a lookup has run, ask for the answer with no tools on
+                # offer. A model that is still holding tools tends to call them
+                # again until the step budget is gone and never answers.
+                offered = specs if not observations else []
+                turn = llm.complete_with_tools(transcript, offered)  # type: ignore[attr-defined]
             except LLMCallError as exc:
                 logger.warning("symptom_agent: tool-enabled call failed (%s)", exc.kind)
                 break
@@ -1163,10 +1177,15 @@ def triage_node(state: AllergyState) -> AllergyState:
     state["triage_recommendation"] = outcome.recommendation
     state["triage_reasons"] = outcome.reasons
     state["triage_rule_version"] = outcome.rule_version
-    state["assistant_reply"] = outcome.recommendation
+    # A lookup answer the user asked for ("which clinic?") goes after the
+    # verdict instead of vanishing behind it. The verdict text stays untouched.
+    reply = outcome.recommendation
+    if state.get("tool_answer"):
+        reply = f"{reply}\n\n{state['tool_answer']}"
+    state["assistant_reply"] = reply
     state["messages"] = [
         *state.get("messages", []),
-        {"role": "assistant", "content": outcome.recommendation},
+        {"role": "assistant", "content": reply},
     ]
     return state
 

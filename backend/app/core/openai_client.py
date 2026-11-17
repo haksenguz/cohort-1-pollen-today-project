@@ -249,6 +249,10 @@ def _classify(exc: Exception) -> LLMCallError:
 
     if name in ("APITimeoutError", "Timeout", "ReadTimeout", "ConnectTimeout"):
         return LLMCallError("timeout", _detail(exc, "model call timed out"))
+    if "output_parse_failed" in text or "parsing failed" in text:
+        # The model wrote something the provider could not parse. Asking again
+        # usually works, so this is a blip, not a setup problem.
+        return LLMCallError("malformed", _detail(exc, "model output could not be parsed"))
     if name == "RateLimitError" or "rate limit" in text or "429" in text:
         return LLMCallError("rate_limit", _detail(exc, "model rate limited"))
     if _is_a_rejected_request(name, text):
@@ -374,12 +378,22 @@ class OpenAIChatClient:
         }
         if tools:
             kwargs["tools"] = list(tools)
-        try:
-            return self._client.chat.completions.create(**kwargs)
-        except Exception as exc:  # noqa: BLE001 — normalized immediately below
-            err = _classify(exc)
-            logger.warning("openai_client: %s", err.detail)
-            raise err from exc
+        if "gpt-oss" in self._model:
+            # Reasoning models spend max_tokens on hidden thinking; on a small
+            # budget nothing is left to write and the provider answers 400
+            # "output_parse_failed". Low effort keeps the budget for the answer.
+            kwargs["reasoning_effort"] = "low"
+        err: LLMCallError | None = None
+        for attempt in range(2):
+            try:
+                return self._client.chat.completions.create(**kwargs)
+            except Exception as exc:  # noqa: BLE001 — normalized immediately below
+                err = _classify(exc)
+                logger.warning("openai_client: %s", err.detail)
+                if err.kind == "malformed" and attempt == 0:
+                    continue
+                raise err from exc
+        raise err  # type: ignore[misc]
 
 
 def _build_openai_client(
