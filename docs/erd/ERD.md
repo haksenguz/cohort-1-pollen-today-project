@@ -9,7 +9,7 @@ Two ways to view it in Luna Modeler:
 
 1. **Open the `.dmm` directly** — no database needed.
 2. **Reverse-engineer** — run `01_schema.sql` into Postgres (docker-compose
-   does this automatically via `backend/db/init/`), then in Luna: new
+   after `alembic upgrade head`; the init mount is gone), then in Luna: new
    PostgreSQL connection → reverse engineer. Use this if you prefer Luna to
    draw the model from a live DB.
 

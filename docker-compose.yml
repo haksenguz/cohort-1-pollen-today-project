@@ -21,10 +21,10 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB}
     volumes:
       - pgdata:/var/lib/postgresql/data
-      # Runs once, on an empty volume only. Safe to drop if the app's own
-      # init_db() already creates the schema - which it does, from SQLModel
-      # metadata, so the constraints declared in __table_args__ are applied.
-      - ./backend/db/init:/docker-entrypoint-initdb.d:ro
+      # No init SQL is mounted here. The schema comes only from the alembic
+      # history, which the api container applies on boot (backend/entrypoint.sh).
+      # Mounting db/init as well would create the tables first and make the
+      # initial alembic migration fail with DuplicateTable.
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 5s

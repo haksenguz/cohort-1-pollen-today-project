@@ -24,6 +24,18 @@ from app.api import (
 )
 from app.core.config import assert_production_ready, get_settings
 
+# Trust the operating system's certificate store, not only certifi's bundle.
+# Behind a corporate proxy or antivirus that re-signs TLS, certifi rejects every
+# outbound call (weather, pollen, Naver) with CERTIFICATE_VERIFY_FAILED, and the
+# providers then read as "unavailable". The OS store already trusts that CA.
+try:
+    import truststore
+
+    truststore.inject_into_ssl()
+except ImportError:  # pragma: no cover
+    pass
+
+
 settings = get_settings()
 logger = logging.getLogger(__name__)
 
@@ -43,8 +55,8 @@ async def lifespan(app: FastAPI):
     # no-op outside production.
     assert_production_ready(settings)
 
-    # Tables are created by db/init/01_schema.sql in docker; init_db() is a
-    # convenience for local runs without the SQL init. Import lazily so the app
+    # Docker builds the schema through `alembic upgrade head` (backend/entrypoint.sh).
+    # init_db() is a local-run convenience. Import lazily so the app
     # still imports when no database is reachable (e.g. unit tests). Any
     # failure here (unreachable DB, bad creds, ...) is non-fatal by design.
     try:

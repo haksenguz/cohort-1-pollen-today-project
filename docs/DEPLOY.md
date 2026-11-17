@@ -148,7 +148,10 @@ docker compose up -d --build
 ```
 
 The API container runs `alembic upgrade head` on boot, so the schema follows
-the code. It is a no-op once the database is at head.
+the code. It is a no-op once the database is at head. Postgres does not run
+any SQL on first start: `backend/db/init/01_schema.sql` is kept as a reference
+copy only and is not mounted, because it would collide with the initial
+migration.
 
 ## Backing up
 

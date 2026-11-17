@@ -16,6 +16,7 @@ dependencies = [
     "pyjwt>=2.9",
     "greenlet>=3.5.5",
     "apscheduler>=3.10",
+    "truststore>=0.10.4",
 ]
 
 [dependency-groups]

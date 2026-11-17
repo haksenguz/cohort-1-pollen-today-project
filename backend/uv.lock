@@ -59,6 +59,7 @@ dependencies = [
     { name = "pydantic-settings" },
     { name = "pyjwt" },
     { name = "sqlmodel" },
+    { name = "truststore" },
 ]
 
 [package.dev-dependencies]
@@ -84,6 +85,7 @@ requires-dist = [
     { name = "pydantic-settings", specifier = ">=2.4" },
     { name = "pyjwt", specifier = ">=2.9" },
     { name = "sqlmodel", specifier = ">=0.0.22" },
+    { name = "truststore", specifier = ">=0.10.4" },
 ]
 
 [package.metadata.requires-dev]
