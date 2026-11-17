@@ -1,11 +1,26 @@
-import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { ArrowLeft } from "lucide-react";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 
 import { getCurrentEnvironment } from "../api/client";
 import type { RiskLevel } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
 import { formatRisk, riskClass } from "../utils/format";
 import { LeafIcon } from "./icons";
+import { useSwr } from "../utils/swrCache";
+import { SCREEN_TITLE } from "../routes/settings/screenTitles";
+import { isSettingsScreenId } from "../routes/settings/settingsScreenIds";
+
+/** What the header calls the screen the user is on. Unknown routes keep the brand. */
+function titleFor(pathname: string, subscreen: string | null): string {
+  if (pathname.startsWith("/settings") && subscreen && isSettingsScreenId(subscreen)) {
+    return SCREEN_TITLE[subscreen];
+  }
+  if (pathname.startsWith("/chat")) return "Chat";
+  if (pathname.startsWith("/today")) return "Today";
+  if (pathname.startsWith("/alerts")) return "Alerts";
+  if (pathname.startsWith("/settings")) return "Settings";
+  return "Allergy Companion";
+}
 
 /**
  * The header is one slim row (B-028).
@@ -22,48 +37,54 @@ import { LeafIcon } from "./icons";
  */
 export function TopHeader() {
   const navigate = useNavigate();
+  const { pathname } = useLocation();
+  const [params] = useSearchParams();
+  const subscreen = pathname.startsWith("/settings") ? params.get("screen") : null;
+  const inSubscreen = subscreen !== null && isSettingsScreenId(subscreen);
+  const title = titleFor(pathname, subscreen);
   const { user } = useAuth();
-  const [risk, setRisk] = useState<RiskLevel | null | undefined>(undefined);
-
   const lat = user?.latitude ?? null;
   const lon = user?.longitude ?? null;
 
-  useEffect(() => {
-    // `undefined` means "no reading yet", `null` means "the providers gave
-    // nothing to score". The two are different, so the pill never claims a
-    // level it does not have.
-    if (lat === null || lon === null) {
-      setRisk(null);
-      return;
-    }
-
-    let cancelled = false;
-    setRisk(undefined);
-    getCurrentEnvironment(lat, lon)
-      .then((env) => {
-        if (!cancelled) setRisk(env.risk);
-      })
-      .catch(() => {
-        // A provider that is down is not a low-risk day, so the pill keeps the
-        // unavailable state instead of inventing a level.
-        if (!cancelled) setRisk(null);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [lat, lon]);
+  // Shares its cache key with the Today screen, so opening Today after the
+  // header has loaded costs no second request. `undefined` means "no reading
+  // yet", `null` means "the providers gave nothing to score": the pill never
+  // claims a level it does not have.
+  const reading = useSwr(
+    lat !== null && lon !== null ? `env:${lat.toFixed(2)},${lon.toFixed(2)}` : null,
+    () => getCurrentEnvironment(lat as number, lon as number),
+    { freshMs: 30 * 60_000, maxAgeMs: 6 * 3_600_000 },
+  );
+  const risk: RiskLevel | null | undefined = reading.data
+    ? reading.data.risk
+    : reading.loading
+      ? undefined
+      : null;
 
   const level = risk === undefined ? "" : formatRisk(risk);
   const dotClass = riskClass(risk ?? null);
 
   return (
-    <header className="top">
+    <header className="top" data-subscreen={inSubscreen ? "true" : undefined}>
       <div className="brandrow">
-        <span className="mark" aria-hidden="true">
-          <LeafIcon />
+        {inSubscreen ? (
+          <button
+            type="button"
+            className="top-back"
+            aria-label="Back to settings"
+            onClick={() => navigate("/settings", { replace: true })}
+          >
+            <ArrowLeft aria-hidden="true" />
+          </button>
+        ) : (
+          <span className="mark" aria-hidden="true">
+            <LeafIcon />
+          </span>
+        )}
+        {/* Keyed on the title so the text fades in again on every change. */}
+        <span className="brand brand-name brand-swap" key={title}>
+          {title}
         </span>
-        <span className="brand brand-name">Allergy Companion</span>
       </div>
       <button
         type="button"

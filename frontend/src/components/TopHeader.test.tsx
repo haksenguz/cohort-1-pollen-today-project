@@ -6,6 +6,7 @@
  * CSS class names, except for the two rules that cannot be seen in a DOM:
  * the header being a row and the shell having a definite height.
  */
+import { resetSwrCache } from "../utils/swrCache";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -78,6 +79,7 @@ const renderHeader = () =>
   );
 
 beforeEach(() => {
+  resetSwrCache();
   vi.mocked(useAuth).mockReturnValue({
     user: user(),
     status: "authenticated",

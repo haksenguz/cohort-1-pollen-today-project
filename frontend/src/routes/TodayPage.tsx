@@ -9,12 +9,12 @@
  *   - the hospital provider is unkeyed: show a "provider unavailable" note
  *     instead of pretending there are zero results.
  */
-import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
 
 import { useAuth } from "../auth/AuthContext";
+import { NaverMapLink } from "../chat/ToolResult";
 import { ApiError, getCurrentEnvironment, getNearbyHospitals } from "../api/client";
 import type { EnvironmentResponse, HospitalNearbyResponse } from "../api/types";
 import {
@@ -24,54 +24,37 @@ import {
   formatRisk,
   riskClass,
 } from "../utils/format";
+import { naverMapSearchUrl } from "../utils/naverMap";
+import { ageLabel, useSwr } from "../utils/swrCache";
 
 export function TodayPage() {
   const { user, status } = useAuth();
   const navigate = useNavigate();
-  const [env, setEnv] = useState<EnvironmentResponse | null>(null);
-  const [envError, setEnvError] = useState<string | null>(null);
-  const [hospitals, setHospitals] = useState<HospitalNearbyResponse | null>(null);
-  const [hospitalsError, setHospitalsError] = useState<string | null>(null);
-  const [loaded, setLoaded] = useState(false);
-
   const lat = user?.latitude ?? null;
   const lon = user?.longitude ?? null;
   const hasLocation = lat !== null && lon !== null;
 
-  useEffect(() => {
-    if (status === "loading") return;
-    if (!hasLocation) return;
+  // Cached readings show at once and refresh behind them (see utils/swrCache).
+  // Pollen is published three times a day, so 30 minutes is fresh enough, and a
+  // reading older than six hours is dropped rather than passed off as today's.
+  const place = hasLocation ? `${lat.toFixed(2)},${lon.toFixed(2)}` : null;
+  const envQuery = useSwr(
+    place && status !== "loading" ? `env:${place}` : null,
+    () => getCurrentEnvironment(lat as number, lon as number),
+    { freshMs: 30 * 60_000, maxAgeMs: 6 * 3_600_000 },
+  );
+  const hospitalQuery = useSwr(
+    place && status !== "loading" ? `care:${place}` : null,
+    () => getNearbyHospitals({ lat: lat as number, lon: lon as number }),
+    { freshMs: 6 * 3_600_000, maxAgeMs: 24 * 3_600_000 },
+  );
 
-    let cancelled = false;
-    // oxlint-disable-next-line react/set-state-in-effect -- reset-before-refetch on coord change
-    setLoaded(false);
-    setEnvError(null);
-    setHospitalsError(null);
+  const env: EnvironmentResponse | null = envQuery.data;
+  const envError = envQuery.error && !env ? toMessage(envQuery.error) : null;
+  const hospitals: HospitalNearbyResponse | null = hospitalQuery.data;
+  const hospitalsError = hospitalQuery.error && !hospitals ? toMessage(hospitalQuery.error) : null;
 
-    Promise.allSettled([
-      getCurrentEnvironment(lat as number, lon as number),
-      getNearbyHospitals({ lat: lat as number, lon: lon as number }),
-    ]).then(([envResult, hospResult]) => {
-      if (cancelled) return;
-      if (envResult.status === "fulfilled") {
-        setEnv(envResult.value);
-      } else {
-        setEnvError(toMessage(envResult.reason));
-      }
-      if (hospResult.status === "fulfilled") {
-        setHospitals(hospResult.value);
-      } else {
-        setHospitalsError(toMessage(hospResult.reason));
-      }
-      setLoaded(true);
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [status, hasLocation, lat, lon]);
-
-  if (status === "loading" || (hasLocation && !loaded && !envError)) {
+  if (status === "loading" || (hasLocation && envQuery.loading && !envError)) {
     return (
       <div className="skeleton-stack" role="status" aria-live="polite">
         <span className="sr-only">Loading today</span>
@@ -142,7 +125,15 @@ export function TodayPage() {
   return (
     <>
       <h2 className="vt">Today</h2>
-      <p className="vsub">Pollen, air quality and your risk score for today.</p>
+      <p className="vsub">
+        Pollen, air quality and your risk score for today.
+        {envQuery.updatedAt !== null ? (
+          <span className="vsub-age" role="status">
+            {" "}
+            {envQuery.refreshing ? "Refreshing… " : ""}Updated {ageLabel(envQuery.updatedAt)}
+          </span>
+        ) : null}
+      </p>
 
       {env ? (
         <section className="risk-card" aria-label="Current risk">
@@ -276,6 +267,11 @@ function HospitalSection({
                 {h.specialty && <span>{h.specialty}</span>}
                 {h.phone && <span> · {h.phone}</span>}
               </div>
+              {naverMapSearchUrl(h.name, h.address) ? (
+                <div className="hospital-actions">
+                  <NaverMapLink href={naverMapSearchUrl(h.name, h.address) as string} name={h.name} />
+                </div>
+              ) : null}
             </li>
           ))}
         </ul>

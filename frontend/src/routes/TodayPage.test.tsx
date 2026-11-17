@@ -3,6 +3,7 @@
  * nearby hospitals) and a sync one (the current user from auth). We
  * mock the API client and useAuth, then assert what the user sees.
  */
+import { resetSwrCache } from "../utils/swrCache";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -83,6 +84,7 @@ const hospitals = (overrides: Partial<HospitalNearbyResponse> = {}): HospitalNea
 });
 
 beforeEach(() => {
+  resetSwrCache();
   vi.mocked(useAuth).mockReturnValue({
     user: user(),
     status: "authenticated",
@@ -144,6 +146,35 @@ describe("TodayPage — happy path", () => {
     expect(screen.getByText("420 m")).toBeInTheDocument();
     // Phone text is split across nodes, so assert the whole row contains it.
     expect(screen.getByText(/02-1234-5678/)).toBeInTheDocument();
+  });
+
+  it("links each hospital to Naver Map in a new tab", async () => {
+    vi.mocked(getCurrentEnvironment).mockResolvedValue(env());
+    vi.mocked(getNearbyHospitals).mockResolvedValue(
+      hospitals({
+        count: 1,
+        results: [
+          {
+            name: "Seoul ENT Clinic",
+            address: "12 Sejong-daero",
+            distance_m: 420,
+            specialty: "ENT",
+            category: "hospital",
+            phone: null,
+            rank: 1,
+          },
+        ],
+      }),
+    );
+
+    renderPage();
+    const link = await screen.findByRole("link", { name: /Open Seoul ENT Clinic in Naver Map/ });
+    expect(link).toHaveAttribute(
+      "href",
+      `https://map.naver.com/p/search/${encodeURIComponent("Seoul ENT Clinic 12 Sejong-daero")}`,
+    );
+    expect(link).toHaveAttribute("target", "_blank");
+    expect(link).toHaveAttribute("rel", "noopener noreferrer");
   });
 
   it("calls both endpoints with the user's coordinates", async () => {
