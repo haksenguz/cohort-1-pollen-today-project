@@ -20,7 +20,7 @@
  */
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { CircleCheck, TriangleAlert } from "lucide-react";
+import { TriangleAlert } from "lucide-react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
@@ -30,14 +30,12 @@ type State = "hidden" | "ready" | "missing";
 
 export function ChatAgentStatus() {
   const [state, setState] = useState<State>("hidden");
-  const [model, setModel] = useState("");
 
   useEffect(() => {
     let cancelled = false;
     readDevLlmSettings()
       .then((s) => {
         if (cancelled) return;
-        setModel(s.model);
         setState(s.configured ? "ready" : "missing");
       })
       .catch(() => {
@@ -79,15 +77,7 @@ export function ChatAgentStatus() {
     );
   }
 
-  return (
-    <div className="mb-1.5">
-      <Alert role="status">
-        <CircleCheck aria-hidden="true" />
-        <AlertDescription>
-          Chat agent ready
-          <span className="text-muted-foreground"> · {model}</span>
-        </AlertDescription>
-      </Alert>
-    </div>
-  );
+  // Ready is the normal state: say nothing. A strip with the model name on
+  // every chat screen is a developer readout, not something a user needs.
+  return null;
 }

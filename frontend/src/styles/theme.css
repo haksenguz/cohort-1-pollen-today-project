@@ -66,69 +66,77 @@
 }
 
 :root {
-  --bg: #e7ece7;
+  --bg: #e6f6f9;
   --frame: #ffffff;
   --surface: #ffffff;
-  --surface-2: #f3f7f3;
-  --ink: #16241d;
-  --ink-soft: #5c6c63;
-  --line: #dde5df;
-  --brand: #2f7d57;
-  --brand-ink: #1d5a3c;
-  --brand-tint: #e7f2eb;
+  --surface-2: #f0fafc;
+  --ink: #0f3441;
+  --ink-soft: #4a6b76;
+  --line: #cfe7ed;
+  --brand: #0e7490;
+  --brand-ink: #0b566d;
+  --brand-tint: #e0f5f9;
   --low: #3a9d5d;
   --moderate: #d9922b;
   --high: #e0662f;
   --emergency: #c02736;
-  --bot: #f1f5f1;
-  --me: #2f7d57;
+  --bot: #e8f4f7;
+  --me: #0e7490;
   --me-ink: #ffffff;
   --shadow: 0 18px 50px rgba(20, 36, 29, 0.18);
   --overlay: rgb(0 0 0 / 0.5);
   --font: "Hanken Grotesk", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --display: "Fraunces", Georgia, serif;
+
+  /* Type scale. Use these instead of raw px sizes. */
+  --text-xs: 12px;
+  --text-sm: 13px;
+  --text-base: 15px;
+  --text-lg: 18px;
+  /* Bottom tab nav height, used to lift bottom-anchored toasts above it. */
+  --nav-h: 60px;
 }
 
 :root:not([data-theme="light"]) {
   @media (prefers-color-scheme: dark) {
-    --bg: #080d0a;
-    --frame: #111a15;
-    --surface: #111a15;
-    --surface-2: #18241d;
-    --ink: #e8efe9;
-    --ink-soft: #95a89d;
-    --line: #26362f;
-    --brand: #54bd83;
-    --brand-ink: #8fd8ac;
-    --brand-tint: #16281e;
+    --bg: #0b1417;
+    --frame: #111e23;
+    --surface: #111e23;
+    --surface-2: #172a31;
+    --ink: #e6f4f7;
+    --ink-soft: #8fb0b9;
+    --line: #223c45;
+    --brand: #22d3ee;
+    --brand-ink: #8aeaf7;
+    --brand-tint: #0f2b33;
     --low: #48b56c;
     --moderate: #e6a63f;
     --high: #ef7a43;
     --emergency: #e8586a;
-    --bot: #18241d;
-    --me: #2f7d57;
+    --bot: #172a31;
+    --me: #0e7490;
     --me-ink: #ffffff;
     --shadow: 0 18px 50px rgba(0, 0, 0, 0.5);
   }
 }
 
 :root[data-theme="dark"] {
-  --bg: #080d0a;
-  --frame: #111a15;
-  --surface: #111a15;
-  --surface-2: #18241d;
-  --ink: #e8efe9;
-  --ink-soft: #95a89d;
-  --line: #26362f;
-  --brand: #54bd83;
-  --brand-ink: #8fd8ac;
-  --brand-tint: #16281e;
+  --bg: #0b1417;
+  --frame: #111e23;
+  --surface: #111e23;
+  --surface-2: #172a31;
+  --ink: #e6f4f7;
+  --ink-soft: #8fb0b9;
+  --line: #223c45;
+  --brand: #22d3ee;
+  --brand-ink: #8aeaf7;
+  --brand-tint: #0f2b33;
   --low: #48b56c;
   --moderate: #e6a63f;
   --high: #ef7a43;
   --emergency: #e8586a;
-  --bot: #18241d;
-  --me: #2f7d57;
+  --bot: #172a31;
+  --me: #0e7490;
   --me-ink: #ffffff;
   --shadow: 0 18px 50px rgba(0, 0, 0, 0.5);
 }
@@ -146,12 +154,18 @@ body,
 /* The shell owns the viewport height, not the body. The body only carries the
    page background and the colours, and safe-area-inset-* on .app-shell keeps
    the notch and the home indicator clear of the header and the nav. */
+/* Visible focus for keyboard users. Component rules below may override it. */
+:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
 body {
   margin: 0;
   background: var(--bg);
   color: var(--ink);
   font-family: var(--font);
-  font-size: 15px;
+  font-size: var(--text-base);
   line-height: 1.45;
   -webkit-font-smoothing: antialiased;
   /* Prevent iOS rubber-band overscroll from showing the white page bg. */
@@ -166,7 +180,7 @@ input {
 /* phone-first app shell */
 .app-shell {
   width: 100%;
-  max-width: 412px;
+  max-width: none;
   /* `vh` first, `dvh` second, so the dynamic viewport wins where the browser
      supports it: when the phone browser chrome collapses, the shell shrinks
      with it instead of leaving a gap. The `vh` line is the fallback for
@@ -181,21 +195,35 @@ input {
   display: flex;
   flex-direction: column;
   position: relative;
-  box-shadow: var(--shadow);
   /* Pad the shell for the iOS status bar and home indicator. */
   padding-top: env(safe-area-inset-top);
   padding-bottom: env(safe-area-inset-bottom);
 }
 
+/* Phones (below 461px): full width, no frame. */
+/* Desktop: a centred phone-sized frame on a neutral background, fully visible. */
 @media (min-width: 461px) {
   .app-shell {
-    /* The 24px margins above and below have to fit in the viewport too, so
-       the frame does not push the page into a second scroll. */
-    height: min(860px, calc(100vh - 48px));
-    margin: 24px auto;
+    /* 440px keeps the layout roomy. The frame shrinks on narrow desktop
+       windows. The height leaves 24px top and bottom, so no second scroll. */
+    width: min(440px, calc(100vw - 48px));
+    max-width: none;
+    height: min(860px, calc(100dvh - 48px));
+    margin: 0;
     border-radius: 34px;
     overflow: hidden;
     border: 1px solid var(--line);
+    box-shadow: var(--shadow);
+  }
+}
+
+/* Centre the desktop frame on the neutral background. */
+@media (min-width: 461px) {
+  #root {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
   }
 }
 
@@ -203,7 +231,8 @@ input {
   /* One row (B-028): brand on the left, risk pill on the right. The header
      used to be a column with a full-width strip under the brand, which took
      about 114 pixels of the phone before the first message. */
-  padding: 6px 14px;
+  padding: 10px 14px;
+  min-width: 0;
   border-bottom: 1px solid var(--line);
   display: flex;
   flex-direction: row;
@@ -222,6 +251,17 @@ input {
   gap: 10px;
   min-width: 0;
   flex: 1;
+}
+
+/* At 360px the brand text must truncate, not push the risk pill off the row. */
+.brandrow > * {
+  min-width: 0;
+}
+
+.brand {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .mark {
@@ -243,15 +283,20 @@ input {
 .brand {
   font-family: var(--display);
   font-weight: 600;
-  font-size: 18px;
+  font-size: var(--text-lg);
   letter-spacing: -0.01em;
+}
+
+/* Bottom-anchored toasts sit above the tab nav, not on it. */
+[data-sonner-toaster][data-y-position="bottom"] {
+  bottom: calc(var(--nav-h) + env(safe-area-inset-bottom) + 12px) !important;
 }
 
 .brand small {
   display: block;
   font-family: var(--font);
   font-weight: 500;
-  font-size: 10.5px;
+  font-size: var(--text-xs);
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--ink-soft);
@@ -263,8 +308,8 @@ input {
 }
 
 .iconbtn {
-  width: 34px;
-  height: 34px;
+  width: 44px;
+  height: 44px;
   border-radius: 10px;
   border: 1px solid var(--line);
   background: var(--surface);
@@ -335,7 +380,7 @@ h2.vt {
 
 .vsub {
   color: var(--ink-soft);
-  font-size: 13px;
+  font-size: var(--text-sm);
   margin: 0 0 14px;
 }
 
@@ -352,8 +397,9 @@ h2.vt {
 
 .disclaimer {
   text-align: center;
-  font-size: 11px;
-  color: var(--ink-soft);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--ink);
   padding: 8px 20px 2px;
 }
 
@@ -462,7 +508,7 @@ h2.vt {
 
 .form-error {
   color: var(--emergency);
-  font-size: 13px;
+  font-size: var(--text-sm);
   margin: 0;
 }
 
@@ -509,7 +555,7 @@ h2.vt {
 
 .risk-points {
   margin-left: auto;
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--ink-soft);
   font-weight: 600;
 }
@@ -547,7 +593,7 @@ h2.vt {
 .vsect {
   font-family: var(--font);
   font-weight: 700;
-  font-size: 12px;
+  font-size: var(--text-xs);
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--ink-soft);
@@ -600,7 +646,7 @@ h2.vt {
 }
 
 .hospital-addr {
-  font-size: 13px;
+  font-size: var(--text-sm);
   color: var(--ink-soft);
   margin-top: 2px;
 }
@@ -622,7 +668,7 @@ h2.vt {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 13px;
+  font-size: var(--text-sm);
   color: var(--ink-soft);
   cursor: pointer;
 }
@@ -667,14 +713,14 @@ h2.vt {
 
 .alert-type {
   color: var(--ink-soft);
-  font-size: 12px;
+  font-size: var(--text-xs);
   text-transform: capitalize;
 }
 
 .alert-time {
   margin-left: auto;
   color: var(--ink-soft);
-  font-size: 12px;
+  font-size: var(--text-xs);
 }
 
 .alert-msg {
@@ -871,13 +917,14 @@ h2.vt {
   color: var(--emergency);
   border-radius: 12px;
   padding: 10px 12px;
-  font-size: 13px;
+  font-size: var(--text-sm);
 }
 
 .aui-disclaimer {
   text-align: center;
-  font-size: 11px;
-  color: var(--ink-soft);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--ink);
   padding: 0 18px 8px;
   margin: 0;
 }
@@ -892,7 +939,7 @@ h2.vt {
   align-items: center;
   gap: 8px;
   margin: 0 4px 6px;
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--ink-soft);
   min-height: 18px;
 }
@@ -1120,7 +1167,7 @@ h2.vt {
   background: var(--surface-2);
   color: var(--ink);
   font: inherit;
-  font-size: 13px;
+  font-size: var(--text-sm);
   font-weight: 700;
   cursor: pointer;
   white-space: nowrap;

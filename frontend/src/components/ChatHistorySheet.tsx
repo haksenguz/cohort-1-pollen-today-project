@@ -112,10 +112,11 @@ export function ChatHistorySheet({ activeId }: { activeId?: number }) {
 
   return (
     <>
-      <div ref={triggerRef} className="flex items-center gap-2 border-b border-border bg-card px-3 py-2">
+      <div ref={triggerRef} className="chat-tools">
         <Button
           variant="outline"
           className="min-h-11"
+          aria-label="History"
           onClick={() => {
             setOpen(true);
           }}
@@ -126,6 +127,7 @@ export function ChatHistorySheet({ activeId }: { activeId?: number }) {
         <Button
           variant="ghost"
           className="min-h-11"
+          aria-label="New chat"
           onClick={startNewChat}
         >
           <MessageSquarePlus />

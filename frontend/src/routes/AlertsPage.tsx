@@ -96,8 +96,11 @@ export function AlertsPage() {
 
   if (alerts === null) {
     return (
-      <div className="screen-loading" role="status" aria-live="polite">
-        Loading alerts…
+      <div className="skeleton-stack" role="status" aria-live="polite">
+        <span className="sr-only">Loading alerts</span>
+        {[0, 1, 2].map((i) => (
+          <span key={i} className="skeleton skeleton-row" aria-hidden="true" />
+        ))}
       </div>
     );
   }
@@ -131,7 +134,7 @@ export function AlertsPage() {
           {alerts.map((a) => (
             <li
               key={a.id}
-              className={`alert-row ${a.is_read ? "is-read" : "is-unread"}`}
+              className={`alert-row alert-level-${riskClass(a.risk_level)} ${a.is_read ? "is-read" : "is-unread"}`}
               onClick={() => {
                 if (!a.is_read && pendingId === null) void onRowClick(a.id);
               }}

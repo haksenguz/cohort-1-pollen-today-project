@@ -261,6 +261,10 @@ function Thread() {
       <ThreadPrimitive.Messages
         components={{ UserMessage, AssistantMessage }}
       />
+      {/* The agent's live status and tool results belong to the conversation,
+          so they render in the message flow, not above the composer. */}
+      <AgentActivity />
+      <LatestToolResult />
       {/* Empty is a render-condition primitive and takes no className, so
           the styling lives on a wrapper inside it. */}
       <ThreadPrimitive.Empty>
@@ -284,8 +288,6 @@ function Thread() {
     </ThreadPrimitive.Viewport>
 
     <ChatAgentStatus />
-    <AgentActivity />
-    <LatestToolResult />
     <ChatOfflineNotice />
     <Composer />
     <p className="aui-disclaimer">

@@ -36,8 +36,46 @@
   background: transparent;
 }
 
-.alert-row.is-read {
-  opacity: 0.7;
+.alert-row.is-read .alert-msg {
+  color: var(--ink-soft);
+}
+
+/* A bar on the leading edge carries the risk level, so the list reads by
+   severity before any text is read. Colours come from the risk tokens. */
+.alert-row.alert-level-low { border-left: 3px solid var(--low); padding-left: 12px; }
+.alert-row.alert-level-moderate { border-left: 3px solid var(--moderate); padding-left: 12px; }
+.alert-row.alert-level-high { border-left: 3px solid var(--high); padding-left: 12px; }
+.alert-row.alert-level-emergency { border-left: 3px solid var(--emergency); padding-left: 12px; }
+.alert-row.alert-level-unavailable { border-left: 3px solid var(--ink-soft); padding-left: 12px; }
+
+/* ---------- Loading skeletons ---------- */
+
+.skeleton {
+  display: block;
+  border-radius: 8px;
+  background: var(--surface-2);
+  animation: skeleton-pulse 1.4s ease-in-out infinite;
+}
+
+.skeleton-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 0;
+}
+
+.skeleton-line { height: 14px; width: 100%; }
+.skeleton-line.short { width: 45%; }
+.skeleton-card { height: 120px; border-radius: 14px; }
+.skeleton-row { height: 56px; border-radius: 10px; }
+
+@keyframes skeleton-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton { animation: none; }
 }
 
 /* An unread alert carries its weight, not a second background colour. */
@@ -77,4 +115,313 @@
   gap: 6px;
   color: var(--ink-soft);
   font-size: 12px;
+}
+
+/* ---------- Design pass: spacing rhythm and hierarchy ----------
+ * 4px base grid (4/8/12/16/24). Calm cyan on deep teal, one hero per screen,
+ * data as tiles instead of ruled rows, and no dead bands between regions.
+ */
+.stage {
+  padding: 12px 14px 20px;
+}
+
+.top {
+  min-height: 48px;
+  padding: 8px 14px;
+}
+
+h2.vt {
+  font-size: 24px;
+  margin: 0 0 2px;
+}
+
+.vsub {
+  margin: 0 0 12px;
+}
+
+.vsect {
+  margin: 20px 0 8px;
+  color: var(--brand-ink);
+}
+
+/* Today: the risk card is the hero. */
+.risk-card {
+  padding: 16px;
+  margin-bottom: 4px;
+  border-radius: 20px;
+  border-color: color-mix(in srgb, var(--brand) 35%, var(--line));
+  background:
+    linear-gradient(160deg, var(--brand-tint), var(--surface) 70%);
+  box-shadow: 0 6px 20px color-mix(in srgb, var(--brand) 10%, transparent);
+}
+
+.risk-label {
+  font-size: 26px;
+}
+
+.risk-head {
+  margin-bottom: 14px;
+}
+
+/* Metrics as a two-column grid of tiles. */
+.metric-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.metric-list li {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 14px;
+  background: var(--surface-2);
+}
+
+.metric-list li span {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.metric-list li b {
+  font-size: 17px;
+}
+
+.risk-card .note {
+  margin: 0 0 12px;
+}
+
+/* Lists: tighter, evenly spaced cards. */
+.hospital-list {
+  gap: 8px;
+}
+
+.hospital-row {
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: var(--surface-2);
+  border-color: transparent;
+}
+
+.note {
+  margin-top: 12px;
+  padding: 12px 14px;
+}
+
+/* Bottom nav: compact, clear active state. */
+.nav a {
+  padding: 8px 0 9px;
+  gap: 2px;
+  font-size: 11.5px;
+}
+
+.nav a.on {
+  color: var(--brand);
+}
+
+/* Chat: the conversation owns the screen. */
+.aui-viewport {
+  padding: 12px 14px 8px;
+  gap: 8px;
+}
+
+.aui-composer {
+  padding: 8px 12px;
+}
+
+.aui-disclaimer,
+.disclaimer {
+  padding: 2px 16px 8px;
+}
+
+.aui-msg-me {
+  background: var(--me);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--me) 30%, transparent);
+}
+
+.btn-primary {
+  background: var(--me);
+  color: var(--me-ink);
+}
+
+.aui-starter {
+  background: var(--surface-2);
+  border-color: color-mix(in srgb, var(--brand) 22%, var(--line));
+}
+
+.aui-starter:hover {
+  border-color: var(--brand);
+}
+
+/* Chat failure: a calm notice in the assistant's voice, not an alarm box. */
+.aui-error {
+  margin: 4px 14px 0;
+}
+
+.aui-error-message {
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--moderate);
+  background: var(--surface-2);
+  color: var(--ink);
+  border-radius: 4px 16px 16px 16px;
+  padding: 11px 14px;
+  font-size: 14.5px;
+  line-height: 1.5;
+  max-width: 86%;
+}
+
+/* Agent status lives in the thread, as the assistant's own line. */
+.aui-viewport [data-slot="agent-activity"] {
+  align-self: flex-start;
+  max-width: 86%;
+  padding: 9px 14px;
+  border: 1px solid var(--line);
+  border-radius: 4px 16px 16px 16px;
+  background: var(--surface-2);
+}
+
+.aui-viewport [data-slot="agent-activity"] .aui-activity {
+  margin: 0;
+}
+
+/* ---------- Floating chrome (pattern from the Pasar app) ----------
+ * The header and the tab bar are glass pills that float over the content,
+ * slide away while the user scrolls down and return on any scroll up. The
+ * stage pads for both, so nothing sits underneath them at rest.
+ */
+:root {
+  --top-h: 52px;
+  --nav-h: 64px;
+  --chrome-gap: 10px;
+}
+
+.app-shell {
+  --glass: color-mix(in srgb, var(--surface) 82%, transparent);
+}
+
+.top {
+  position: absolute;
+  z-index: 40;
+  top: calc(env(safe-area-inset-top) + var(--chrome-gap));
+  left: var(--chrome-gap);
+  right: var(--chrome-gap);
+  min-height: var(--top-h);
+  padding: 6px 8px 6px 12px;
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  background: var(--glass);
+  backdrop-filter: blur(16px) saturate(1.4);
+  -webkit-backdrop-filter: blur(16px) saturate(1.4);
+  box-shadow: 0 6px 22px rgb(0 0 0 / 0.18);
+  transition:
+    transform 320ms cubic-bezier(0.32, 0.72, 0, 1),
+    opacity 220ms ease;
+}
+
+.nav {
+  position: absolute;
+  z-index: 40;
+  bottom: calc(env(safe-area-inset-bottom) + var(--chrome-gap));
+  left: 14px;
+  right: 14px;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 26px;
+  background: var(--glass);
+  backdrop-filter: blur(16px) saturate(1.4);
+  -webkit-backdrop-filter: blur(16px) saturate(1.4);
+  box-shadow: 0 8px 26px rgb(0 0 0 / 0.22);
+  transition:
+    transform 320ms cubic-bezier(0.32, 0.72, 0, 1),
+    opacity 220ms ease;
+}
+
+.nav a {
+  border-radius: 20px;
+  padding: 7px 0 8px;
+  transition:
+    background-color 160ms ease,
+    color 160ms ease;
+}
+
+.nav a.on {
+  background: var(--brand-tint);
+  color: var(--brand);
+}
+
+.app-shell[data-chrome="hidden"] .top {
+  transform: translateY(calc(-100% - var(--chrome-gap) - 12px));
+  opacity: 0;
+  pointer-events: none;
+}
+
+.app-shell[data-chrome="hidden"] .nav {
+  transform: translateY(calc(100% + var(--chrome-gap) + 16px));
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* The stage runs edge to edge under the glass and pads for it. */
+.stage {
+  padding-top: calc(var(--top-h) + var(--chrome-gap) * 2 + 4px);
+  padding-bottom: calc(var(--nav-h) + var(--chrome-gap) * 2 + 8px);
+}
+
+.stage.stage-chat {
+  padding-left: 0;
+  padding-right: 0;
+  padding-bottom: calc(var(--nav-h) + var(--chrome-gap) * 2);
+}
+
+/* Chat: History and New chat live in the header, as icons, instead of a row
+ * of their own. The risk pill steps aside on this screen to make room. */
+.app-shell[data-route="chat"] .riskpill {
+  visibility: hidden;
+  width: 0;
+  padding: 0;
+  border: 0;
+  margin: 0;
+  min-width: 0;
+}
+
+.chat-tools {
+  position: absolute;
+  z-index: 41;
+  top: calc(env(safe-area-inset-top) + var(--chrome-gap) + 4px);
+  right: calc(var(--chrome-gap) + 8px);
+  display: flex;
+  gap: 4px;
+}
+
+.chat-tools button {
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  padding: 0;
+  gap: 0;
+  font-size: 0;
+  border-radius: 999px;
+  border-color: transparent;
+  background: transparent;
+  color: var(--ink);
+}
+
+.chat-tools button svg {
+  width: 20px;
+  height: 20px;
+}
+
+.chat-tools button:hover {
+  background: var(--brand-tint);
+  color: var(--brand);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .top,
+  .nav {
+    transition: none;
+  }
 }

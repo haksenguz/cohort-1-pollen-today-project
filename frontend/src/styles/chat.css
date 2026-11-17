@@ -113,8 +113,8 @@
   gap: 8px;
   width: 100%;
   max-width: 32rem;
-  margin: auto;
-  padding: 16px;
+  margin: 6vh auto auto;
+  padding: 8px 16px;
   text-align: center;
   animation: aui-empty-in 320ms ease-out;
 }
@@ -145,4 +145,38 @@
   .aui-empty {
     animation: none;
   }
+}
+
+/* Starter chips: two columns, each a tappable pill that sends its prompt. */
+.aui-starters {
+  display: grid;
+  width: 100%;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.aui-starter {
+  min-height: 76px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.35;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 150ms ease;
+}
+
+.aui-starter:hover {
+  background: var(--surface-2);
+}
+
+.aui-starter:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
 }

@@ -73,8 +73,12 @@ export function TodayPage() {
 
   if (status === "loading" || (hasLocation && !loaded && !envError)) {
     return (
-      <div className="screen-loading" role="status" aria-live="polite">
-        Loading today…
+      <div className="skeleton-stack" role="status" aria-live="polite">
+        <span className="sr-only">Loading today</span>
+        <span className="skeleton skeleton-card" aria-hidden="true" />
+        <span className="skeleton skeleton-line" aria-hidden="true" />
+        <span className="skeleton skeleton-line short" aria-hidden="true" />
+        <span className="skeleton skeleton-row" aria-hidden="true" />
       </div>
     );
   }

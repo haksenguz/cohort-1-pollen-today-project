@@ -1,9 +1,11 @@
+import { useRef } from "react";
 import { Outlet, useLocation } from "react-router-dom";
 import { BottomNav } from "./BottomNav";
 import { ConsentGate } from "./ConsentGate";
 import { TopHeader } from "./TopHeader";
 import { Toaster } from "./ui/sonner";
 import { useAlertPolling } from "../hooks/useAlertPolling";
+import { useChromeVisibility } from "../hooks/useChromeVisibility";
 
 /** Phone-first app frame: header + risk pill, a scrollable stage, bottom tab nav. */
 export function AppShell() {
@@ -25,8 +27,18 @@ export function AppShell() {
   const isChat =
     location.pathname === "/chat" || location.pathname.startsWith("/chat/");
 
+  const frame = useRef<HTMLDivElement>(null);
+  // The header and tab bar float and tuck away on scroll. The chat keeps them
+  // up: the composer sits right above the tab bar and must not lose its footing.
+  const chromeVisible = useChromeVisibility(frame, location.pathname, isChat);
+
   return (
-    <div className="app-shell">
+    <div
+      ref={frame}
+      className="app-shell"
+      data-chrome={chromeVisible ? "shown" : "hidden"}
+      data-route={isChat ? "chat" : "page"}
+    >
       <TopHeader />
       <div className={isChat ? "stage stage-chat" : "stage"}>
         {isChat ? (

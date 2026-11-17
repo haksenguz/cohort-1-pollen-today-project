@@ -7,62 +7,50 @@
  * callback fired.
  */
 import { describe, expect, it } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
-import { AssistantRuntimeProvider, useAuiState, useLocalRuntime } from "@assistant-ui/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { AssistantRuntimeProvider, useLocalRuntime } from "@assistant-ui/react";
 import type { ChatModelAdapter } from "@assistant-ui/react";
 
 import { SUGGESTED_PROMPTS } from "./starterPrompts";
 import { SuggestedPrompts } from "./SuggestedPrompts";
 
-const stubAdapter: ChatModelAdapter = {
-  run: async () => ({ content: [{ type: "text", text: "" }] }),
-};
-
-function ComposerText() {
-  const text = useAuiState((state) => state.composer.text);
-  return <span data-testid="composer">{text}</span>;
-}
-
-function Harness({ onSelect }: { onSelect?: (prompt: string) => void }) {
-  const runtime = useLocalRuntime(stubAdapter);
+function Harness({ seen }: { seen: string[] }) {
+  const adapter: ChatModelAdapter = {
+    run: async ({ messages }) => {
+      const last = messages.at(-1);
+      const text = last?.content.find((part) => part.type === "text");
+      if (text && text.type === "text") seen.push(text.text);
+      return { content: [{ type: "text", text: "" }] };
+    },
+  };
+  const runtime = useLocalRuntime(adapter);
   return (
     <AssistantRuntimeProvider runtime={runtime}>
-      <ComposerText />
-      <SuggestedPrompts onSelect={onSelect} />
+      <SuggestedPrompts />
     </AssistantRuntimeProvider>
   );
 }
 
 describe("SuggestedPrompts", () => {
   it("renders one chip per starter prompt", () => {
-    render(<Harness />);
+    render(<Harness seen={[]} />);
 
     for (const prompt of SUGGESTED_PROMPTS) {
       expect(screen.getByRole("button", { name: prompt })).toBeInTheDocument();
     }
   });
 
-  it("seeds the composer with the tapped prompt instead of sending it", () => {
-    render(<Harness />);
-    expect(screen.getByTestId("composer")).toHaveTextContent("");
-
-    fireEvent.click(screen.getByRole("button", { name: SUGGESTED_PROMPTS[0] }));
-
-    expect(screen.getByTestId("composer")).toHaveTextContent(SUGGESTED_PROMPTS[0]);
-  });
-
-  it("uses an explicit onSelect when one is given", () => {
+  it("sends the tapped prompt as the user's message", async () => {
     const seen: string[] = [];
-    render(<Harness onSelect={(prompt) => seen.push(prompt)} />);
+    render(<Harness seen={seen} />);
 
     fireEvent.click(screen.getByRole("button", { name: SUGGESTED_PROMPTS[2] }));
 
-    expect(seen).toEqual([SUGGESTED_PROMPTS[2]]);
-    expect(screen.getByTestId("composer")).toHaveTextContent("");
+    await waitFor(() => expect(seen).toEqual([SUGGESTED_PROMPTS[2]]));
   });
 
   it("keeps every chip a tappable button, so the row is keyboard reachable", () => {
-    render(<Harness />);
+    render(<Harness seen={[]} />);
 
     const chips = screen.getAllByRole("button");
     expect(chips).toHaveLength(SUGGESTED_PROMPTS.length);
