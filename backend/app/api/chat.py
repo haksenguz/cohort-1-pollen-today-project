@@ -961,6 +961,9 @@ class _LazyLLMClient:
 
     @classmethod
     def reset_cached_clients(cls) -> None:
+        from app.core.openai_client import clear_client_cache  # noqa: PLC0415 — same
+
+        clear_client_cache()
         for instance in list(cls._instances):
             instance._client = None
 

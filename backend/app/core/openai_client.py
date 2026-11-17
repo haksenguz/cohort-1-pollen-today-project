@@ -423,6 +423,18 @@ def probe_model(*, api_key: str, base_url: str | None, model: str) -> None:
         raise
 
 
+# One client per distinct configuration, shared across turns. Building a new SDK
+# client per request meant a new HTTP connection pool, and a new TLS handshake
+# to the provider, on every chat turn. Keyed on every setting the client reads,
+# so a changed key or model builds a fresh client rather than reusing the old one.
+_client_cache: dict[tuple, OpenAIChatClient] = {}
+
+
+def clear_client_cache() -> None:
+    """Forget cached clients, so the next call rebuilds from current settings."""
+    _client_cache.clear()
+
+
 def get_openai_client_from_settings() -> LLMClient:
     """Build an LLM client from the current Settings.
 
@@ -440,10 +452,15 @@ def get_openai_client_from_settings() -> LLMClient:
     model = getattr(settings, "openai_model", "") or "gpt-4o-mini"
     max_tokens = getattr(settings, "openai_max_tokens", 0) or DEFAULT_MAX_TOKENS
     timeout = getattr(settings, "openai_timeout_seconds", 0.0) or DEFAULT_TIMEOUT_SECONDS
-    return _build_openai_client(
-        api_key=settings.openai_api_key,
-        base_url=base_url,
-        model=model,
-        max_tokens=max_tokens,
-        timeout=timeout,
-    )
+    key = (settings.openai_api_key, base_url, model, max_tokens, timeout)
+    client = _client_cache.get(key)
+    if client is None:
+        client = _build_openai_client(
+            api_key=settings.openai_api_key,
+            base_url=base_url,
+            model=model,
+            max_tokens=max_tokens,
+            timeout=timeout,
+        )
+        _client_cache[key] = client
+    return client
