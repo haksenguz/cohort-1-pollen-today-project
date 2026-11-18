@@ -437,3 +437,46 @@ export interface PreferenceUpdateRequest {
   quiet_hours_start?: number | null;
   quiet_hours_end?: number | null;
 }
+
+// ---- Web push --------------------------------------------------------
+
+export interface PushVapidKeyResponse {
+  /** Null when the server has no VAPID key configured. */
+  public_key: string | null;
+}
+
+export interface PushSubscriptionRequest {
+  endpoint: string;
+  keys: {
+    p256dh: string;
+    auth: string;
+  };
+}
+
+export interface PushUnsubscribeRequest {
+  endpoint: string;
+}
+
+// ---- Bring-your-own LLM key ----------------------------------------------
+
+/** Providers a person can bring a key for. */
+export type LlmProvider = "groq" | "openai" | "openrouter";
+
+/**
+ * Response for `GET`, `PUT /api/users/me/llm`. The key itself is never sent
+ * back, only a short hint of it. `key_hint` is empty when nothing is saved.
+ */
+export interface LlmSettingsResponse {
+  configured: boolean;
+  key_hint: string;
+  provider: LlmProvider | null;
+  base_url: string | null;
+  model: string | null;
+}
+
+/** Body for `PUT /api/users/me/llm`. */
+export interface LlmSettingsUpdateRequest {
+  api_key: string;
+  provider: LlmProvider;
+  model: string | null;
+}

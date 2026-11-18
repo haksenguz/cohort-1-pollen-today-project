@@ -35,6 +35,7 @@ import { Switch } from "@/components/ui/switch";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 
 import { updateCurrentUser } from "../../api/client";
+import { PushNotificationsRow } from "./PushNotificationsRow";
 import type {
   AllergyCreateRequest,
   AllergyResponse,
@@ -47,6 +48,8 @@ import type {
 } from "../../api/types";
 import type { EmergencyContact } from "../../api/emergencyContact";
 import type { PolicyDocument } from "../../api/consent";
+import type { LlmSettingsResponse, LlmSettingsUpdateRequest, LlmProvider } from "../../api/types";
+import { LLM_PROVIDER_LABEL } from "../../utils/llm";
 import {
   ALLERGEN_OPTIONS,
   ALLERGY_SEVERITIES,
@@ -565,11 +568,15 @@ export function NotificationsScreen({
       <CardHeader>
         <CardTitle>Notifications</CardTitle>
         <CardDescription>
-          Alerts are created and stored on the server. The app shows them while
-          it is open. Nothing is sent when the app is closed.
+          Alerts are stored on the server and shown here. Turn on push to get
+          them on this device when the app is closed.
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
+        <PushNotificationsRow />
+
+        <Separator />
+
         {PREF_SWITCHES.map(({ key, label, hint }) => (
           <div key={key} className="flex items-start gap-3">
             <Switch
@@ -1214,6 +1221,195 @@ export function DeleteDataScreen({ onDelete }: { onDelete: () => Promise<void> }
             Delete my account
           </Button>
         )}
+      </CardContent>
+    </Card>
+  );
+}
+// ---- AI model ------------------------------------------------------------
+
+const LLM_PROVIDERS: readonly LlmProvider[] = ["groq", "openai", "openrouter"];
+
+const LLM_KEY_HINT: Record<LlmProvider, string> = {
+  groq: "Create a key in the Groq console.",
+  openai: "Create a key in the OpenAI platform dashboard.",
+  openrouter: "Create a key in your OpenRouter account settings.",
+};
+
+/**
+ * The model a person brings their own key for. The key is sent once on save
+ * and never shown again. The field is cleared as soon as the save succeeds.
+ */
+export function AiModelScreen({
+  settings,
+  loadError,
+  onRetry,
+  onSave,
+  onRemove,
+}: {
+  settings: LlmSettingsResponse | null;
+  loadError: string | null;
+  onRetry: () => void;
+  onSave: (body: LlmSettingsUpdateRequest) => Promise<void>;
+  onRemove: () => Promise<void>;
+}) {
+  const [provider, setProvider] = useState<LlmProvider>(settings?.provider ?? "groq");
+  const [apiKey, setApiKey] = useState("");
+  const [model, setModel] = useState(settings?.model ?? "");
+  const [busy, setBusy] = useState<"save" | "remove" | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+
+  async function save() {
+    const key = apiKey.trim();
+    if (!key) return;
+    setError(null);
+    setSaved(false);
+    setBusy("save");
+    try {
+      await onSave({ api_key: key, provider, model: model.trim() || null });
+      // The key is not kept anywhere on the page once it has been sent.
+      setApiKey("");
+      setSaved(true);
+    } catch (e) {
+      setError(errorText(e, "Could not save your key."));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function remove() {
+    setError(null);
+    setSaved(false);
+    setBusy("remove");
+    try {
+      await onRemove();
+      setApiKey("");
+      setModel("");
+      setSaved(true);
+    } catch (e) {
+      setError(errorText(e, "Could not remove your key."));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  if (loadError) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>AI model</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <LoadError title="Could not load your AI model" message={loadError} onRetry={onRetry} />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (settings === null) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>AI model</CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3" aria-hidden="true">
+          <Skeleton className="h-6 w-full" />
+          <Skeleton className="h-6 w-2/3" />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>AI model</CardTitle>
+        <CardDescription>
+          {settings.configured
+            ? `Your ${settings.provider ? LLM_PROVIDER_LABEL[settings.provider] : ""} key is saved. Paste a new one to replace it.`
+            : "Optional. Leave it empty to use the app's shared model."}
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-4">
+        <p className="text-sm text-muted-foreground">
+          Your key is stored encrypted on the server and used only for your own
+          chats. The safety rules still run on the server whatever model you
+          use. If the key is rejected, the chat tells you.
+        </p>
+
+        <FieldGroup>
+          <Field>
+            <FieldLabel htmlFor="llm-provider">Provider</FieldLabel>
+            <Select value={provider} onValueChange={(v) => setProvider(v as LlmProvider)}>
+              <SelectTrigger id="llm-provider" className="min-h-11">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  {LLM_PROVIDERS.map((option) => (
+                    <SelectItem key={option} value={option}>
+                      {LLM_PROVIDER_LABEL[option]}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+            <FieldDescription>{LLM_KEY_HINT[provider]}</FieldDescription>
+          </Field>
+
+          <Field>
+            <FieldLabel htmlFor="llm-api-key">API key</FieldLabel>
+            <Input
+              id="llm-api-key"
+              type="password"
+              autoComplete="off"
+              spellCheck={false}
+              className="min-h-11"
+              value={apiKey}
+              placeholder={settings.configured ? "Paste a new key to replace" : "Paste your key"}
+              onChange={(e) => setApiKey(e.target.value)}
+            />
+          </Field>
+
+          <Field>
+            <FieldLabel htmlFor="llm-model">Model (optional)</FieldLabel>
+            <Input
+              id="llm-model"
+              autoComplete="off"
+              spellCheck={false}
+              className="min-h-11"
+              value={model}
+              placeholder="Leave empty for the default"
+              onChange={(e) => setModel(e.target.value)}
+            />
+          </Field>
+        </FieldGroup>
+
+        {error ? (
+          <Alert variant="destructive">
+            <AlertTitle>Not saved</AlertTitle>
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        ) : null}
+        {saved ? <SavedNotice>Saved.</SavedNotice> : null}
+
+        <div className="flex flex-col gap-2">
+          <Button
+            className="min-h-11"
+            disabled={busy !== null || apiKey.trim() === ""}
+            onClick={() => void save()}
+          >
+            {busy === "save" ? "Saving" : "Save"}
+          </Button>
+          <Button
+            variant="outline"
+            className="min-h-11"
+            disabled={busy !== null || !settings.configured}
+            onClick={() => void remove()}
+          >
+            {busy === "remove" ? "Removing" : "Remove my key"}
+          </Button>
+        </div>
       </CardContent>
     </Card>
   );

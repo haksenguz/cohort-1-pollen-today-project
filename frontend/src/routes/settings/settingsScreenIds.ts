@@ -16,7 +16,8 @@ export type SettingsScreenId =
   | "stored"
   | "export"
   | "delete"
-  | "emergency";
+  | "emergency"
+  | "ai";
 
 const SCREEN_IDS: readonly SettingsScreenId[] = [
   "profile",
@@ -29,6 +30,7 @@ const SCREEN_IDS: readonly SettingsScreenId[] = [
   "export",
   "delete",
   "emergency",
+  "ai",
 ];
 
 /**

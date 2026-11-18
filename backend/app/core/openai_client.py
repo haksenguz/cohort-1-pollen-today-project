@@ -23,8 +23,10 @@ vocabulary (J4):
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
+from collections import OrderedDict
 from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Literal, Protocol
@@ -42,7 +44,9 @@ DEFAULT_MAX_TOKENS = 512
 # this is already a failed turn from the user's point of view.
 DEFAULT_TIMEOUT_SECONDS = 20.0
 
-LLMErrorKind = Literal["timeout", "rate_limit", "unavailable", "malformed", "misconfigured"]
+LLMErrorKind = Literal[
+    "timeout", "rate_limit", "unavailable", "malformed", "misconfigured", "user_key_rejected"
+]
 
 
 class LLMCallError(Exception):
@@ -53,10 +57,14 @@ class LLMCallError(Exception):
     user verbatim.
     """
 
-    def __init__(self, kind: LLMErrorKind, detail: str) -> None:
+    def __init__(self, kind: LLMErrorKind, detail: str, *, rejected_key: bool = False) -> None:
         super().__init__(f"{kind}: {detail}")
         self.kind = kind
         self.detail = detail
+        # True when the provider said the credential itself is not accepted.
+        # The BYOK wrapper uses it to refuse, instead of falling back to the
+        # server key.
+        self.rejected_key = rejected_key
 
 
 class ChatMessageLike(Protocol):
@@ -264,7 +272,9 @@ def _classify(exc: Exception) -> LLMCallError:
     if name in ("APIConnectionError", "APIError", "InternalServerError", "ServiceUnavailable"):
         return LLMCallError("unavailable", _detail(exc, "model unavailable"))
     if name == "AuthenticationError" or "unauthorized" in text or "invalid api key" in text:
-        return LLMCallError("unavailable", _detail(exc, "model rejected the request"))
+        return LLMCallError(
+            "unavailable", _detail(exc, "model rejected the request"), rejected_key=True
+        )
     return LLMCallError("unavailable", _detail(exc, "model call failed"))
 
 
@@ -444,9 +454,44 @@ def probe_model(*, api_key: str, base_url: str | None, model: str) -> None:
 _client_cache: dict[tuple, OpenAIChatClient] = {}
 
 
+# Clients built from users' own keys. Bounded LRU: a user key is one entry, so
+# the cap limits how many idle connection pools stay open at once.
+_USER_CLIENT_CACHE_SIZE = 16
+_user_client_cache: OrderedDict[tuple, OpenAIChatClient] = OrderedDict()
+
+
 def clear_client_cache() -> None:
     """Forget cached clients, so the next call rebuilds from current settings."""
     _client_cache.clear()
+    _user_client_cache.clear()
+
+
+def get_client_for_key(
+    *,
+    api_key: str,
+    base_url: str,
+    model: str,
+    max_tokens: int = DEFAULT_MAX_TOKENS,
+    timeout: float = DEFAULT_TIMEOUT_SECONDS,
+) -> OpenAIChatClient:
+    """A client for one user's own key. The key is hashed for the cache key."""
+    digest = hashlib.sha256(api_key.encode("utf-8")).hexdigest()
+    cache_key = (digest, base_url, model, max_tokens, timeout)
+    client = _user_client_cache.get(cache_key)
+    if client is not None:
+        _user_client_cache.move_to_end(cache_key)
+        return client
+    client = _build_openai_client(
+        api_key=api_key,
+        base_url=base_url,
+        model=model,
+        max_tokens=max_tokens,
+        timeout=timeout,
+    )
+    _user_client_cache[cache_key] = client
+    while len(_user_client_cache) > _USER_CLIENT_CACHE_SIZE:
+        _user_client_cache.popitem(last=False)
+    return client
 
 
 def get_openai_client_from_settings() -> LLMClient:

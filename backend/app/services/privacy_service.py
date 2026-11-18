@@ -33,10 +33,12 @@ from app.models import (
     HospitalSearch,
     Message,
     NotificationPreference,
+    PushSubscription,
     SymptomEvent,
     TriageResult,
     User,
     UserAllergy,
+    UserLLMSetting,
 )
 
 # Never leaves the server, in an export or an error. A "download my data"
@@ -235,6 +237,8 @@ async def delete_user_account(session: AsyncSession, *, user_id: int) -> dict[st
         (Alert, "alerts"),
         (UserAllergy, "allergies"),
         (NotificationPreference, "notification_preferences"),
+        (PushSubscription, "push_subscriptions"),
+        (UserLLMSetting, "llm_settings"),
     ):
         column = model.__table__.columns["user_id"]
         rows = await _all(session, model, column == user_id)

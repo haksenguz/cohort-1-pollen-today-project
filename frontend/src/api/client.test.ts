@@ -20,7 +20,10 @@ import {
   API_BASE_URL,
   ApiError,
   getConversation,
+  deleteLlmSettings,
+  getLlmSettings,
   getNearbyHospitals,
+  saveLlmSettings,
   listAlerts,
   listConversations,
   markAlertRead,
@@ -718,5 +721,81 @@ describe("streamChat regenerate", () => {
       message: "my eyes are itchy",
       conversation_id: 42,
     });
+  });
+});
+
+describe("own LLM key", () => {
+  const settings = {
+    configured: true,
+    key_hint: "...1234",
+    provider: "groq" as const,
+    base_url: null,
+    model: null,
+  };
+
+  beforeEach(() => {
+    vi.mocked(getToken).mockReturnValue("tkn-abc");
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("GETs /api/users/me/llm with the bearer token and returns only the hint", async () => {
+    const fetchSpy = mockFetch(settings);
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const result = await getLlmSettings();
+
+    expect(result.key_hint).toBe("...1234");
+    const [url, init] = fetchSpy.mock.calls[0];
+    expect(url).toBe(`${API_BASE_URL}/api/users/me/llm`);
+    expect(init.method).toBe("GET");
+    expect(init.headers.Authorization).toBe("Bearer tkn-abc");
+  });
+
+  it("PUTs the key, provider and model to /api/users/me/llm", async () => {
+    const fetchSpy = mockFetch(settings);
+    vi.stubGlobal("fetch", fetchSpy);
+
+    await saveLlmSettings({ api_key: "gsk_test", provider: "groq", model: null });
+
+    const [url, init] = fetchSpy.mock.calls[0];
+    expect(url).toBe(`${API_BASE_URL}/api/users/me/llm`);
+    expect(init.method).toBe("PUT");
+    expect(JSON.parse(init.body)).toEqual({ api_key: "gsk_test", provider: "groq", model: null });
+    expect(init.headers.Authorization).toBe("Bearer tkn-abc");
+  });
+
+  it("DELETEs /api/users/me/llm and accepts the 204 with no body", async () => {
+    const fetchSpy = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 204,
+      statusText: "No Content",
+      headers: { get: () => null },
+    } as unknown as Response);
+    vi.stubGlobal("fetch", fetchSpy);
+
+    await expect(deleteLlmSettings()).resolves.toBeUndefined();
+
+    const [url, init] = fetchSpy.mock.calls[0];
+    expect(url).toBe(`${API_BASE_URL}/api/users/me/llm`);
+    expect(init.method).toBe("DELETE");
+    expect(init.headers.Authorization).toBe("Bearer tkn-abc");
+  });
+
+  it("throws ApiError with the server's message when the key is rejected", async () => {
+    vi.stubGlobal(
+      "fetch",
+      mockFetch({ detail: "That key was rejected by the provider." }, { status: 422 }),
+    );
+
+    const error = await saveLlmSettings({ api_key: "bad", provider: "openai", model: null }).catch(
+      (e: unknown) => e,
+    );
+
+    expect(error).toBeInstanceOf(ApiError);
+    expect((error as ApiError).status).toBe(422);
+    expect((error as ApiError).message).toBe("That key was rejected by the provider.");
   });
 });

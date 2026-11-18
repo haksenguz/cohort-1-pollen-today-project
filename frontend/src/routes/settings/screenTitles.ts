@@ -12,4 +12,5 @@ export const SCREEN_TITLE: Record<SettingsScreenId, string> = {
   export: "Export my data",
   delete: "Delete my data",
   emergency: "Emergency contact",
+  ai: "AI model",
 };

@@ -184,6 +184,18 @@ class Alert(SQLModel, table=True):
     created_at: datetime = _ts_field()
 
 
+class PushSubscription(SQLModel, table=True):
+    __tablename__ = "push_subscription"
+    id: int | None = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="users.id", index=True)
+    # Unique per browser push endpoint. A re-subscribe from the same browser
+    # updates the row instead of adding a second one.
+    endpoint: str = Field(max_length=2048, unique=True)
+    p256dh: str = Field(max_length=255)
+    auth: str = Field(max_length=255)
+    created_at: datetime = _ts_field()
+
+
 class NotificationPreference(SQLModel, table=True):
     __tablename__ = "notification_preferences"
     id: int | None = Field(default=None, primary_key=True)
@@ -220,4 +232,20 @@ class HospitalResult(SQLModel, table=True):
     phone: str | None = Field(default=None, max_length=40)
     place_id: str | None = Field(default=None, max_length=120)
     rank: int | None = None
+    created_at: datetime = _ts_field()
+
+
+class UserLLMSetting(SQLModel, table=True):
+    """A user's own LLM key (bring-your-own-key). One row per user.
+
+    The key is stored only as Fernet ciphertext (app/services/llm_key.py). The
+    base URL is not stored: it is looked up from the provider allowlist.
+    """
+
+    __tablename__ = "user_llm_setting"
+    id: int | None = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="users.id", unique=True, index=True)
+    provider: str = Field(max_length=16)
+    model: str = Field(max_length=128)
+    api_key_encrypted: str = Field(max_length=1024)
     created_at: datetime = _ts_field()

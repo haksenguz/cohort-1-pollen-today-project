@@ -43,10 +43,12 @@ from app.agents import symptom_agent
 from app.core.config import get_settings
 from app.core.db import SessionDep
 from app.core.enums import Allergen, ConversationStatus, MessageRole
+from app.core.openai_client import LLMCallError
 from app.core.rate_limit import get_limiter
 from app.core.security import CurrentUser
 from app.models import Conversation, Message, SymptomEvent, TriageResult, User, UserAllergy
 from app.services import conversation_title, escalation, triage
+from app.services.llm_key import UserLLMConfig, load_user_setting, to_config
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 logger = logging.getLogger(__name__)
@@ -74,6 +76,12 @@ _ERROR_MESSAGES: dict[str, str] = {
         "Sending the same message again will not help."
     ),
     "unavailable": "The chat service is not answering right now. Try again in a moment.",
+    # The user's own key was refused. The server key is never used in its place,
+    # so the message points at the key they saved.
+    "user_key_rejected": (
+        "Your saved LLM key was rejected by the provider, so I cannot answer with it. "
+        "Check or remove your key in Settings."
+    ),
 }
 
 
@@ -954,10 +962,40 @@ class _LazyLLMClient:
     # genuinely in flight.
     _instances: "WeakSet[_LazyLLMClient]" = WeakSet()
 
-    def __init__(self, api_key: str) -> None:
+    def __init__(self, api_key: str, user_llm: UserLLMConfig | None = None) -> None:
         self._api_key = api_key
+        # Set when the user saved their own key. Then the server key is never
+        # used for this turn, not even as a fallback.
+        self._user_llm = user_llm
         self._client: symptom_agent.LLMClient | None = None
         _LazyLLMClient._instances.add(self)
+
+    def _resolve(self) -> symptom_agent.LLMClient:
+        if self._client is not None:
+            return self._client
+        if self._user_llm is None:
+            from app.core.openai_client import get_openai_client_from_settings
+
+            self._client = get_openai_client_from_settings()
+        else:
+            from app.core.openai_client import get_client_for_key
+
+            if self._user_llm.api_key is None:
+                raise LLMCallError("user_key_rejected", "saved LLM key could not be decrypted")
+            self._client = get_client_for_key(
+                api_key=self._user_llm.api_key,
+                base_url=self._user_llm.base_url,
+                model=self._user_llm.model,
+            )
+        return self._client
+
+    def _user_key_failure(self, exc: LLMCallError) -> LLMCallError | None:
+        """The error to raise instead of `exc` when it came from the user's key."""
+        if self._user_llm is None:
+            return None
+        if exc.rejected_key or exc.kind == "user_key_rejected":
+            return LLMCallError("user_key_rejected", "the provider rejected the saved LLM key")
+        return None
 
     @classmethod
     def reset_cached_clients(cls) -> None:
@@ -968,14 +1006,15 @@ class _LazyLLMClient:
             instance._client = None
 
     def complete(self, messages) -> str:
-        if self._client is None:
-            # Use the core factory so OPENAI_BASE_URL (OpenRouter / Azure /
-            # local proxy) and OPENAI_MODEL are honoured. The factory returns
-            # an object that structurally satisfies symptom_agent.LLMClient.
-            from app.core.openai_client import get_openai_client_from_settings
-
-            self._client = get_openai_client_from_settings()
-        return self._client.complete(messages)
+        # The core factory honours OPENAI_BASE_URL and OPENAI_MODEL. Its client
+        # structurally satisfies symptom_agent.LLMClient.
+        try:
+            return self._resolve().complete(messages)
+        except LLMCallError as exc:
+            wrapped = self._user_key_failure(exc)
+            if wrapped is None:
+                raise
+            raise wrapped from exc
 
     def complete_with_tools(self, messages, tools):
         """Delegates the optional tool-calling capability.
@@ -985,11 +1024,13 @@ class _LazyLLMClient:
         silently opts the whole app out of tools. The wrapper therefore has to
         pass the capability through unchanged rather than hide it.
         """
-        if self._client is None:
-            from app.core.openai_client import get_openai_client_from_settings
-
-            self._client = get_openai_client_from_settings()
-        return self._client.complete_with_tools(messages, tools)
+        try:
+            return self._resolve().complete_with_tools(messages, tools)
+        except LLMCallError as exc:
+            wrapped = self._user_key_failure(exc)
+            if wrapped is None:
+                raise
+            raise wrapped from exc
 
     def stream_complete(self, messages):
         """Delegates the optional streaming capability.
@@ -998,16 +1039,24 @@ class _LazyLLMClient:
         `stream_complete` and falls back to one complete answer when it is
         absent, so the wrapper has to pass it through rather than hide it.
         """
-        if self._client is None:
-            from app.core.openai_client import get_openai_client_from_settings
+        try:
+            yield from self._resolve().stream_complete(messages)
+        except LLMCallError as exc:
+            wrapped = self._user_key_failure(exc)
+            if wrapped is None:
+                raise
+            raise wrapped from exc
 
-            self._client = get_openai_client_from_settings()
-        return self._client.stream_complete(messages)
 
+async def get_llm(session: SessionDep, user: CurrentUser) -> symptom_agent.LLMClient:
+    """FastAPI dependency so tests can swap in a fake without a real API key.
 
-def get_llm() -> symptom_agent.LLMClient:
-    """FastAPI dependency so tests can swap in a fake without a real API key."""
-    return _LazyLLMClient(get_settings().openai_api_key)
+    A user who saved their own key gets a client built from it. Everyone else
+    gets the server key, as before.
+    """
+    row = await load_user_setting(session, user.id)
+    user_llm = to_config(row) if row is not None else None
+    return _LazyLLMClient(get_settings().openai_api_key, user_llm)
 
 
 LLMDep = Annotated[symptom_agent.LLMClient, Depends(get_llm)]

@@ -89,6 +89,9 @@ export default defineConfig({
         // without it they are the one asset an installed PWA cannot render
         // offline, so the app falls back to a system face.
         globPatterns: ["**/*.{js,css,html,svg,png,ico,woff2}"],
+        // Push handlers live in public/push-sw.js and are copied to dist
+        // root, so the generated worker imports them without losing caching.
+        importScripts: ["push-sw.js"],
         // Serve the SPA shell for navigations so client-side routes
         // (/today, /chat, ...) still work with no network.
         navigateFallback: "index.html",

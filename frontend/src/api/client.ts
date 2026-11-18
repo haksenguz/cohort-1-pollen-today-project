@@ -20,11 +20,16 @@ import type {
   Health,
   HospitalNearbyParams,
   HospitalNearbyResponse,
+  LlmSettingsResponse,
+  LlmSettingsUpdateRequest,
   LoginRequest,
   NearbyCareClinic,
   NearbyCareResult,
   PreferenceResponse,
   PreferenceUpdateRequest,
+  PushSubscriptionRequest,
+  PushUnsubscribeRequest,
+  PushVapidKeyResponse,
   RegisterRequest,
   TokenResponse,
   ToolCallAudit,
@@ -173,6 +178,23 @@ export function updateCurrentUser(body: UserUpdateRequest): Promise<UserResponse
   return request<UserResponse>("/api/users/me", { method: "PUT", body, auth: true });
 }
 
+// ---- Own LLM key (BYOK) ----------------------------------------------
+//
+// The key is stored encrypted on the server and used only for this person's
+// chats. Responses carry a hint of the key, never the key itself.
+
+export function getLlmSettings(): Promise<LlmSettingsResponse> {
+  return request<LlmSettingsResponse>("/api/users/me/llm", { auth: true });
+}
+
+export function saveLlmSettings(body: LlmSettingsUpdateRequest): Promise<LlmSettingsResponse> {
+  return request<LlmSettingsResponse>("/api/users/me/llm", { method: "PUT", body, auth: true });
+}
+
+export function deleteLlmSettings(): Promise<void> {
+  return request<void>("/api/users/me/llm", { method: "DELETE", auth: true });
+}
+
 // ---- Allergies -------------------------------------------------------
 
 export function listAllergies(): Promise<AllergyResponse[]> {
@@ -242,6 +264,20 @@ export function updatePreferences(
     body,
     auth: true,
   });
+}
+
+// ---- Web push --------------------------------------------------------
+
+export function getPushVapidKey(): Promise<PushVapidKeyResponse> {
+  return request<PushVapidKeyResponse>("/api/push/vapid-key");
+}
+
+export function subscribePush(body: PushSubscriptionRequest): Promise<void> {
+  return request<void>("/api/push/subscribe", { method: "POST", body, auth: true });
+}
+
+export function unsubscribePush(body: PushUnsubscribeRequest): Promise<void> {
+  return request<void>("/api/push/subscribe", { method: "DELETE", body, auth: true });
 }
 
 // ---- Dev settings (local dev only) ---------------------------------------

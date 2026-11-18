@@ -66,6 +66,9 @@ class Settings(BaseSettings):
     naver_client_secret: str = ""
     pollen_api_key: str = ""
     jwt_secret: str = "change-me"
+    # Derives the Fernet key that encrypts users' own LLM keys (BYOK). Optional;
+    # when unset the JWT secret is used. Changing it makes stored keys unreadable.
+    llm_key_secret: str | None = None
 
     # Abuse protection for POST /api/chat. Every turn is a real model call, so
     # an unbounded endpoint is a direct billing risk. Per-user, per-process,
@@ -79,6 +82,13 @@ class Settings(BaseSettings):
     auth_rate_limit_per_minute: int = 10
 
     cors_origins: list[str] = []
+
+    # Web push (VAPID). All optional: with no keys, push is a no-op and the
+    # public-key route returns null. Generate a pair with
+    # `uv run python scripts/gen_vapid_keys.py`.
+    vapid_public_key: str | None = None
+    vapid_private_key: str | None = None
+    vapid_subject: str | None = "mailto:ismoiljonedu@gmail.com"
 
     # The origin the site is served from. The shipped stack serves the PWA and
     # the API from one origin, so this value only matters when the two are

@@ -37,10 +37,12 @@ from app.models import (
     HospitalSearch,
     Message,
     NotificationPreference,
+    PushSubscription,
     SymptomEvent,
     TriageResult,
     User,
     UserAllergy,
+    UserLLMSetting,
 )
 
 # Full table list in FK-safe delete order: children first, then parents.
@@ -61,6 +63,8 @@ _ALL_TABLES = [
     Alert.__table__,  # -> users, environment_snapshots
     UserAllergy.__table__,  # -> users
     NotificationPreference.__table__,  # -> users
+    PushSubscription.__table__,  # -> users
+    UserLLMSetting.__table__,  # -> users
     # independent
     EnvironmentSnapshot.__table__,
     # parents last

@@ -32,6 +32,9 @@ vi.mock("../api/client", async (importOriginal) => {
     getCurrentUser: vi.fn(),
     updateCurrentUser: vi.fn(),
     listAllergies: vi.fn(),
+    getLlmSettings: vi.fn(),
+    saveLlmSettings: vi.fn(),
+    deleteLlmSettings: vi.fn(),
     createAllergy: vi.fn(),
     deleteAllergy: vi.fn(),
     readPreferences: vi.fn(),
@@ -109,6 +112,7 @@ import {
   createAllergy,
   deleteAllergy,
   getCurrentUser,
+  getLlmSettings,
   listAllergies,
   readPreferences,
   updateCurrentUser,
@@ -223,6 +227,13 @@ beforeEach(() => {
   vi.mocked(getCurrentUser).mockResolvedValue(user());
   vi.mocked(listAllergies).mockResolvedValue([allergy()]);
   vi.mocked(readPreferences).mockResolvedValue(prefs());
+  vi.mocked(getLlmSettings).mockResolvedValue({
+    configured: false,
+    key_hint: "",
+    provider: null,
+    base_url: null,
+    model: null,
+  });
   vi.mocked(updateCurrentUser).mockResolvedValue(user());
   vi.mocked(createAllergy).mockResolvedValue(allergy({ id: 2, allergen: "BIRCH" }));
   vi.mocked(deleteAllergy).mockResolvedValue(undefined);
@@ -263,6 +274,7 @@ describe("SettingsPage overview", () => {
       "Account",
       "Health",
       "Emergency",
+      "AI",
       "Notifications",
       "Accessibility",
       "Privacy and data",

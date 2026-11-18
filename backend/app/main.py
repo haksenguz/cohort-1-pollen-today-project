@@ -17,8 +17,10 @@ from app.api import (
     environment,
     health,
     hospitals,
+    llm_key,
     notifications,
     privacy,
+    push,
     triage,
     users,
 )
@@ -143,12 +145,14 @@ app.include_router(environment.router)
 app.include_router(triage.router)
 app.include_router(auth.router)
 app.include_router(users.router)
+app.include_router(llm_key.router)
 app.include_router(privacy.router)
 app.include_router(allergies.router)
 app.include_router(chat.router)
 app.include_router(conversations.router)
 app.include_router(hospitals.router)
 app.include_router(notifications.router)
+app.include_router(push.router)
 
 # Dark by default: registering this router is harmless while the flag is off,
 # because every route 404s until `dev_settings_enabled` is true — which only

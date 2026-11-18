@@ -229,6 +229,13 @@ async def generate_alert_for_user(
     session.add(alert)
     await session.commit()
     await session.refresh(alert)
+    # Push is best effort. A failed push must never fail alert creation.
+    try:
+        from app.services.push import send_push
+
+        await send_push(session, user.id, "Allergy alert", alert.message, "/alerts")
+    except Exception:
+        logger.warning("push after alert creation failed", exc_info=True)
     return alert
 
 

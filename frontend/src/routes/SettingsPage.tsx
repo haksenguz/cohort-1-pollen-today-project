@@ -17,6 +17,7 @@ import type { ReactNode } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   Bell,
+  Bot,
   ChevronRight,
   Code,
   Database,
@@ -40,14 +41,19 @@ import {
   ApiError,
   createAllergy,
   deleteAllergy,
+  deleteLlmSettings,
   getCurrentUser,
+  getLlmSettings,
   listAllergies,
+  saveLlmSettings,
   readPreferences,
   updatePreferences,
 } from "../api/client";
 import type {
   AllergyCreateRequest,
   AllergyResponse,
+  LlmSettingsResponse,
+  LlmSettingsUpdateRequest,
   PreferenceResponse,
   PreferenceUpdateRequest,
   UserResponse,
@@ -64,11 +70,13 @@ import { clearToken } from "../auth/token";
 import { toast } from "sonner";
 import { useTextSize } from "../prefs/textSize";
 import { formatRisk } from "../utils/format";
+import { llmStatusText } from "../utils/llm";
 import { DevLlmSettingsCard } from "./DevLlmSettingsCard";
 import { SettingsGroup, SettingsRow, type SettingsRowTone } from "./settings/SettingsRows";
 import { SCREEN_TITLE } from "./settings/screenTitles";
 import { isSettingsScreenId, type SettingsScreenId } from "./settings/settingsScreenIds";
 import {
+  AiModelScreen,
   EmergencyContactScreen,
   DeleteDataScreen,
   ExportDataScreen,
@@ -172,6 +180,8 @@ export function SettingsPage() {
   const [prefsLoadError, setPrefsLoadError] = useState<string | null>(null);
   const [contact, setContact] = useState<EmergencyContact | null>(null);
   const [contactLoadError, setContactLoadError] = useState<string | null>(null);
+  const [llm, setLlm] = useState<LlmSettingsResponse | null>(null);
+  const [llmLoadError, setLlmLoadError] = useState<string | null>(null);
   // The open subscreen lives in the URL, so another screen can send the user
   // straight to it ("/settings?screen=location") and the back button works.
   const [params, setParams] = useSearchParams();
@@ -234,11 +244,21 @@ export function SettingsPage() {
     };
   }, [navigate]);
 
+  const loadLlm = useCallback(async () => {
+    setLlmLoadError(null);
+    try {
+      setLlm(await getLlmSettings());
+    } catch (e) {
+      setLlmLoadError(errorText(e, "Could not load your AI model."));
+    }
+  }, []);
+
   useEffect(() => {
     void loadAllergies();
     void loadPrefs();
     void loadContact();
-  }, [loadAllergies, loadPrefs, loadContact]);
+    void loadLlm();
+  }, [loadAllergies, loadPrefs, loadContact, loadLlm]);
 
   async function addAllergy(body: AllergyCreateRequest) {
     const created = await createAllergy(body);
@@ -274,6 +294,16 @@ export function SettingsPage() {
     clearToken();
     toast.success("Your account and your data were deleted.");
     navigate("/login", { replace: true });
+  }
+
+  async function changeLlm(body: LlmSettingsUpdateRequest) {
+    setLlm(await saveLlmSettings(body));
+  }
+
+  async function removeLlm() {
+    await deleteLlmSettings();
+    // Only the key is removed on the server. Nothing about it stays here.
+    setLlm({ configured: false, key_hint: "", provider: null, base_url: null, model: null });
   }
 
   function renderScreen(id: SettingsScreenId, user: UserResponse) {
@@ -323,6 +353,16 @@ export function SettingsPage() {
             loadError={contactLoadError}
             onRetry={() => void loadContact()}
             onSave={changeContact}
+          />
+        );
+      case "ai":
+        return (
+          <AiModelScreen
+            settings={llm}
+            loadError={llmLoadError}
+            onRetry={() => void loadLlm()}
+            onSave={changeLlm}
+            onRemove={removeLlm}
           />
         );
       case "stored":
@@ -413,6 +453,17 @@ export function SettingsPage() {
           value: contactValue(contact, contactLoadError !== null),
           icon: <Phone className="size-4" />,
           screen: "emergency",
+        },
+      ],
+    },
+    {
+      title: "AI",
+      rows: [
+        {
+          label: "AI model",
+          value: llmStatusText(llm, llmLoadError !== null),
+          icon: <Bot className="size-4" />,
+          screen: "ai",
         },
       ],
     },

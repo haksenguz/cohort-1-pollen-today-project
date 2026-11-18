@@ -43,10 +43,12 @@ from app.models import (
     HospitalSearch,
     Message,
     NotificationPreference,
+    PushSubscription,
     SymptomEvent,
     TriageResult,
     User,
     UserAllergy,
+    UserLLMSetting,
 )
 
 BACKEND = Path(__file__).resolve().parents[1]
@@ -62,8 +64,10 @@ ALL_MODELS = [
     EnvironmentSnapshot,
     Alert,
     NotificationPreference,
+    PushSubscription,
     HospitalSearch,
     HospitalResult,
+    UserLLMSetting,
 ]
 
 SCRATCH_SCHEMA = "migration_drift_scratch"

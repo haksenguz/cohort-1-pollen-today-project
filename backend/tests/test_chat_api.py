@@ -28,7 +28,7 @@ from app.core.db import get_session
 from app.core.openai_client import ToolCall, ToolTurn
 from app.core.rate_limit import InMemoryRateLimiter, set_limiter
 from app.main import app
-from app.models import Conversation, User, UserAllergy
+from app.models import Conversation, User, UserAllergy, UserLLMSetting
 from app.services import triage
 
 
@@ -58,7 +58,12 @@ async def chat_session() -> AsyncGenerator[AsyncSession, None]:
         await conn.run_sync(
             lambda sync_conn: User.metadata.create_all(
                 sync_conn,
-                tables=[User.__table__, UserAllergy.__table__, Conversation.__table__],
+                tables=[
+                    User.__table__,
+                    UserAllergy.__table__,
+                    Conversation.__table__,
+                    UserLLMSetting.__table__,
+                ],
             )
         )
 
