@@ -1,6 +1,6 @@
 # TASKS — who owns what
 
-Updated: 2026-10-28. One person, one lane.
+Updated: 2026-11-18. One person, one lane. Status summary: [`docs/STATUS.md`](docs/STATUS.md).
 
 - **Ismoiljon** (tech lead) owns `feat/ismoiljon` and the whole repo. The
   two-lane split with Jack ended 2026-10-02: `origin/feat/jack` never got
@@ -336,6 +336,31 @@ pollen (`weed=LOW` for Seoul, tree correctly withheld out of season). Earlier,
 on 2026-10-03: the same chat and eval results plus triage persistence; earlier
 still, on 2026-09-09: allergy CRUD, environment for Seoul, triage both mild and
 emergency with rows persisted, alerts and preferences, and frontend login.
+
+## Session 2026-11-18: chrome, alerts, settings, push, BYOK
+
+- [x] **Floating chrome.** Header is one slim row with a compact risk pill.
+      Header and tab bar float over the content, and the shell has a fixed
+      height. iOS Safari safe-area insets are not yet checked.
+- [x] **Alerts inbox.** Alerts list reads flat, with unread filter.
+- [x] **Settings redesign.** Flat rows with grey labels. Rows that said "Not
+      built yet" are removed.
+- [x] **Today cache.** Stale-while-revalidate: the last reading shows at once,
+      and a fresh one replaces it.
+- [x] **Agent safety net.** Every EMERGENCY verdict forces the clinic lookup.
+      The agent survives gpt-oss parse failures and answers lookups in chat.
+- [x] **Auth rate limits.** Register and login limited per IP. Docs hidden in
+      production.
+- [x] **Environment tool.** `get_today_environment` gives the agent pollen and
+      air quality for questions. The triage path does not use it.
+- [x] **Web push (B-010 partly).** VAPID, service worker, Settings toggle.
+      Alert creation calls `send_push`. Untested in a real browser and on iOS.
+- [x] **BYOK LLM key.** Per-user key, encrypted, provider allowlist, key never
+      returned, no fallback to the server key when a user key is rejected.
+- [ ] **Push hook test.** Alert creation calls `send_push`, but no test covers
+      that path.
+- [ ] **Shared rate-limit store.** Chat and auth limits are per process.
+- [ ] **Lazy routes.** One 1 MB JS chunk. No route is split yet.
 
 ## Parking lot
 

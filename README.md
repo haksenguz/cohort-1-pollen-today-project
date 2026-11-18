@@ -8,6 +8,8 @@ healthcare facilities.
 > replacement for professional care.
 
 Full product spec: [`docs/pollen_documentation.md`](docs/pollen_documentation.md).
+Current status: [`docs/STATUS.md`](docs/STATUS.md). Architecture:
+[`ARCHITECTURE.md`](ARCHITECTURE.md).
 
 ## Architecture
 

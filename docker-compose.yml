@@ -71,6 +71,10 @@ services:
       OPENAI_MODEL: ${OPENAI_MODEL:-}
       NAVER_CLIENT_ID: ${NAVER_CLIENT_ID:-}
       NAVER_CLIENT_SECRET: ${NAVER_CLIENT_SECRET:-}
+      LLM_KEY_SECRET: ${LLM_KEY_SECRET:-}
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
+      VAPID_SUBJECT: ${VAPID_SUBJECT:-mailto:ismoiljonedu@gmail.com}
       POLLEN_API_KEY: ${POLLEN_API_KEY:-}
       # 제30조: the operator named in the published privacy policy. Blank
       # means the policy says plainly that nobody is named yet.

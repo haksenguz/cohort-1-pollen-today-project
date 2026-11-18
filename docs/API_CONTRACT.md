@@ -654,6 +654,151 @@ optional; only supplied fields change.
 
 ---
 
+## `/api/conversations`
+
+Served by `backend/app/api/conversations.py`. Scoped to `CurrentUser`.
+
+### `GET /api/conversations`
+
+**Query:** `q: str` (optional). Searches the titles and messages of the
+caller's own conversations. Empty or absent `q` returns all.
+
+**200**
+
+```json
+{
+  "conversations": [
+    {
+      "id": 1,
+      "title": "Sneezing since Monday",
+      "created_at": "2026-11-10T09:00:00Z",
+      "updated_at": "2026-11-10T09:04:00Z",
+      "last_message": "Thanks, that helps.",
+      "message_count": 4
+    }
+  ]
+}
+```
+
+### `GET /api/conversations/{conversation_id}`
+
+**404** `{"detail": "Conversation not found"}` for both a missing id and
+another user's id, so the two look the same from outside.
+
+**200**: `id`, `title`, `created_at`, and `messages`. Each message has `id`,
+`role` (lowercase: `user` or `assistant`), `content`, `triage_level`,
+`triage_reasons`, `created_at`.
+
+## `/api/privacy/consent`
+
+Served by `backend/app/api/privacy.py`. Records the 민감정보 consent (제23조①1호).
+Reads, export and delete stay open after a withdrawal.
+
+### `GET /api/privacy/consent`
+
+**200**
+
+```json
+{
+  "purpose": "health_data_processing",
+  "granted": true,
+  "version": "2026-10-19-draft1",
+  "granted_at": "2026-11-01T10:00:00+00:00",
+  "withdrawn_at": null,
+  "policy_version": "2026-10-19-draft1",
+  "basis": "개인정보 보호법 제23조제1항제1호, 제15조제2항"
+}
+```
+
+### `POST /api/privacy/consent`
+
+**Body:** `{"granted": bool, "version": str | null}`. `version` is the policy
+version agreed to, max 32 characters. Defaults to the current one.
+
+**200**: the same shape as `GET`, after the change. Setting `granted: false`
+withdraws consent.
+
+## `/api/users/me/emergency-contact`
+
+Served by `backend/app/api/users.py`. One contact the user chooses. The app
+never dials it.
+
+### `GET /api/users/me/emergency-contact`
+
+**200**: `{"name": str | null, "phone": str | null, "note": str | null}`.
+All `null` until the user saves one.
+
+### `PUT /api/users/me/emergency-contact`
+
+**Body:** `{"name": str?, "phone": str?, "note": str?}`. Limits: name 80,
+phone 40, note 200 characters. An empty value clears that field. Returns the
+same shape as `GET`.
+
+## `/api/push`
+
+Served by `backend/app/api/push.py`. Web push through the PWA service worker.
+Delivery runs from the alert pipeline (`services/push.py`, `send_push`).
+
+### `GET /api/push/vapid-key`
+
+No auth. **200**: `{"public_key": str | null}`. `null` when the server has no
+VAPID keys configured.
+
+### `POST /api/push/subscribe`
+
+**Auth:** Bearer required. **Body:**
+
+```json
+{
+  "endpoint": "https://fcm.googleapis.com/fcm/send/...",
+  "keys": { "p256dh": "...", "auth": "..." }
+}
+```
+
+Upserts by `endpoint`. A repeat call for the same endpoint moves the row to
+the current user. **204** with no body.
+
+### `DELETE /api/push/subscribe`
+
+**Auth:** Bearer required. **Body:** `{"endpoint": str}`. Removes only the
+caller's own subscription for that endpoint. **204** with no body.
+
+## `/api/users/me/llm`
+
+Served by `backend/app/api/llm_key.py`. Bring-your-own LLM key, stored per
+user and encrypted (`LLM_KEY_SECRET`). The key is write-only: it never comes
+back, only its last four characters.
+
+### `GET /api/users/me/llm`
+
+**200**
+
+```json
+{
+  "configured": true,
+  "key_hint": "3f9a",
+  "provider": "groq",
+  "base_url": "https://api.groq.com/openai/v1",
+  "model": "openai/gpt-oss-20b"
+}
+```
+
+When nothing is saved: `configured: false`, and `key_hint`, `provider`,
+`base_url`, `model` are empty or `null`.
+
+### `PUT /api/users/me/llm`
+
+**Body:** `{"api_key": str (8 to 512 chars), "provider": "groq" | "openai" | "openrouter", "model": str | null}`.
+An empty or absent `model` uses the provider default. **200**: the same shape
+as `GET`.
+
+### `DELETE /api/users/me/llm`
+
+Removes the saved key. Later chat turns use the server's key. **204** with no body.
+
+A saved key is never retried with the server key. If the stored key cannot be
+decrypted (the secret changed), the chat turn refuses rather than falling back.
+
 ## Degradation contracts
 
 Two endpoints are designed to **never 500 on a dead upstream**: they return
